@@ -22,7 +22,11 @@ export interface Application extends ApplicationCreate {
   source: string | null
   description: string | null
   requirements: string | null
+  posting_status: 'UNKNOWN' | 'LIVE' | 'CLOSED'
+  posting_last_checked_at: string | null
 }
+
+export type ApplicationUpdate = Partial<Omit<Application, 'id'>>
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const controller = new AbortController()
@@ -45,6 +49,16 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 export function listApplications(): Promise<Application[]> {
   return request('/api/applications')
+}
+
+export function getApplication(id: string): Promise<Application> {
+  return request(`/api/applications/${encodeURIComponent(id)}`)
+}
+
+export function updateApplication(id: string, data: ApplicationUpdate): Promise<Application> {
+  return request(`/api/applications/${encodeURIComponent(id)}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+  })
 }
 
 export function createApplication(data: ApplicationCreate): Promise<Application> {

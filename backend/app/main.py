@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 import logging
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -11,7 +12,7 @@ from app import __version__
 from app.config import Settings
 from app.database import create_database, migrate_database
 from app import applications
-from app.schemas import ApplicationCreate, ApplicationRead
+from app.schemas import ApplicationCreate, ApplicationRead, ApplicationUpdate
 
 
 class HealthResponse(BaseModel):
@@ -36,6 +37,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application = FastAPI(title="Application Tracker", version=__version__, lifespan=lifespan)
     application.state.settings = settings
 
+    @application.exception_handler(applications.ApplicationNotFound)
+    async def not_found(_request, exc):
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+    @application.exception_handler(applications.InvalidApplication)
+    async def invalid_application(_request, exc):
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+
     def get_session():
         with Session(application.state.engine) as session:
             yield session
@@ -47,6 +56,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.get("/api/applications", response_model=list[ApplicationRead])
     def list_applications(session: Session = Depends(get_session)):
         return applications.list_applications(session)
+
+    @application.get("/api/applications/{application_id}", response_model=ApplicationRead)
+    def get_application(application_id: str, session: Session = Depends(get_session)):
+        return applications.get_application(session, application_id)
+
+    @application.patch("/api/applications/{application_id}", response_model=ApplicationRead)
+    def update_application(application_id: str, data: ApplicationUpdate, session: Session = Depends(get_session)):
+        return applications.update_application(session, application_id, data)
 
     @application.get("/api/health", response_model=HealthResponse)
     def health() -> HealthResponse:

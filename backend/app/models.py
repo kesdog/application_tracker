@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
 from uuid import uuid4
 
@@ -24,11 +24,18 @@ class ApplicationOutcome(str, Enum):
     GHOSTED = "GHOSTED"
 
 
+class PostingStatus(str, Enum):
+    UNKNOWN = "UNKNOWN"
+    LIVE = "LIVE"
+    CLOSED = "CLOSED"
+
+
 class Application(Base):
     __tablename__ = "applications"
     __table_args__ = (
         CheckConstraint("length(trim(coalesce(job_url, ''))) > 0 OR length(trim(coalesce(email_reference, ''))) > 0", name="application_source_required"),
         CheckConstraint("length(trim(job_title)) > 0 AND length(trim(company)) > 0", name="application_title_company_required"),
+        CheckConstraint("outcome IS NULL OR status = 'CLOSED'", name="application_outcome_requires_closed"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
@@ -50,3 +57,9 @@ class Application(Base):
     outcome: Mapped[ApplicationOutcome | None] = mapped_column(
         SqlEnum(ApplicationOutcome, native_enum=False, create_constraint=True, name="application_outcome")
     )
+    posting_status: Mapped[PostingStatus] = mapped_column(
+        SqlEnum(PostingStatus, native_enum=False, create_constraint=True, name="posting_status"),
+        default=PostingStatus.UNKNOWN, server_default="UNKNOWN",
+    )
+    # SQLite stores naive datetimes; this column always contains UTC.
+    posting_last_checked_at: Mapped[datetime | None]

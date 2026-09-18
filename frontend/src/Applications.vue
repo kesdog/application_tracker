@@ -1,6 +1,17 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { createApplication, listApplications, type Application } from './api'
+import ApplicationFocus from './ApplicationFocus.vue'
+
+function selectedId() {
+  const match = window.location.hash.match(/^#\/applications\/([^/]+)$/)
+  return match ? match[1]! : null
+}
+const focusedId = ref(selectedId())
+function navigate() {
+  focusedId.value = selectedId()
+  if (!focusedId.value) { success.value = ''; void refresh() }
+}
 
 const applications = ref<Application[]>([])
 const loading = ref(false)
@@ -55,11 +66,16 @@ async function submit() {
   }
 }
 
-onMounted(refresh)
+onMounted(() => {
+  window.addEventListener('hashchange', navigate)
+  if (!focusedId.value) void refresh()
+})
+onUnmounted(() => window.removeEventListener('hashchange', navigate))
 </script>
 
 <template>
-  <section aria-labelledby="applications-title">
+  <ApplicationFocus v-if="focusedId" :key="focusedId" :id="focusedId" />
+  <section v-else aria-labelledby="applications-title">
     <div class="page-heading">
       <div><p class="eyebrow">Your workspace</p><h2 id="applications-title">Applications</h2></div>
       <button v-if="!showForm" class="primary" type="button" @click="showForm = true; success = ''; formError = ''">Add application</button>
@@ -97,10 +113,11 @@ onMounted(refresh)
       <div v-else-if="applications.length" class="table-scroll" tabindex="0" role="region" aria-label="Applications table">
         <table>
           <caption class="sr-only">Submitted applications, newest applied date first</caption>
-          <thead><tr><th scope="col">Date applied</th><th scope="col">Company</th><th scope="col">Position</th><th scope="col">Status</th><th scope="col">Source</th></tr></thead>
+          <thead><tr><th scope="col">Date applied</th><th scope="col">Company</th><th scope="col">Position</th><th scope="col">Status</th><th scope="col">Outcome</th><th scope="col">Source</th></tr></thead>
           <tbody><tr v-for="application in applications" :key="application.id">
-            <td class="date-cell">{{ application.date_applied }}</td><td>{{ application.company }}</td><td>{{ application.job_title }}</td>
-            <td><span class="status-badge">{{ application.status }}</span></td>
+            <td class="date-cell">{{ application.date_applied }}</td><td>{{ application.company }}</td><td><a :href="`#/applications/${application.id}`">{{ application.job_title }}</a></td>
+            <td><span class="status-badge" :class="application.status.toLowerCase()">{{ application.status }}</span></td>
+            <td><span v-if="application.outcome" class="status-badge" :class="application.outcome.toLowerCase()">{{ application.outcome }}</span><span v-else>—</span></td>
             <td class="source-cell"><a v-if="application.job_url" :href="application.job_url" target="_blank" rel="noopener noreferrer">Job posting ↗</a><span v-if="application.email_reference" class="email-reference">{{ application.email_reference }}</span></td>
           </tr></tbody>
         </table>
@@ -132,6 +149,8 @@ td { overflow-wrap: anywhere; min-width: 140px; max-width: 300px; }
 tr:last-child td { border-bottom: 0; }
 .date-cell { white-space: nowrap; }
 .status-badge { display: inline-block; background: #eaf1fc; color: #2a5189; font-size: 11px; font-weight: 700; padding: 4px 7px; border-radius: 4px; }
+.interview { background: #f0e9fa; color: #654388; } .closed, .withdrawn, .ghosted { background: #edf0f3; color: #526174; }
+.successful { background: #eaf5ee; color: #216344; } .unsuccessful { background: #fcebed; color: #a12c32; } .job_cancelled { background: #fff1de; color: #844d15; }
 a { color: #24568b; text-underline-offset: 3px; }
 .email-reference { display: block; margin-top: 4px; white-space: pre-wrap; }
 .empty { padding: 32px 24px; margin: 0; color: #576678; font-size: 14px; line-height: 1.6; }
