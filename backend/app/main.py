@@ -1,14 +1,17 @@
 from contextlib import asynccontextmanager
 import logging
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 import uvicorn
 
 from app import __version__
 from app.config import Settings
-from app.database import create_database
+from app.database import create_database, migrate_database
+from app import applications
+from app.schemas import ApplicationCreate, ApplicationRead
 
 
 class HealthResponse(BaseModel):
@@ -25,12 +28,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         engine = create_database(settings.app_data_dir)
         application.state.engine = engine
         try:
+            migrate_database(engine)
             yield
         finally:
             engine.dispose()
 
     application = FastAPI(title="Application Tracker", version=__version__, lifespan=lifespan)
     application.state.settings = settings
+
+    def get_session():
+        with Session(application.state.engine) as session:
+            yield session
+
+    @application.post("/api/applications", response_model=ApplicationRead, status_code=201)
+    def create_application(data: ApplicationCreate, session: Session = Depends(get_session)):
+        return applications.create_application(session, data)
+
+    @application.get("/api/applications", response_model=list[ApplicationRead])
+    def list_applications(session: Session = Depends(get_session)):
+        return applications.list_applications(session)
 
     @application.get("/api/health", response_model=HealthResponse)
     def health() -> HealthResponse:

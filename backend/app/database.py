@@ -1,6 +1,18 @@
 from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import URL, Engine, create_engine, event
+
+from app.config import PROJECT_ROOT
+
+
+def migrate_database(engine: Engine) -> None:
+    config = Config(str(PROJECT_ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(PROJECT_ROOT / "backend" / "migrations"))
+    with engine.begin() as connection:
+        config.attributes["connection"] = connection
+        command.upgrade(config, "head")
 
 
 def create_database(data_dir: Path) -> Engine:

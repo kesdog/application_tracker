@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { getHealth, type Health } from './api'
+import Applications from './Applications.vue'
 
 const status = ref<'checking' | 'connected' | 'disconnected'>('checking')
 const health = ref<Health | null>(null)
@@ -23,10 +24,9 @@ onMounted(checkConnection)
   <div class="shell">
     <header><span class="app-mark" aria-hidden="true">AT</span><h1>Application Tracker</h1></header>
     <main>
-      <p class="eyebrow">System status</p>
-      <h2>Your local workspace</h2>
-      <p class="intro">Check that your application tracker is ready.</p>
+      <Applications />
 
+      <details class="system-status"><summary>System status · {{ status === 'connected' ? `Connected · ${health?.version}` : status }}</summary>
       <section class="status-card" aria-label="Connection status" aria-live="polite" :aria-busy="status === 'checking'">
         <div class="status-heading">
           <h3 :class="status"><span class="dot" aria-hidden="true"></span>Backend: {{ status === 'checking' ? 'Checking…' : status === 'connected' ? 'Connected' : 'Disconnected' }}</h3>
@@ -40,8 +40,9 @@ onMounted(checkConnection)
           <div><dt>Database</dt><dd>{{ health ? 'SQLite · Connected' : 'Unavailable' }}</dd></div>
         </dl>
       </section>
+      </details>
     </main>
-    <footer>Application Tracker <span>0.1.0</span></footer>
+    <footer>Application Tracker <span>0.2.0</span></footer>
   </div>
 </template>
 
@@ -53,7 +54,8 @@ body { margin: 0; }
 header { display: flex; align-items: center; gap: 12px; padding: 20px 32px; background: #fff; border-bottom: 1px solid #dde2e9; }
 .app-mark { padding: 8px; background: #263e5c; color: #fff; font-size: 13px; font-weight: 700; border-radius: 6px; }
 h1 { font-size: 17px; font-weight: 650; margin: 0; }
-main { width: min(100%, 760px); margin: 64px auto; padding: 0 24px; flex: 1; }
+main { width: min(100%, 1200px); margin: 40px auto; padding: 0 24px; flex: 1; }
+.system-status { margin-top: 32px; } summary { cursor: pointer; color: #576678; font-size: 13px; padding: 12px 0; }
 .eyebrow { color: #576678; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; margin: 0 0 12px; }
 h2 { font-size: 28px; letter-spacing: -.02em; margin: 0 0 10px; }
 .intro { color: #576678; margin: 0 0 28px; line-height: 1.5; }
