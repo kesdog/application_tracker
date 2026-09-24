@@ -23,6 +23,13 @@ class ApplicationCreate(BaseModel):
     source: ShortText | None = None
     description: str | None = None
     requirements: str | None = None
+    followup_delay_days: int | None = Field(default=None, ge=0, le=3650)
+    max_followup_suggestions: int | None = Field(default=None, ge=0, le=100)
+
+    @field_validator("followup_delay_days", "max_followup_suggestions", mode="before")
+    @classmethod
+    def blank_override(cls, value):
+        return None if value == "" else value
 
     @field_validator("job_url", "email_reference", "location", "remote_policy", "contract_type", "source", "description", "requirements", mode="before")
     @classmethod

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { getApplication, updateApplication, type Application, type ApplicationUpdate } from './api'
+import ApplicationWork from './ApplicationWork.vue'
 
 const props = defineProps<{ id: string }>()
 const application = ref<Application | null>(null)
@@ -19,7 +20,7 @@ const optionalFields = [
   { key: 'location', label: 'Location' }, { key: 'remote_policy', label: 'Remote policy' },
   { key: 'contract_type', label: 'Contract type' }, { key: 'source', label: 'Source' },
 ] as const
-const editableFields = ['job_title', 'company', 'date_applied', 'job_url', 'email_reference', 'location', 'remote_policy', 'contract_type', 'source', 'description', 'requirements', 'status', 'outcome', 'posting_status'] as const
+const editableFields = ['job_title', 'company', 'date_applied', 'job_url', 'email_reference', 'location', 'remote_policy', 'contract_type', 'source', 'description', 'requirements', 'status', 'outcome', 'posting_status', 'followup_delay_days', 'max_followup_suggestions'] as const
 const needsOutcomeClear = computed(() => application.value?.status === 'CLOSED' && application.value.outcome !== null && draft.value !== null && draft.value.status !== 'CLOSED')
 
 function localDateTime(value: string | null) {
@@ -126,6 +127,14 @@ onMounted(load)
           <button class="check-now" type="button" @click="checkedAt = localDateTime(new Date().toISOString())">Set checked time to now</button>
           <p class="hint">Record your own check of the posting. Posting status does not change the application lifecycle.</p>
         </fieldset>
+        <fieldset :disabled="saving">
+          <legend>Follow-up preferences</legend>
+          <p class="hint">Leave blank to use the global defaults. These settings affect new follow-ups; existing due dates stay unchanged.</p>
+          <div class="grid">
+            <label>Follow-up delay (days)<input v-model.number="draft.followup_delay_days" type="number" min="0" max="3650" step="1" placeholder="Global default" /></label>
+            <label>Maximum automatic suggestions<input v-model.number="draft.max_followup_suggestions" type="number" min="0" max="100" step="1" placeholder="Global default" /></label>
+          </div>
+        </fieldset>
         <p v-if="saveError" class="error" role="alert">{{ saveError }}</p>
         <div class="actions"><button class="primary" type="submit" :disabled="saving || (needsOutcomeClear && !clearOutcome)">{{ saving ? 'Saving…' : 'Save changes' }}</button><button type="button" :disabled="saving" @click="draft = null">Cancel</button></div>
       </form>
@@ -143,6 +152,7 @@ onMounted(load)
         </section>
         <section class="panel"><h3>Description</h3><p class="text-block">{{ application.description ?? 'No description added.' }}</p><h3>Requirements</h3><p class="text-block">{{ application.requirements ?? 'No requirements added.' }}</p></section>
         <section class="panel"><h3>Job posting</h3><dl class="details"><div><dt>Posting status</dt><dd>{{ application.posting_status }}</dd></div><div><dt>Last checked</dt><dd>{{ application.posting_last_checked_at ? new Date(application.posting_last_checked_at).toLocaleString() + ' (local time)' : 'Not checked' }}</dd></div></dl></section>
+        <ApplicationWork :application-id="application.id" />
       </template>
     </template>
   </section>

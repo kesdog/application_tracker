@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     app_host: str = "127.0.0.1"
     app_port: int = Field(default=8000, ge=1, le=65535)
     app_env: str = "development"
+    followup_delay_days: int = Field(default=7, ge=0, le=3650)
+    max_followup_suggestions: int = Field(default=2, ge=0, le=100)
     app_data_dir: Path = PROJECT_ROOT / "data"
     log_level: Literal["critical", "error", "warning", "info", "debug", "trace"] = "info"
 

@@ -1,8 +1,8 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from enum import Enum
 from uuid import uuid4
 
-from sqlalchemy import CheckConstraint, Enum as SqlEnum, String, Text
+from sqlalchemy import CheckConstraint, Enum as SqlEnum, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -63,3 +63,76 @@ class Application(Base):
     )
     # SQLite stores naive datetimes; this column always contains UTC.
     posting_last_checked_at: Mapped[datetime | None]
+    followup_delay_days: Mapped[int | None]
+    max_followup_suggestions: Mapped[int | None]
+
+
+class NoteType(str, Enum):
+    GENERAL = "GENERAL"
+    ASSESSMENT = "ASSESSMENT"
+    EMAIL_DRAFT = "EMAIL_DRAFT"
+    INTERVIEW = "INTERVIEW"
+    AGENT = "AGENT"
+
+
+class TaskStatus(str, Enum):
+    PENDING = "PENDING"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+
+
+class FollowUpStatus(str, Enum):
+    PENDING = "PENDING"
+    DRAFTED = "DRAFTED"
+    SENT = "SENT"
+    CANCELLED = "CANCELLED"
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+class Note(Base):
+    __tablename__ = "notes"
+    __table_args__ = (CheckConstraint("length(trim(content)) > 0", name="note_content_required"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    application_id: Mapped[str] = mapped_column(ForeignKey("applications.id"), index=True)
+    content: Mapped[str] = mapped_column(Text)
+    type: Mapped[NoteType] = mapped_column(SqlEnum(NoteType, native_enum=False, create_constraint=True, name="note_type"), default=NoteType.GENERAL)
+    created_by: Mapped[str] = mapped_column(String(300), default="HUMAN")
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(default=utc_now, onupdate=utc_now)
+
+
+class Task(Base):
+    __tablename__ = "tasks"
+    __table_args__ = (
+        CheckConstraint("length(trim(title)) > 0", name="task_title_required"),
+        CheckConstraint("(status = 'COMPLETED' AND completed_at IS NOT NULL) OR (status != 'COMPLETED' AND completed_at IS NULL)", name="task_completion_consistent"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    application_id: Mapped[str] = mapped_column(ForeignKey("applications.id"), index=True)
+    title: Mapped[str] = mapped_column(String(300))
+    description: Mapped[str | None] = mapped_column(Text)
+    due_at: Mapped[datetime | None]
+    completed_at: Mapped[datetime | None]
+    status: Mapped[TaskStatus] = mapped_column(SqlEnum(TaskStatus, native_enum=False, create_constraint=True, name="task_status"), default=TaskStatus.PENDING)
+
+
+class FollowUp(Base):
+    __tablename__ = "followups"
+    __table_args__ = (
+        UniqueConstraint("application_id", "sequence_number", name="followup_sequence_unique"),
+        CheckConstraint("sequence_number > 0", name="followup_sequence_positive"),
+        CheckConstraint("(status = 'SENT' AND sent_at IS NOT NULL) OR (status != 'SENT' AND sent_at IS NULL)", name="followup_sent_consistent"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    application_id: Mapped[str] = mapped_column(ForeignKey("applications.id"), index=True)
+    sequence_number: Mapped[int]
+    due_at: Mapped[datetime]
+    sent_at: Mapped[datetime | None]
+    status: Mapped[FollowUpStatus] = mapped_column(SqlEnum(FollowUpStatus, native_enum=False, create_constraint=True, name="followup_status"), default=FollowUpStatus.PENDING)
+    template_reference: Mapped[str | None] = mapped_column(String(2048))

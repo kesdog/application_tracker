@@ -42,7 +42,7 @@ onMounted(checkConnection)
       </section>
       </details>
     </main>
-    <footer>Application Tracker <span>0.3.0</span></footer>
+    <footer>Application Tracker <span>0.4.0</span></footer>
   </div>
 </template>
 

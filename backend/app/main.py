@@ -12,6 +12,8 @@ from app import __version__
 from app.config import Settings
 from app.database import create_database, migrate_database
 from app import applications
+from app import work
+from app.work_schemas import FollowUpCreate, FollowUpRead, FollowUpUpdate, NoteCreate, NoteRead, NoteUpdate, TaskCreate, TaskRead, TaskUpdate, WorkRead
 from app.schemas import ApplicationCreate, ApplicationRead, ApplicationUpdate
 
 
@@ -64,6 +66,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.patch("/api/applications/{application_id}", response_model=ApplicationRead)
     def update_application(application_id: str, data: ApplicationUpdate, session: Session = Depends(get_session)):
         return applications.update_application(session, application_id, data)
+
+    @application.get("/api/applications/{application_id}/work", response_model=WorkRead)
+    def get_work(application_id: str, session: Session = Depends(get_session)):
+        return work.get_work(session, application_id, settings)
+
+    @application.post("/api/applications/{application_id}/notes", response_model=NoteRead, status_code=201)
+    def create_note(application_id: str, data: NoteCreate, session: Session = Depends(get_session)):
+        return work.create_note(session, application_id, data)
+
+    @application.patch("/api/applications/{application_id}/notes/{item_id}", response_model=NoteRead)
+    def update_note(application_id: str, item_id: str, data: NoteUpdate, session: Session = Depends(get_session)):
+        return work.update_note(session, application_id, item_id, data)
+
+    @application.post("/api/applications/{application_id}/tasks", response_model=TaskRead, status_code=201)
+    def create_task(application_id: str, data: TaskCreate, session: Session = Depends(get_session)):
+        return work.create_task(session, application_id, data)
+
+    @application.patch("/api/applications/{application_id}/tasks/{item_id}", response_model=TaskRead)
+    def update_task(application_id: str, item_id: str, data: TaskUpdate, session: Session = Depends(get_session)):
+        return work.update_task(session, application_id, item_id, data)
+
+    @application.post("/api/applications/{application_id}/followups", response_model=FollowUpRead, status_code=201)
+    def create_followup(application_id: str, data: FollowUpCreate, session: Session = Depends(get_session)):
+        return work.create_followup(session, application_id, data, settings)
+
+    @application.patch("/api/applications/{application_id}/followups/{item_id}", response_model=FollowUpRead)
+    def update_followup(application_id: str, item_id: str, data: FollowUpUpdate, session: Session = Depends(get_session)):
+        return work.update_followup(session, application_id, item_id, data)
 
     @application.get("/api/health", response_model=HealthResponse)
     def health() -> HealthResponse:

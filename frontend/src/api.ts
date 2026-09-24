@@ -24,7 +24,34 @@ export interface Application extends ApplicationCreate {
   requirements: string | null
   posting_status: 'UNKNOWN' | 'LIVE' | 'CLOSED'
   posting_last_checked_at: string | null
+  followup_delay_days: number | null
+  max_followup_suggestions: number | null
 }
+
+export type NoteType = 'GENERAL' | 'ASSESSMENT' | 'EMAIL_DRAFT' | 'INTERVIEW' | 'AGENT'
+export interface NoteInput { content: string; type: NoteType }
+export interface Note extends NoteInput { id: string; application_id: string; created_by: string; created_at: string; updated_at: string }
+export interface TaskInput { title: string; description: string | null; due_at: string | null }
+export interface Task extends TaskInput { id: string; application_id: string; status: 'PENDING' | 'COMPLETED' | 'CANCELLED'; completed_at: string | null }
+export interface FollowUpInput { due_at: string | null; template_reference: string | null }
+export interface FollowUp extends FollowUpInput { id: string; application_id: string; sequence_number: number; status: 'PENDING' | 'DRAFTED' | 'SENT' | 'CANCELLED'; sent_at: string | null }
+export interface ApplicationWork { notes: Note[]; tasks: Task[]; followups: FollowUp[]; followup_delay_days: number; max_followup_suggestions: number }
+
+export function getWork(id: string): Promise<ApplicationWork> {
+  return request(`/api/applications/${encodeURIComponent(id)}/work`)
+}
+
+function writeChild<T>(applicationId: string, kind: string, data: unknown, itemId?: string): Promise<T> {
+  return request(`/api/applications/${encodeURIComponent(applicationId)}/${kind}${itemId ? `/${encodeURIComponent(itemId)}` : ''}`, {
+    method: itemId ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+  })
+}
+export const createNote = (id: string, data: NoteInput) => writeChild<Note>(id, 'notes', data)
+export const updateNote = (id: string, noteId: string, data: NoteInput) => writeChild<Note>(id, 'notes', data, noteId)
+export const createTask = (id: string, data: TaskInput) => writeChild<Task>(id, 'tasks', data)
+export const updateTask = (id: string, taskId: string, data: { status: Task['status'] }) => writeChild<Task>(id, 'tasks', data, taskId)
+export const createFollowUp = (id: string, data: FollowUpInput) => writeChild<FollowUp>(id, 'followups', data)
+export const updateFollowUp = (id: string, followupId: string, data: { status: FollowUp['status'] }) => writeChild<FollowUp>(id, 'followups', data, followupId)
 
 export type ApplicationUpdate = Partial<Omit<Application, 'id'>>
 
