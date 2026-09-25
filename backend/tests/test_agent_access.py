@@ -211,6 +211,10 @@ def test_agent_errors_have_stable_payloads(setup):
     invalid = agent_call(client, token, "create_application", {"application": {**draft(), "job_url": None, "email_reference": None}})
     assert invalid.status_code == 422
     assert invalid.json()["error"]["code"] == "SOURCE_REQUIRED"
+    posting = agent_call(client, token, "create_application", {"application": {**draft(), "job_url": None, "email_reference": "Application confirmation", "source": "LINKEDIN"}})
+    assert posting.status_code == 422
+    assert posting.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert "exact job URL" in posting.json()["error"]["message"]
 
 
 def test_mcp_tracker_info_and_streamable_http_share_bearer_auth(setup):

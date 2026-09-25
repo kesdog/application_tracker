@@ -28,6 +28,15 @@ def create_application(
 ) -> Application:
     if data.source is None:
         data = data.model_copy(update={"source": infer_job_source(data.job_url)})
+    if data.source in {"LINKEDIN", "INDEED"}:
+        if not data.job_url:
+            raise InvalidApplication(
+                "An exact job URL is required for LinkedIn or Indeed applications so the posting can be checked"
+            )
+        if infer_job_source(data.job_url) != data.source:
+            raise InvalidApplication(
+                "The job URL must be a direct posting URL on the selected LinkedIn or Indeed job board"
+            )
     duplicates = find_possible_duplicates(session, data)
     application = Application(**data.model_dump())
     session.add(application)

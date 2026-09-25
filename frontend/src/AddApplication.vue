@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { createApplication, type Application, type DuplicateMatch } from './api'
 import { contactTypes, detectJobSource, jobSources, remotePolicies, type ContactType, type JobSource, type RemotePolicy } from './applicationOptions'
 
@@ -19,6 +19,7 @@ function blankForm() {
 
 const form = reactive(blankForm())
 const sourceIsAutomatic = ref(true)
+const requiresPostingUrl = computed(() => form.source === 'LINKEDIN' || form.source === 'INDEED')
 const saving = ref(false)
 const error = ref('')
 const saved = ref<Application | null>(null)
@@ -46,6 +47,14 @@ async function submit() {
   error.value = ''
   if (!form.job_url.trim() && !form.email_reference.trim()) {
     error.value = 'Provide a job URL or an email reference.'
+    return
+  }
+  if (requiresPostingUrl.value && !form.job_url.trim()) {
+    error.value = 'An exact job URL is required for LinkedIn or Indeed applications so the posting can be checked.'
+    return
+  }
+  if (requiresPostingUrl.value && detectJobSource(form.job_url) !== form.source) {
+    error.value = 'Use a direct posting URL on the selected LinkedIn or Indeed job board.'
     return
   }
   if (form.contact_type === 'PHONE' && !form.phone_number.trim()) {
@@ -100,9 +109,9 @@ async function submit() {
         </div>
       </fieldset>
       <fieldset :disabled="saving"><legend>Posting and source</legend>
-        <p class="hint">Provide a job URL or an email reference. The source is suggested from a recognized job-board URL.</p>
+        <p class="hint">Provide a job URL or an email reference. LinkedIn and Indeed records require their exact job URL so the tracker can check the posting later.</p>
         <div class="form-grid">
-          <label>Job URL<input v-model="form.job_url" name="job_url" type="url" placeholder="https://…" maxlength="2048" /></label>
+          <label>Job URL<input v-model="form.job_url" name="job_url" type="url" placeholder="https://…" maxlength="2048" :required="requiresPostingUrl" /></label>
           <label>Email reference<input v-model="form.email_reference" name="email_reference" placeholder="Message link, ID, or subject" maxlength="2048" /></label>
           <label>Source<select v-model="form.source" name="source" @change="sourceIsAutomatic = false"><option v-for="option in jobSources" :key="option.value" :value="option.value">{{ option.label }}</option></select><small>{{ sourceIsAutomatic ? 'Detected from the job URL when possible.' : 'Selected manually.' }} <button v-if="!sourceIsAutomatic" class="inline-action" type="button" @click="useDetectedSource">Use detected source</button></small></label>
         </div>

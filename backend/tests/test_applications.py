@@ -102,6 +102,19 @@ def test_source_is_inferred_from_trusted_job_board_hostname(client, url, expecte
     assert response.json()["source"] == expected
 
 
+@pytest.mark.parametrize("source", ["LINKEDIN", "INDEED"])
+def test_linkedin_and_indeed_require_an_exact_posting_url(client, source):
+    response = client.post("/api/applications", json=payload(job_url=None, email_reference="Application confirmation", source=source))
+    assert response.status_code == 422
+    assert "exact job URL" in response.json()["detail"]
+
+
+def test_linkedin_and_indeed_require_a_url_on_the_selected_job_board(client):
+    response = client.post("/api/applications", json=payload(source="LINKEDIN"))
+    assert response.status_code == 422
+    assert "direct posting URL" in response.json()["detail"]
+
+
 def test_contact_type_requires_phone_only_when_phone_is_selected(client):
     email = client.post("/api/applications", json=payload())
     assert email.status_code == 201
