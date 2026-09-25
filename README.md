@@ -1,6 +1,6 @@
 # Application Tracker
 
-Version **0.6.0** adds a chronological activity timeline, mutation audit records, one-step undo, and human-only soft deletion to the FastAPI, SQLite WAL, and Vue 3 + TypeScript tracker.
+Version **0.7.0** adds application search and combined filters, advisory duplicate warnings, and an operational dashboard to the FastAPI, SQLite WAL, and Vue 3 + TypeScript tracker.
 
 Use **Add application** to record a job title, company, date applied, and either a job URL or email reference. Saved records appear in a compact table ordered by applied date, newest first. Every new application starts as `SUBMITTED` with no outcome. Job URLs open in a new tab; email references are displayed in the source column. On narrow windows, scroll the table horizontally to see all columns. The health screen remains available under **System status**.
 
@@ -13,6 +13,10 @@ The focus view contains **Interviews**, **Notes**, **Tasks**, and **Follow-ups**
 The **Timeline** records application, note, task, follow-up, interview, outcome, and posting-state activity with the actor and time. Reversible edits expose **Undo last change**. Undo restores the complete prior field snapshot, including coupled values such as a task status and completion timestamp. Application deletion requires a second human confirmation and sets `deleted_at`; deleted applications and their work disappear from normal lists without removing database records.
 
 Use the top navigation to open **Interviews** or **Tasks**. Interviews are ordered by scheduled date and show their application, meeting context, and near-term wording such as “Technical interview — tomorrow at 14:00.” Tasks are ordered by due date, show their parent application, and can be completed, cancelled, or reopened from the global view.
+
+Use **Dashboard** to see active application count, due and overdue tasks/follow-ups, upcoming interviews, linked work for the next seven days, and recent activity. The Applications page supports free-text search plus status, outcome, company, position, location, contract, source, remote policy, and application-date filters. Filters combine, can be cleared together, and retain the existing newest-first order.
+
+Creation checks normalized company/title and job URLs against existing applications. A likely duplicate is still saved, then shown as an advisory warning with links and reasons so the user can compare records without blocking legitimate repeat applications.
 
 Follow-ups are tracking records: no email is drafted in a mailbox or sent by these actions. To retain draft text, use an `EMAIL_DRAFT` note. Automatic suggestions, scheduling, and external integrations remain later-release features.
 
@@ -76,7 +80,7 @@ Relative data paths resolve against the project root, regardless of the terminal
 `GET /api/health` checks the live database connection and returns:
 
 ```json
-{"status":"ok","version":"0.6.0","database":"connected"}
+{"status":"ok","version":"0.7.0","database":"connected"}
 ```
 
 It returns HTTP 503 if the database query fails. The frontend checks on load and when **Check again** is clicked, with a five-second timeout. It clears stale version/database values on a failed check. Continuous polling is not part of this release.
@@ -84,7 +88,7 @@ It returns HTTP 503 if the database query fails. The frontend checks on load and
 ## Applications API and migrations
 
 - `POST /api/applications` creates an application and returns HTTP 201 with the saved record.
-- `GET /api/applications` returns the saved records, ordered by applied date descending, then ID.
+- `GET /api/applications` returns saved records ordered by applied date descending, then ID. Optional query filters are `q`, `status`, `outcome`, `company`, `title`, `location`, `contract_type`, `source`, `remote_policy`, `date_from`, `date_to`, and `document_filename`.
 - `GET /api/applications/{id}` returns a full application or HTTP 404.
 - `PATCH /api/applications/{id}` updates only supplied fields and returns the saved application. Omitted fields stay unchanged; explicit null clears an optional field. Required fields cannot be null. Missing records return HTTP 404.
 - `DELETE /api/applications/{id}` performs a human-only soft deletion and returns HTTP 204. Deleted records return HTTP 404 and are excluded from normal application and global work lists.
@@ -112,7 +116,7 @@ Example POST body:
 }
 ```
 
-Alembic applies pending migrations automatically at backend startup, including upgrades from existing 0.1.0–0.5.0 databases. The fifth migration adds `deleted_at`, timeline events, audit entries, actor identity, and undo state while preserving existing records. Child tables enforce application foreign keys and valid statuses; follow-up numbers are unique within each application. Startup stops if migration fails. Tests use temporary databases. To inspect or explicitly apply migrations from the project root:
+Alembic applies pending migrations automatically at backend startup, including upgrades from existing 0.1.0–0.6.0 databases. The fifth migration adds `deleted_at`, timeline events, audit entries, actor identity, and undo state while preserving existing records; 0.7.0 requires no schema change. Child tables enforce application foreign keys and valid statuses; follow-up numbers are unique within each application. Startup stops if migration fails. Tests use temporary databases. To inspect or explicitly apply migrations from the project root:
 
 ```powershell
 .\.venv\Scripts\python.exe -m alembic current
@@ -171,6 +175,14 @@ The context response currently returns `documents: []` because document storage 
 
 Timeline and audit records are written in the same transaction as their domain mutation. Recorded events include application creation and edits, status/outcome/posting changes, notes, task creation/completion, follow-up creation/drafting/sending, interview creation/changes, deletion, and undo. Application deletion is rejected when the service actor is not `HUMAN`.
 
+## Search, duplicate warnings, and dashboard API
+
+Application filters are combined with AND logic. Text filters are case-insensitive partial matches; `q` searches title, company, location, remote policy, contract type, source, description, requirements, job URL, and email reference. Status/outcome are exact enum matches and date bounds are inclusive. `document_filename` intentionally returns no matches until documents are introduced in 0.8.0.
+
+`POST /api/applications` includes `duplicate_warnings` in its normal application response. A match is reported for the same normalized company/title or normalized job URL, with a recent-date reason when application dates are within 30 days. Warnings never change the HTTP 201 response or prevent persistence. Normal list/detail responses contain an empty warning list.
+
+`GET /api/dashboard` returns operational counts, due/overdue tasks and follow-ups, interviews scheduled within seven days, a due-date-ordered upcoming work list, and the ten most recent timeline events. Soft-deleted applications and their child work are excluded. Completed/cancelled tasks and sent/cancelled follow-ups do not count as due.
+
 ## Verify
 
 ```powershell
@@ -185,14 +197,14 @@ The frontend build runs the Vue/TypeScript checker and creates `frontend/dist`. 
 Manual checks:
 
 1. Start both servers, create an application, and click its position in the table.
-2. Change its status, add a note, complete a task, and edit an interview.
-3. Confirm each action appears newest-first in **Timeline** with a human actor and clear summary.
-4. Choose **Undo last change** and confirm the edited field and any coupled timestamp return to their prior values.
-5. Refresh the page and confirm the timeline and restored state persist.
-6. Create a second application, choose **Delete application**, then **Confirm delete**. Confirm it disappears from Applications, Interviews, and Tasks.
-7. Expand **System status** and confirm backend version **0.6.0** and **SQLite · Connected**.
+2. Create several varied applications, then search by title and filter by company, status, and date. Combine filters and clear them.
+3. Create a second record with the same company/title or job URL. Confirm it saves and shows a possible-duplicate warning linking to the first record.
+4. Add overdue and upcoming tasks/follow-ups plus an upcoming interview.
+5. Open **Dashboard** and confirm counts, due-date order, application links, and recent activity change with the data.
+6. Complete a due task, refresh Dashboard, and confirm its count/item disappear.
+7. Expand **System status** and confirm backend version **0.7.0** and **SQLite · Connected**.
 
-Verified for this release: 99 backend tests, 22 frontend tests, the frontend production build, Alembic migration consistency, dependency checks, and a browser workflow. Browser checks cover chronological event rendering, automatic refresh after task completion, atomic undo restoring task status/timestamp, the application delete confirmation step, and a clean-data return. Backend coverage includes automatic event creation, human/agent actor identity, soft-delete filtering, agent deletion rejection, migration from 0.5.0, and the existing application/work behavior. The Python test client currently emits two upstream deprecation warnings from Starlette; tests pass.
+Verified for this release: 114 backend tests, 24 frontend tests, the frontend production build, Alembic migration consistency, dependency checks, and a browser workflow. Coverage includes combined filters, free-text search, placeholder document filtering, non-blocking duplicate detection, dashboard counts/order, soft-delete exclusion, query serialization, and the existing application/work behavior. The Python test client currently emits two upstream deprecation warnings from Starlette; tests pass.
 
 The initial implementation session leaves both development servers running in the background for review. Their process IDs and logs are under the ignored `.run` directory. Before starting your own copies, stop those specific processes (check the command lines first; recorded IDs may be stale after a reboot):
 

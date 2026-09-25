@@ -50,6 +50,36 @@ class ApplicationCreate(BaseModel):
         return self
 
 
+class DuplicateMatch(BaseModel):
+    id: str
+    job_title: str
+    company: str
+    date_applied: date
+    reasons: list[str]
+
+
+class ApplicationFilters(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    q: str | None = None
+    status: ApplicationStatus | None = None
+    outcome: ApplicationOutcome | None = None
+    company: str | None = None
+    title: str | None = None
+    location: str | None = None
+    contract_type: str | None = None
+    source: str | None = None
+    remote_policy: str | None = None
+    date_from: date | None = None
+    date_to: date | None = None
+    document_filename: str | None = None
+
+    @field_validator("q", "company", "title", "location", "contract_type", "source", "remote_policy", "document_filename", mode="before")
+    @classmethod
+    def blank_filter(cls, value):
+        return (value.strip() or None) if isinstance(value, str) else value
+
+
 class ApplicationRead(ApplicationCreate):
     model_config = ConfigDict(from_attributes=True)
 
@@ -59,6 +89,7 @@ class ApplicationRead(ApplicationCreate):
     posting_status: PostingStatus
     posting_last_checked_at: datetime | None
     deleted_at: datetime | None
+    duplicate_warnings: list[DuplicateMatch] = Field(default_factory=list)
 
     @field_validator("posting_last_checked_at", "deleted_at")
     @classmethod

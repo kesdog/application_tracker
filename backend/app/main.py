@@ -13,12 +13,14 @@ from app.config import Settings
 from app.database import create_database, migrate_database
 from app import applications
 from app import activity
+from app import dashboard as dashboard_service
 from app import interviews
 from app import work
 from app.interview_schemas import InterviewContext, InterviewCreate, InterviewListItem, InterviewRead, InterviewUpdate, TaskListItem
 from app.activity_schemas import TimelineRead, UndoRead
+from app.dashboard_schemas import DashboardRead
 from app.work_schemas import FollowUpCreate, FollowUpRead, FollowUpUpdate, NoteCreate, NoteRead, NoteUpdate, TaskCreate, TaskRead, TaskUpdate, WorkRead
-from app.schemas import ApplicationCreate, ApplicationRead, ApplicationUpdate
+from app.schemas import ApplicationCreate, ApplicationFilters, ApplicationRead, ApplicationUpdate
 
 
 class HealthResponse(BaseModel):
@@ -68,8 +70,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return applications.create_application(session, data)
 
     @application.get("/api/applications", response_model=list[ApplicationRead])
-    def list_applications(session: Session = Depends(get_session)):
-        return applications.list_applications(session)
+    def list_applications(filters: ApplicationFilters = Depends(), session: Session = Depends(get_session)):
+        return applications.list_applications(session, filters)
 
     @application.get("/api/applications/{application_id}", response_model=ApplicationRead)
     def get_application(application_id: str, session: Session = Depends(get_session)):
@@ -154,6 +156,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.get("/api/tasks", response_model=list[TaskListItem])
     def list_tasks(session: Session = Depends(get_session)):
         return interviews.list_tasks(session)
+
+    @application.get("/api/dashboard", response_model=DashboardRead)
+    def get_dashboard(session: Session = Depends(get_session)):
+        return dashboard_service.dashboard(session)
 
     @application.get("/api/health", response_model=HealthResponse)
     def health() -> HealthResponse:

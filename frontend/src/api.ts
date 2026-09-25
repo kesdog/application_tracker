@@ -27,6 +27,13 @@ export interface Application extends ApplicationCreate {
   followup_delay_days: number | null
   max_followup_suggestions: number | null
   deleted_at: string | null
+  duplicate_warnings: DuplicateMatch[]
+}
+export interface DuplicateMatch { id: string; job_title: string; company: string; date_applied: string; reasons: string[] }
+export interface ApplicationFilters {
+  q?: string; status?: Application['status'] | ''; outcome?: NonNullable<Application['outcome']> | ''
+  company?: string; title?: string; location?: string; contract_type?: string; source?: string
+  remote_policy?: string; date_from?: string; date_to?: string; document_filename?: string
 }
 
 export type NoteType = 'GENERAL' | 'ASSESSMENT' | 'EMAIL_DRAFT' | 'INTERVIEW' | 'AGENT'
@@ -80,6 +87,10 @@ export interface TimelineEvent {
 }
 export interface Timeline { events: TimelineEvent[]; undo_available: boolean }
 export interface UndoResult { audit_id: string; entity_type: string; entity_id: string; fields: string[] }
+export interface DashboardCounts { active_applications: number; followups_due: number; followups_overdue: number; tasks_due: number; tasks_overdue: number; upcoming_interviews: number }
+export interface UpcomingItem { id: string; kind: 'TASK' | 'FOLLOWUP' | 'INTERVIEW'; title: string; due_at: string; status: string; application: ApplicationSummary }
+export interface RecentActivity { id: string; event_type: string; summary: string; actor_type: ActorType; created_at: string; application: ApplicationSummary }
+export interface DashboardData { counts: DashboardCounts; upcoming: UpcomingItem[]; recent_activity: RecentActivity[] }
 
 export function getWork(id: string): Promise<ApplicationWork> {
   return request(`/api/applications/${encodeURIComponent(id)}/work`)
@@ -147,9 +158,14 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 }
 
-export function listApplications(): Promise<Application[]> {
-  return request('/api/applications')
+export function listApplications(filters: ApplicationFilters = {}): Promise<Application[]> {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(filters)) if (value) params.set(key, value)
+  const query = params.toString()
+  return request(`/api/applications${query ? `?${query}` : ''}`)
 }
+
+export function getDashboard(): Promise<DashboardData> { return request('/api/dashboard') }
 
 export function getApplication(id: string): Promise<Application> {
   return request(`/api/applications/${encodeURIComponent(id)}`)

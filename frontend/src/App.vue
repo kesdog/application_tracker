@@ -4,11 +4,12 @@ import { getHealth, type Health } from './api'
 import Applications from './Applications.vue'
 import Interviews from './Interviews.vue'
 import Tasks from './Tasks.vue'
+import Dashboard from './Dashboard.vue'
 
 const status = ref<'checking' | 'connected' | 'disconnected'>('checking')
 const health = ref<Health | null>(null)
 const hash = ref(window.location.hash || '#/applications')
-const page = computed(() => hash.value.startsWith('#/interviews') ? 'interviews' : hash.value.startsWith('#/tasks') ? 'tasks' : 'applications')
+const page = computed(() => hash.value.startsWith('#/dashboard') ? 'dashboard' : hash.value.startsWith('#/interviews') ? 'interviews' : hash.value.startsWith('#/tasks') ? 'tasks' : 'applications')
 function route() { hash.value = window.location.hash || '#/applications' }
 
 async function checkConnection() {
@@ -28,9 +29,10 @@ onUnmounted(() => window.removeEventListener('hashchange', route))
 
 <template>
   <div class="shell">
-    <header><div class="brand"><span class="app-mark" aria-hidden="true">AT</span><h1>Application Tracker</h1></div><nav aria-label="Primary"><a href="#/applications" :class="{ active: page === 'applications' }">Applications</a><a href="#/interviews" :class="{ active: page === 'interviews' }">Interviews</a><a href="#/tasks" :class="{ active: page === 'tasks' }">Tasks</a></nav></header>
+    <header><div class="brand"><span class="app-mark" aria-hidden="true">AT</span><h1>Application Tracker</h1></div><nav aria-label="Primary"><a href="#/dashboard" :class="{ active: page === 'dashboard' }">Dashboard</a><a href="#/applications" :class="{ active: page === 'applications' }">Applications</a><a href="#/interviews" :class="{ active: page === 'interviews' }">Interviews</a><a href="#/tasks" :class="{ active: page === 'tasks' }">Tasks</a></nav></header>
     <main>
-      <Interviews v-if="page === 'interviews'" />
+      <Dashboard v-if="page === 'dashboard'" />
+      <Interviews v-else-if="page === 'interviews'" />
       <Tasks v-else-if="page === 'tasks'" />
       <Applications v-else />
 
@@ -50,7 +52,7 @@ onUnmounted(() => window.removeEventListener('hashchange', route))
       </section>
       </details>
     </main>
-    <footer>Application Tracker <span>0.6.0</span></footer>
+    <footer>Application Tracker <span>0.7.0</span></footer>
   </div>
 </template>
 
@@ -81,5 +83,5 @@ dl { margin: 0; border-top: 1px solid #e5e9ee; padding-top: 8px; }
 dl div { display: flex; justify-content: space-between; gap: 16px; padding-top: 16px; font-size: 14px; }
 dt { color: #576678; } dd { margin: 0; font-weight: 550; text-align: right; }
 footer { padding: 20px 32px; color: #627084; font-size: 12px; } footer span { margin-left: 8px; }
-@media (max-width: 600px) { header { padding: 14px 16px; align-items: flex-start; flex-direction: column; } nav { width: 100%; justify-content: space-between; } main { margin: 30px auto; padding: 0 16px; } .status-card { padding: 20px; } h2 { font-size: 25px; } }
+@media (max-width: 600px) { header { padding: 14px 16px; align-items: flex-start; flex-direction: column; } nav { width: 100%; justify-content: space-between; gap: 2px; } nav a { padding: 8px 6px; font-size: 12px; } main { margin: 30px auto; padding: 0 16px; } .status-card { padding: 20px; } h2 { font-size: 25px; } }
 </style>

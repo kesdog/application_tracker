@@ -1,12 +1,12 @@
 from datetime import timezone
 
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import false, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.activity import InvalidActor, record_audit, record_event
 from app.models import ActorType, Application, ApplicationStatus, utc_now
-from app.schemas import ApplicationCreate, ApplicationUpdate
+from app.schemas import ApplicationCreate, ApplicationFilters, ApplicationUpdate
 
 
 class ApplicationNotFound(Exception):
@@ -25,6 +25,7 @@ def create_application(
     session: Session, data: ApplicationCreate, *,
     actor_type: ActorType = ActorType.HUMAN, actor_reference: str | None = None,
 ) -> Application:
+    duplicates = find_possible_duplicates(session, data)
     application = Application(**data.model_dump())
     session.add(application)
     session.flush()
@@ -32,11 +33,70 @@ def create_application(
     record_audit(session, application.id, "APPLICATION", application.id, "CREATE", new=data.model_dump(), actor_type=actor_type, actor_reference=actor_reference)
     session.commit()
     session.refresh(application)
+    application.duplicate_warnings = duplicates
     return application
 
 
-def list_applications(session: Session) -> list[Application]:
-    return list(session.scalars(select(Application).where(Application.deleted_at.is_(None)).order_by(Application.date_applied.desc(), Application.id)))
+def list_applications(session: Session, filters: ApplicationFilters | None = None) -> list[Application]:
+    filters = filters or ApplicationFilters()
+    query = select(Application).where(Application.deleted_at.is_(None))
+    if filters.q:
+        term = filters.q.casefold()
+        searchable = (
+            Application.job_title, Application.company, Application.location, Application.remote_policy,
+            Application.contract_type, Application.source, Application.description, Application.requirements,
+            Application.job_url, Application.email_reference,
+        )
+        query = query.where(or_(*(func.lower(func.coalesce(column, "")).contains(term, autoescape=True) for column in searchable)))
+    if filters.status:
+        query = query.where(Application.status == filters.status)
+    if filters.outcome:
+        query = query.where(Application.outcome == filters.outcome)
+    for value, column in (
+        (filters.company, Application.company), (filters.title, Application.job_title),
+        (filters.location, Application.location), (filters.contract_type, Application.contract_type),
+        (filters.source, Application.source), (filters.remote_policy, Application.remote_policy),
+    ):
+        if value:
+            query = query.where(func.lower(func.coalesce(column, "")).contains(value.casefold(), autoescape=True))
+    if filters.date_from:
+        query = query.where(Application.date_applied >= filters.date_from)
+    if filters.date_to:
+        query = query.where(Application.date_applied <= filters.date_to)
+    if filters.document_filename:
+        # Documents are introduced in 0.8.0; keep the filter contract stable now.
+        query = query.where(false())
+    return list(session.scalars(query.order_by(Application.date_applied.desc(), Application.id)))
+
+
+def normalized(value: str | None) -> str:
+    return " ".join((value or "").casefold().split())
+
+
+def normalized_url(value: str | None) -> str:
+    return normalized(value).rstrip("/")
+
+
+def find_possible_duplicates(session: Session, data: ApplicationCreate) -> list[dict]:
+    company = normalized(data.company)
+    title = normalized(data.job_title)
+    job_url = normalized_url(data.job_url)
+    matches = []
+    for candidate in session.scalars(select(Application).where(Application.deleted_at.is_(None))):
+        reasons = []
+        if company == normalized(candidate.company) and title == normalized(candidate.job_title):
+            reasons.append("same company and title")
+        if job_url and job_url == normalized_url(candidate.job_url):
+            reasons.append("same job URL")
+        if not reasons:
+            continue
+        if abs((data.date_applied - candidate.date_applied).days) <= 30:
+            reasons.append("application dates within 30 days")
+        matches.append({
+            "id": candidate.id, "job_title": candidate.job_title, "company": candidate.company,
+            "date_applied": candidate.date_applied, "reasons": reasons,
+        })
+    return sorted(matches, key=lambda item: (item["date_applied"], item["id"]), reverse=True)
 
 
 def get_application(session: Session, application_id: str) -> Application:
