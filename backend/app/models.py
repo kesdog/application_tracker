@@ -30,6 +30,11 @@ class PostingStatus(str, Enum):
     CLOSED = "CLOSED"
 
 
+class ContactType(str, Enum):
+    EMAIL = "EMAIL"
+    PHONE = "PHONE"
+
+
 class ActorType(str, Enum):
     HUMAN = "HUMAN"
     AGENT = "AGENT"
@@ -51,6 +56,10 @@ class Application(Base):
     job_url: Mapped[str | None] = mapped_column(String(2048))
     email_reference: Mapped[str | None] = mapped_column(String(2048))
     phone_number: Mapped[str | None] = mapped_column(String(20))
+    contact_type: Mapped[ContactType] = mapped_column(
+        SqlEnum(ContactType, native_enum=False, create_constraint=True, name="contact_type"),
+        default=ContactType.EMAIL, server_default="EMAIL",
+    )
     location: Mapped[str | None] = mapped_column(String(300))
     remote_policy: Mapped[str | None] = mapped_column(String(300))
     contract_type: Mapped[str | None] = mapped_column(String(300))

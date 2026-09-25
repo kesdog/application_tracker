@@ -5,6 +5,7 @@ import ApplicationWork from './ApplicationWork.vue'
 import ApplicationInterviews from './ApplicationInterviews.vue'
 import ApplicationTimeline from './ApplicationTimeline.vue'
 import ApplicationDocuments from './ApplicationDocuments.vue'
+import { contactTypes, detectJobSource, jobSourceLabel, jobSources, remotePolicies, remotePolicyLabel } from './applicationOptions'
 
 const props = defineProps<{ id: string }>()
 const application = ref<Application | null>(null)
@@ -23,11 +24,12 @@ const outcomes = ['SUCCESSFUL', 'UNSUCCESSFUL', 'WITHDRAWN', 'JOB_CANCELLED', 'G
 const statuses = ['SUBMITTED', 'INTERVIEW', 'CLOSED'] as const
 const postingStates = ['UNKNOWN', 'LIVE', 'CLOSED'] as const
 const optionalFields = [
-  { key: 'location', label: 'Location' }, { key: 'remote_policy', label: 'Remote policy' },
-  { key: 'contract_type', label: 'Contract type' }, { key: 'source', label: 'Source' },
+  { key: 'location', label: 'Location' }, { key: 'contract_type', label: 'Contract type' },
 ] as const
-const editableFields = ['job_title', 'company', 'date_applied', 'job_url', 'email_reference', 'phone_number', 'location', 'remote_policy', 'contract_type', 'source', 'description', 'requirements', 'status', 'outcome', 'posting_status', 'followup_delay_days', 'max_followup_suggestions'] as const
+const editableFields = ['job_title', 'company', 'date_applied', 'job_url', 'email_reference', 'phone_number', 'contact_type', 'location', 'remote_policy', 'contract_type', 'source', 'description', 'requirements', 'status', 'outcome', 'posting_status', 'followup_delay_days', 'max_followup_suggestions'] as const
 const needsOutcomeClear = computed(() => application.value?.status === 'CLOSED' && application.value.outcome !== null && draft.value !== null && draft.value.status !== 'CLOSED')
+const isKnownRemotePolicy = (value: string | null) => remotePolicies.some(option => option.value === value)
+const isKnownJobSource = (value: string | null) => jobSources.some(option => option.value === value)
 
 function localDateTime(value: string | null) {
   if (!value) return ''
@@ -57,6 +59,12 @@ function edit() {
 
 function selectOutcome() {
   if (draft.value?.outcome) draft.value.status = 'CLOSED'
+}
+
+function onJobUrlChanged() {
+  if (draft.value && application.value && draft.value.source === application.value.source) {
+    draft.value.source = detectJobSource(draft.value.job_url ?? '')
+  }
 }
 
 async function save() {
@@ -131,12 +139,15 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
             <label>Company<input v-model="draft.company" required maxlength="300" /></label>
             <label>Date applied<input v-model="draft.date_applied" type="date" required /></label>
             <label v-for="field in optionalFields" :key="field.key">{{ field.label }}<input v-model="draft[field.key]" maxlength="300" /></label>
+            <label>Remote policy<select v-model="draft.remote_policy"><option :value="null">Not specified</option><option v-if="draft.remote_policy && !isKnownRemotePolicy(draft.remote_policy)" :value="draft.remote_policy">Existing: {{ draft.remote_policy }}</option><option v-for="option in remotePolicies" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
+            <label>Source<select v-model="draft.source"><option :value="null">Not specified</option><option v-if="draft.source && !isKnownJobSource(draft.source)" :value="draft.source">Existing: {{ draft.source }}</option><option v-for="option in jobSources" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
           </div>
           <p class="hint">Keep at least one source: a job URL or an email reference.</p>
           <div class="grid">
-            <label>Job URL<input v-model="draft.job_url" type="url" maxlength="2048" /></label>
+            <label>Job URL<input v-model="draft.job_url" type="url" maxlength="2048" @change="onJobUrlChanged" /></label>
             <label>Email reference<input v-model="draft.email_reference" maxlength="2048" /></label>
-            <label>Phone number (optional)<input v-model="draft.phone_number" type="tel" autocomplete="tel" placeholder="+33 6 12 34 56 78" /><small>French number or +country code for other countries.</small></label>
+            <label>Contact type<select v-model="draft.contact_type"><option v-for="option in contactTypes" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
+            <label>Phone number {{ draft.contact_type === 'PHONE' ? '(required for phone contact)' : '(optional)' }}<input v-model="draft.phone_number" type="tel" autocomplete="tel" placeholder="+33 6 12 34 56 78" :required="draft.contact_type === 'PHONE'" /><small>French number or +country code for other countries.</small></label>
           </div>
           <label class="long-field">Description<textarea v-model="draft.description" rows="4"></textarea></label>
           <label class="long-field">Requirements<textarea v-model="draft.requirements" rows="4"></textarea></label>
@@ -182,6 +193,9 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
             <div><dt>Job URL</dt><dd><a v-if="application.job_url" :href="application.job_url" target="_blank" rel="noopener noreferrer">{{ application.job_url }} ↗</a><span v-else>Not provided</span></dd></div>
             <div><dt>Email reference</dt><dd>{{ application.email_reference ?? 'Not provided' }}</dd></div>
             <div><dt>Phone number</dt><dd><a v-if="application.phone_number" :href="`tel:${application.phone_number}`">{{ application.phone_number }}</a><span v-else>Not provided</span></dd></div>
+            <div><dt>Contact type</dt><dd>{{ application.contact_type === 'PHONE' ? 'Phone' : 'Email' }}</dd></div>
+            <div><dt>Remote policy</dt><dd>{{ remotePolicyLabel(application.remote_policy) }}</dd></div>
+            <div><dt>Source</dt><dd>{{ jobSourceLabel(application.source) }}</dd></div>
             <div v-for="field in optionalFields" :key="field.key"><dt>{{ field.label }}</dt><dd>{{ application[field.key] ?? 'Not provided' }}</dd></div>
           </dl>
         </section>

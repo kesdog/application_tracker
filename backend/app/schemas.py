@@ -4,7 +4,7 @@ from typing import Annotated, Self
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, HttpUrl, TypeAdapter, field_validator, model_validator
 import phonenumbers
 
-from app.models import ApplicationOutcome, ApplicationStatus, PostingStatus
+from app.models import ApplicationOutcome, ApplicationStatus, ContactType, PostingStatus
 
 ShortText = Annotated[str, Field(min_length=1, max_length=300)]
 Reference = Annotated[str, Field(max_length=2048)]
@@ -19,6 +19,7 @@ class ApplicationCreate(BaseModel):
     job_url: Reference | None = None
     email_reference: Reference | None = None
     phone_number: str | None = Field(default=None, max_length=30)
+    contact_type: ContactType = ContactType.EMAIL
     location: ShortText | None = None
     remote_policy: ShortText | None = None
     contract_type: ShortText | None = None
@@ -64,6 +65,8 @@ class ApplicationCreate(BaseModel):
     def require_source(self) -> Self:
         if not self.job_url and not self.email_reference:
             raise ValueError("Provide a job URL or an email reference")
+        if self.contact_type == ContactType.PHONE and not self.phone_number:
+            raise ValueError("Provide a phone number when contact type is phone")
         return self
 
 

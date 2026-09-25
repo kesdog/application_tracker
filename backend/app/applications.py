@@ -5,6 +5,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.activity import InvalidActor, record_audit, record_event
+from app.job_sources import infer_job_source
 from app.models import ActorType, Application, ApplicationDocument, ApplicationStatus, utc_now
 from app.schemas import ApplicationCreate, ApplicationFilters, ApplicationUpdate
 
@@ -25,6 +26,8 @@ def create_application(
     session: Session, data: ApplicationCreate, *,
     actor_type: ActorType = ActorType.HUMAN, actor_reference: str | None = None,
 ) -> Application:
+    if data.source is None:
+        data = data.model_copy(update={"source": infer_job_source(data.job_url)})
     duplicates = find_possible_duplicates(session, data)
     application = Application(**data.model_dump())
     session.add(application)

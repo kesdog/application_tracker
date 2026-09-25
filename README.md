@@ -2,9 +2,9 @@
 
 Version **0.10.0** adds validated application phone numbers, email/phone/both follow-ups, a read-only reminder scheduler, local email-draft fallback, calendar downloads, and Windows/Docker packaging to the FastAPI, SQLite WAL, and Vue 3 + TypeScript tracker.
 
-Use **Add application** to record a job title, company, date applied, and either a job URL or email reference. An optional phone number supports call follow-ups. French national numbers and numbers with an international `+` prefix are accepted, validated, and stored in E.164 format. The same backend schema validates human API, agent REST, and MCP requests. Saved records appear in a compact table ordered by applied date, newest first. Every new application starts as `SUBMITTED` with no outcome. Job URLs open in a new tab; email references are displayed in the source column. On narrow windows, scroll the table horizontally to see all columns. The health screen remains available under **System status**.
+The left sidebar opens **Dashboard**, **Applications**, **Interviews**, **Tasks**, and **Settings**. **Add application** is its own screen under Applications with a breadcrumb back to the list. Record a job title, company, date applied, and either a job URL or email reference. Choose a contact type (email or phone), a remote policy (full remote, hybrid, or in person), and a source from the job-board list. The source defaults to a recognized board from the posting URL—Indeed, LinkedIn, Free-Work, or HelloWork—or Other, and can be changed manually. A phone number is optional for email contact and required for phone contact. French national numbers and numbers with an international `+` prefix are accepted, validated, and stored in E.164 format. The same backend schema validates human API, agent REST, and MCP requests. Saved records appear in a compact table ordered by applied date, newest first. Every new application starts as `SUBMITTED` with no outcome. On narrow windows, scroll the table horizontally to see all columns. **System status** is visible only in Settings.
 
-Click a position in the table to open its focus view. **Edit application** lets you update its title, company, date, sources, location, remote policy, contract type, source, description, requirements, status, outcome, and posting state. **Cancel** discards the current draft. Focus URLs use a hash and can be bookmarked or refreshed without a router dependency. Return with **All applications** to see updated status/outcome badges.
+Click a position in the table to open its focus view. **Edit application** lets you update its title, company, date, contact type, phone number, posting URL or email reference, location, remote policy, contract type, source, description, requirements, status, outcome, and posting state. **Cancel** discards the current draft. Focus URLs use a hash and can be bookmarked or refreshed without a router dependency. Return with **All applications** to see updated status/outcome badges.
 
 Selecting an outcome closes the application. To reopen an application that already has an outcome, select an active status and explicitly check **Clear the existing outcome**. Posting state is independent of the application lifecycle; marking a posting closed does not close the application. Posting checks are recorded manually.
 
@@ -12,7 +12,7 @@ The focus view contains **Documents**, **Interviews**, **Notes**, **Tasks**, and
 
 The **Timeline** records application, note, task, follow-up, interview, outcome, and posting-state activity with the actor and time. Reversible edits expose **Undo last change**. Undo restores the complete prior field snapshot, including coupled values such as a task status and completion timestamp. Application deletion requires a second human confirmation and sets `deleted_at`; deleted applications and their work disappear from normal lists without removing database records.
 
-Use the top navigation to open **Interviews** or **Tasks**. Interviews are ordered by scheduled date and show their application, meeting context, and near-term wording such as “Technical interview — tomorrow at 14:00.” Tasks are ordered by due date, show their parent application, and can be completed, cancelled, or reopened from the global view.
+Use the sidebar to open **Interviews** or **Tasks**. Interviews are ordered by scheduled date and show their application, meeting context, and near-term wording such as “Technical interview — tomorrow at 14:00.” Tasks are ordered by due date, show their parent application, and can be completed, cancelled, or reopened from the global view.
 
 Use **Dashboard** to see active application count, due and overdue tasks/follow-ups, upcoming interviews, linked work for the next seven days, and recent activity. The Applications page supports free-text search plus status, outcome, company, position, location, contract, source, remote policy, document filename, and application-date filters. Filters combine, can be cleared together, and retain the existing newest-first order. The export panel downloads all applications or the current filtered view as CSV or formatted XLSX.
 
@@ -89,7 +89,7 @@ Relative data paths resolve against the project root, regardless of the terminal
 {"status":"ok","version":"0.10.0","database":"connected"}
 ```
 
-It returns HTTP 503 if the database query fails. The frontend checks on load and when **Check again** is clicked, with a five-second timeout. It clears stale version/database values on a failed check. Continuous polling is not part of this release.
+It returns HTTP 503 if the database query fails. The Settings page checks on load and when **Check again** is clicked, with a five-second timeout. It clears stale version/database values on a failed check. Continuous polling is not part of this release.
 
 ## Applications API and migrations
 
@@ -122,7 +122,7 @@ Example POST body:
 }
 ```
 
-Alembic applies pending migrations automatically at backend startup, including upgrades from existing 0.1.0–0.9.0 databases. Migration `0008_phone_and_followup_channels` adds optional application phone numbers and defaults existing follow-ups to `EMAIL` while preserving existing records. Child tables enforce application foreign keys and valid statuses; follow-up numbers are unique within each application. Startup stops if migration fails. Tests use temporary databases. To inspect or explicitly apply migrations from the project root:
+Alembic applies pending migrations automatically at backend startup, including upgrades from existing 0.1.0–0.10.0 databases. Migration `0008_phone_and_followup_channels` adds optional application phone numbers and defaults existing follow-ups to `EMAIL`; migration `0009_application_contact_type` defaults existing applications to `EMAIL` contact. Child tables enforce application foreign keys and valid statuses; follow-up numbers are unique within each application. Startup stops if migration fails. Tests use temporary databases. To inspect or explicitly apply migrations from the project root:
 
 ```powershell
 .\.venv\Scripts\python.exe -m alembic current
@@ -183,7 +183,7 @@ Timeline and audit records are written in the same transaction as their domain m
 
 ## Search, duplicate warnings, and dashboard API
 
-Application filters are combined with AND logic. Text filters are case-insensitive partial matches; `q` searches title, company, location, remote policy, contract type, source, description, requirements, job URL, and email reference. Status/outcome are exact enum matches, date bounds are inclusive, and `document_filename` matches attached filenames.
+Application filters are combined with AND logic. Text filters are case-insensitive partial matches; `q` searches title, company, location, remote policy, contract type, source, description, requirements, job URL, email reference, and phone number. Status/outcome are exact enum matches, date bounds are inclusive, and `document_filename` matches attached filenames.
 
 `POST /api/applications` includes `duplicate_warnings` in its normal application response. A match is reported for the same normalized company/title or normalized job URL, with a recent-date reason when application dates are within 30 days. Warnings never change the HTTP 201 response or prevent persistence. Normal list/detail responses contain an empty warning list.
 

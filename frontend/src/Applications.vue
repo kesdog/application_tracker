@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { applicationExportUrl, createApplication, listApplications, type Application, type ApplicationFilters, type DuplicateMatch } from './api'
+import { applicationExportUrl, listApplications, type Application, type ApplicationFilters } from './api'
 import ApplicationFocus from './ApplicationFocus.vue'
+import { jobSourceLabel, jobSources, remotePolicies } from './applicationOptions'
 
 function selectedId() {
   const match = window.location.hash.match(/^#\/applications\/([^/]+)$/)
@@ -10,25 +11,15 @@ function selectedId() {
 const focusedId = ref(selectedId())
 function navigate() {
   focusedId.value = selectedId()
-  if (!focusedId.value) { success.value = ''; void refresh() }
+  if (!focusedId.value) void refresh()
 }
 
 const applications = ref<Application[]>([])
 const loading = ref(false)
-const saving = ref(false)
-const showForm = ref(false)
 const loadError = ref('')
-const formError = ref('')
-const success = ref('')
-const duplicateWarnings = ref<DuplicateMatch[]>([])
 const exportFormat = ref<'csv' | 'xlsx'>('csv')
 const statuses = ['', 'SUBMITTED', 'INTERVIEW', 'CLOSED'] as const
 const outcomes = ['', 'SUCCESSFUL', 'UNSUCCESSFUL', 'WITHDRAWN', 'JOB_CANCELLED', 'GHOSTED'] as const
-function today() {
-  const date = new Date()
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-const form = reactive({ job_title: '', company: '', date_applied: today(), job_url: '', email_reference: '', phone_number: '' })
 const blankFilters = (): ApplicationFilters => ({ q: '', status: '', outcome: '', company: '', title: '', location: '', contract_type: '', source: '', remote_policy: '', date_from: '', date_to: '', document_filename: '' })
 const filters = reactive<ApplicationFilters>(blankFilters())
 const hasFilters = computed(() => Object.values(filters).some(Boolean))
@@ -44,35 +35,6 @@ async function refresh() {
     loadError.value = 'Unable to load applications. Check that the backend is running, then refresh the list.'
   } finally {
     loading.value = false
-  }
-}
-
-async function submit() {
-  if (saving.value) return
-  formError.value = ''
-  success.value = ''
-  duplicateWarnings.value = []
-  if (!form.job_url.trim() && !form.email_reference.trim()) {
-    formError.value = 'Provide a job URL or an email reference.'
-    return
-  }
-  saving.value = true
-  try {
-    const application = await createApplication({
-      job_title: form.job_title.trim(), company: form.company.trim(), date_applied: form.date_applied,
-      job_url: form.job_url.trim() || null, email_reference: form.email_reference.trim() || null, phone_number: form.phone_number.trim() || null,
-    })
-    duplicateWarnings.value = application.duplicate_warnings
-    await refresh()
-    success.value = `Saved ${application.job_title} at ${application.company}.`
-    Object.assign(form, { job_title: '', company: '', date_applied: today(), job_url: '', email_reference: '', phone_number: '' })
-    showForm.value = false
-  } catch (error) {
-    formError.value = error instanceof TypeError || (error instanceof Error && error.name === 'AbortError')
-      ? 'Could not confirm the save. Refresh the list before retrying to avoid a duplicate. Your form entries have been kept.'
-      : error instanceof Error ? error.message : 'Unable to save the application.'
-  } finally {
-    saving.value = false
   }
 }
 
@@ -98,35 +60,9 @@ onUnmounted(() => { window.removeEventListener('hashchange', navigate); window.r
   <section v-else aria-labelledby="applications-title">
     <div class="page-heading">
       <div><p class="eyebrow">Your workspace</p><h2 id="applications-title">Applications</h2></div>
-      <button v-if="!showForm" class="primary" type="button" @click="showForm = true; success = ''; formError = ''">Add application</button>
+      <a class="primary add-link" href="#/applications/new">Add application</a>
     </div>
     <p class="intro">Keep track of the roles you have applied for.</p>
-    <p v-if="success" class="success" role="status">{{ success }}</p>
-    <aside v-if="duplicateWarnings.length" class="duplicate-warning" role="status"><strong>Possible duplicate{{ duplicateWarnings.length === 1 ? '' : 's' }} found.</strong><p>The application was saved. Compare it with:</p><ul><li v-for="match in duplicateWarnings" :key="match.id"><a :href="`#/applications/${match.id}`">{{ match.job_title }} at {{ match.company }}</a> — {{ match.date_applied }} · {{ match.reasons.join(', ') }}</li></ul></aside>
-
-    <form v-if="showForm" class="application-form" @submit.prevent="submit">
-      <h3>New application</h3>
-      <fieldset :disabled="saving">
-        <legend class="sr-only">Application details</legend>
-        <div class="form-grid">
-          <label>Job title <span>(required)</span><input v-model="form.job_title" name="job_title" required maxlength="300" autocomplete="off" /></label>
-          <label>Company <span>(required)</span><input v-model="form.company" name="company" required maxlength="300" autocomplete="organization" /></label>
-          <label>Date applied <span>(required)</span><input v-model="form.date_applied" name="date_applied" type="date" required /></label>
-        </div>
-        <p id="source-help" class="source-help">Provide at least one source: a job URL or an email reference.</p>
-        <div class="form-grid">
-          <label>Job URL<input v-model="form.job_url" name="job_url" type="url" placeholder="https://…" maxlength="2048" aria-describedby="source-help" /></label>
-          <label>Email reference<input v-model="form.email_reference" name="email_reference" placeholder="Message link, ID, or subject" maxlength="2048" aria-describedby="source-help" /></label>
-          <label>Phone number (optional)<input v-model="form.phone_number" name="phone_number" type="tel" autocomplete="tel" placeholder="+33 6 12 34 56 78" aria-describedby="phone-help" /><small id="phone-help">French number or +country code for other countries. Used for phone follow-ups.</small></label>
-        </div>
-      </fieldset>
-      <p v-if="formError" class="error" role="alert">{{ formError }}</p>
-      <div class="form-actions">
-        <button class="primary" type="submit" :disabled="saving || loading">{{ saving ? 'Saving…' : 'Save application' }}</button>
-        <button type="button" :disabled="saving" @click="showForm = false">Cancel</button>
-      </div>
-    </form>
-
     <form class="filters" aria-label="Application filters" @submit.prevent="refresh">
       <div class="filter-heading"><h3>Search and filters</h3><button v-if="hasFilters" type="button" :disabled="loading" @click="clearFilters">Clear filters</button></div>
       <div class="filter-grid">
@@ -134,7 +70,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', navigate); window.r
         <label>Status<select v-model="filters.status"><option v-for="status in statuses" :key="status" :value="status">{{ status || 'Any status' }}</option></select></label>
         <label>Outcome<select v-model="filters.outcome"><option v-for="outcome in outcomes" :key="outcome" :value="outcome">{{ outcome || 'Any outcome' }}</option></select></label>
         <label>Company<input v-model="filters.company" /></label><label>Position<input v-model="filters.title" /></label><label>Location<input v-model="filters.location" /></label>
-        <label>Contract type<input v-model="filters.contract_type" /></label><label>Source<input v-model="filters.source" /></label><label>Remote policy<input v-model="filters.remote_policy" /></label>
+        <label>Contract type<input v-model="filters.contract_type" /></label><label>Source<select v-model="filters.source"><option value="">Any source</option><option v-for="option in jobSources" :key="option.value" :value="option.value">{{ option.label }}</option></select></label><label>Remote policy<select v-model="filters.remote_policy"><option value="">Any policy</option><option v-for="option in remotePolicies" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
         <label>Document filename<input v-model="filters.document_filename" placeholder="CV or cover letter filename" /></label>
         <label>Applied from<input v-model="filters.date_from" type="date" /></label><label>Applied to<input v-model="filters.date_to" type="date" /></label>
       </div>
@@ -148,7 +84,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', navigate); window.r
       <a class="export-link primary" :href="exportCurrentUrl" :download="`applications.${exportFormat}`">Export current view</a>
     </section>
 
-    <div class="list-heading"><span>{{ applications.length }} {{ applications.length === 1 ? 'application' : 'applications' }}{{ hasFilters ? ' matched' : '' }}</span><button type="button" :disabled="loading || saving" @click="refresh">{{ loading ? 'Loading…' : 'Refresh list' }}</button></div>
+    <div class="list-heading"><span>{{ applications.length }} {{ applications.length === 1 ? 'application' : 'applications' }}{{ hasFilters ? ' matched' : '' }}</span><button type="button" :disabled="loading" @click="refresh">{{ loading ? 'Loading…' : 'Refresh list' }}</button></div>
     <p v-if="loadError" class="error" role="alert">{{ loadError }}</p>
     <div class="table-panel" :aria-busy="loading">
       <p v-if="loading && !applications.length" class="empty" role="status">Loading applications…</p>
@@ -161,7 +97,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', navigate); window.r
             <td class="date-cell">{{ application.date_applied }}</td><td>{{ application.company }}</td><td><a :href="`#/applications/${application.id}`">{{ application.job_title }}</a></td>
             <td><span class="status-badge" :class="application.status.toLowerCase()">{{ application.status }}</span></td>
             <td><span v-if="application.outcome" class="status-badge" :class="application.outcome.toLowerCase()">{{ application.outcome }}</span><span v-else>—</span></td>
-            <td class="source-cell"><a v-if="application.job_url" :href="application.job_url" target="_blank" rel="noopener noreferrer">Job posting ↗</a><span v-if="application.email_reference" class="email-reference">{{ application.email_reference }}</span></td>
+            <td class="source-cell"><span>{{ jobSourceLabel(application.source) }}</span><a v-if="application.job_url" :href="application.job_url" target="_blank" rel="noopener noreferrer">Job posting ↗</a><span v-if="application.email_reference" class="email-reference">{{ application.email_reference }}</span></td>
           </tr></tbody>
         </table>
       </div>
@@ -173,17 +109,15 @@ onUnmounted(() => { window.removeEventListener('hashchange', navigate); window.r
 .page-heading, .list-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .primary { background: #263e5c; border-color: #263e5c; color: #fff; }
 .primary:hover:enabled { background: #192d45; }
-.application-form, .filters { background: #fff; border: 1px solid #dce2e9; border-radius: 8px; padding: 24px; margin-bottom: 24px; }
+.add-link { display:inline-flex; align-items:center; min-height:40px; padding:9px 13px; border-radius:6px; text-decoration:none; white-space:nowrap; }
+.page-heading .add-link { color:#fff; }
+.filters { background: #fff; border: 1px solid #dce2e9; border-radius: 8px; padding: 24px; margin-bottom: 24px; }
 .exports { display: grid; grid-template-columns: minmax(0, 1fr) 150px auto auto; align-items: end; gap: 14px; background: #f7f9fb; border: 1px solid #dce2e9; border-radius: 8px; padding: 18px; margin-bottom: 24px; }.exports h3 { margin-bottom: 5px; }.exports p { margin: 0; color: #576678; font-size: 13px; }.export-link { display: inline-flex; justify-content: center; align-items: center; min-height: 40px; border: 1px solid #b9c4d2; border-radius: 5px; padding: 9px 13px; text-decoration: none; white-space: nowrap; }
 .filter-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }.filter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }.search-field { grid-column: span 2; }
-fieldset { border: 0; padding: 0; margin: 20px 0; min-width: 0; }
-.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 label { display: block; font-size: 14px; font-weight: 600; }
 label span { color: #576678; font-size: 12px; font-weight: 400; }
 input, select { display: block; width: 100%; min-width: 0; border: 1px solid #b9c4d2; border-radius: 5px; padding: 10px; margin-top: 7px; font: inherit; font-weight: 400; color: #202c3d; background: #fff; }
 input:focus-visible, select:focus-visible, .table-scroll:focus-visible { outline: 3px solid #527ba8; outline-offset: 2px; }
-.source-help { font-size: 13px; color: #576678; margin: 22px 0 14px; }
-.form-actions { display: flex; gap: 10px; }
 .list-heading { margin: 24px 0 12px; font-size: 14px; color: #576678; }
 .table-panel { background: #fff; border: 1px solid #dce2e9; border-radius: 8px; overflow: hidden; }
 .table-scroll { overflow-x: auto; }
@@ -199,8 +133,6 @@ tr:last-child td { border-bottom: 0; }
 a { color: #24568b; text-underline-offset: 3px; }
 .email-reference { display: block; margin-top: 4px; white-space: pre-wrap; }
 .empty { padding: 32px 24px; margin: 0; color: #576678; font-size: 14px; line-height: 1.6; }
-.success { color: #216344; padding: 12px 16px; background: #eaf5ee; border-radius: 6px; font-size: 14px; }
-.duplicate-warning { color: #71430f; padding: 15px 18px; background: #fff1de; border: 1px solid #f0d4ae; border-radius: 6px; font-size: 14px; margin-bottom: 20px; }.duplicate-warning p { margin: 6px 0; }.duplicate-warning ul { margin: 8px 0 0; padding-left: 20px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-@media (max-width: 900px) { .exports { grid-template-columns: 1fr 150px; }.exports div { grid-column: span 2; } }@media (max-width: 750px) { .filter-grid { grid-template-columns: 1fr 1fr; }.search-field { grid-column: span 2; } }@media (max-width: 600px) { .form-grid, .filter-grid, .exports { grid-template-columns: 1fr; } .exports div { grid-column: span 1; }.search-field { grid-column: span 1; }.application-form, .filters { padding: 18px; } .page-heading { align-items: flex-start; } }
+@media (max-width: 900px) { .exports { grid-template-columns: 1fr 150px; }.exports div { grid-column: span 2; } }@media (max-width: 750px) { .filter-grid { grid-template-columns: 1fr 1fr; }.search-field { grid-column: span 2; } }@media (max-width: 600px) { .filter-grid, .exports { grid-template-columns: 1fr; } .exports div { grid-column: span 1; }.search-field { grid-column: span 1; }.filters { padding: 18px; } .page-heading { align-items: flex-start; } }
 </style>

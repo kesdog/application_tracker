@@ -11,10 +11,18 @@ export interface ApplicationCreate {
   job_url: string | null
   email_reference: string | null
   phone_number: string | null
+  contact_type?: 'EMAIL' | 'PHONE'
+  location?: string | null
+  remote_policy?: string | null
+  contract_type?: string | null
+  source?: string | null
+  description?: string | null
+  requirements?: string | null
 }
 
 export interface Application extends ApplicationCreate {
   id: string
+  contact_type: 'EMAIL' | 'PHONE'
   status: 'SUBMITTED' | 'INTERVIEW' | 'CLOSED'
   outcome: 'SUCCESSFUL' | 'UNSUCCESSFUL' | 'WITHDRAWN' | 'JOB_CANCELLED' | 'GHOSTED' | null
   location: string | null

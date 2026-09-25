@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { getAgentSettings, getIntegrationStatus, regenerateAgentToken, saveAgentPermissions, type AgentPermissions, type AgentSettings, type IntegrationStatus } from './api'
+import { getAgentSettings, getHealth, getIntegrationStatus, regenerateAgentToken, saveAgentPermissions, type AgentPermissions, type AgentSettings, type Health, type IntegrationStatus } from './api'
 
 const settings = ref<AgentSettings | null>(null)
 const integrations = ref<IntegrationStatus | null>(null)
+const health = ref<Health | null>(null)
+const connection = ref<'checking' | 'connected' | 'disconnected'>('checking')
 const token = ref('')
 const loading = ref(true)
 const saving = ref(false)
@@ -26,6 +28,13 @@ async function load() {
   finally { loading.value = false }
 }
 
+async function checkConnection() {
+  connection.value = 'checking'
+  health.value = null
+  try { health.value = await getHealth(); connection.value = 'connected' }
+  catch { connection.value = 'disconnected' }
+}
+
 async function generate() {
   saving.value = true; error.value = ''; message.value = ''; token.value = ''
   try {
@@ -43,13 +52,14 @@ async function save() {
   finally { saving.value = false }
 }
 
-onMounted(load)
+onMounted(() => { void load(); void checkConnection() })
 </script>
 
 <template>
   <section aria-labelledby="agent-settings-title">
-    <p class="eyebrow">Local settings</p><h2 id="agent-settings-title">Agent access</h2>
-    <p class="intro">Create a token for an external agent, then choose what it can do. Agents cannot delete applications.</p>
+    <p class="eyebrow">Your workspace</p><h2 id="agent-settings-title">Settings</h2>
+    <p class="intro">Manage agent access, integrations, and local system status.</p>
+    <h3>Agent access</h3><p class="hint">Create a token for an external agent, then choose what it can do. Agents cannot delete applications.</p>
     <p v-if="loading" role="status">Loading agent settings…</p><p v-if="error" class="error" role="alert">{{ error }}</p>
     <template v-if="settings">
       <section class="panel"><h3>Access token</h3><p>{{ settings.configured ? 'An agent token is configured.' : 'No agent token has been created.' }}</p>
@@ -63,10 +73,16 @@ onMounted(load)
       </form>
     </template>
     <section class="panel"><h3>Integrations</h3><p>Mail: {{ integrations?.mail.connected ? 'Connected' : 'Not connected' }}. Calendar: {{ integrations?.calendar.connected ? 'Connected' : 'Not connected' }}.</p><p>Without a mail provider, email drafts are saved as local notes. Interview calendar files can be downloaded and imported manually. Nothing is sent or added to an external calendar automatically.</p></section>
+    <section class="panel" aria-label="System status" aria-live="polite" :aria-busy="connection === 'checking'"><div class="status-heading"><h3>System status</h3><button type="button" :disabled="connection === 'checking'" @click="checkConnection">{{ connection === 'checking' ? 'Checking…' : 'Check again' }}</button></div>
+      <p v-if="connection === 'disconnected'" class="error">Unable to reach the backend. Make sure it is running, then check again or refresh this page.</p>
+      <p v-else-if="connection === 'connected'" class="connected">Backend connected. Your local database is ready.</p>
+      <p v-else>Connecting to your local backend…</p>
+      <dl><div><dt>Backend version</dt><dd>{{ health?.version ?? 'Unavailable' }}</dd></div><div><dt>Database</dt><dd>{{ health ? 'SQLite · Connected' : 'Unavailable' }}</dd></div></dl>
+    </section>
     <p v-if="message" class="success" role="status">{{ message }}</p>
   </section>
 </template>
 
 <style scoped>
-.panel { background:#fff;border:1px solid #dce2e9;border-radius:8px;padding:24px;margin:20px 0; }.panel p,.hint {color:#576678;font-size:14px;line-height:1.5}.primary {background:#263e5c;border-color:#263e5c;color:#fff}.permission {display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-top:1px solid #e5e9ee;cursor:pointer}.permission input {margin-top:3px}.permission span {display:flex;flex-direction:column;gap:3px}.permission small {color:#576678;font-weight:400}.token-box {margin-top:18px;padding:16px;background:#fff1de;border:1px solid #efcca1;border-radius:6px}.token-box label {display:block;font-weight:650;margin-bottom:8px}.token-box textarea {width:100%;padding:10px;font:inherit;resize:none;overflow-wrap:anywhere}.success {color:#216344}
+.panel { background:#fff;border:1px solid #dce2e9;border-radius:8px;padding:24px;margin:20px 0; }.panel p,.hint {color:#576678;font-size:14px;line-height:1.5}.primary {background:#263e5c;border-color:#263e5c;color:#fff}.permission {display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-top:1px solid #e5e9ee;cursor:pointer}.permission input {margin-top:3px}.permission span {display:flex;flex-direction:column;gap:3px}.permission small {color:#576678;font-weight:400}.token-box {margin-top:18px;padding:16px;background:#fff1de;border:1px solid #efcca1;border-radius:6px}.token-box label {display:block;font-weight:650;margin-bottom:8px}.token-box textarea {width:100%;padding:10px;font:inherit;resize:none;overflow-wrap:anywhere}.success,.panel p.connected {color:#216344}.status-heading {display:flex;align-items:center;justify-content:space-between;gap:12px}.panel p.error {color:#a12c32}.panel dl {margin-top:15px}
 </style>
