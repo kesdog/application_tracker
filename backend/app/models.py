@@ -261,6 +261,20 @@ class AgentCredential(Base):
     updated_at: Mapped[datetime] = mapped_column(default=utc_now, onupdate=utc_now)
 
 
+class AgentIdempotencyRecord(Base):
+    """A bounded replay cache for successful agent create requests."""
+    __tablename__ = "agent_idempotency_records"
+    __table_args__ = (UniqueConstraint("token_hash", "operation", "idempotency_key", name="agent_idempotency_key_unique"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    token_hash: Mapped[str] = mapped_column(String(64), index=True)
+    operation: Mapped[str] = mapped_column(String(80))
+    idempotency_key: Mapped[str] = mapped_column(String(200))
+    result: Mapped[dict | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)
+    expires_at: Mapped[datetime] = mapped_column(index=True)
+
+
 class InvalidationEvent(Base):
     __tablename__ = "invalidation_events"
 

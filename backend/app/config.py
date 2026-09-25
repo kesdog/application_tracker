@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     max_followup_suggestions: int = Field(default=2, ge=0, le=100)
     app_data_dir: Path = DEFAULT_DATA_DIR
     app_static_dir: Path = PROJECT_ROOT / "frontend" / "dist"
+    # MCP defaults to local stdio. Streamable HTTP stays loopback unless explicitly reconfigured.
+    mcp_transport: Literal["stdio", "streamable-http"] = "stdio"
+    mcp_host: str = "127.0.0.1"
+    mcp_port: int = Field(default=8001, ge=1, le=65535)
     log_level: Literal["critical", "error", "warning", "info", "debug", "trace"] = "info"
 
     @field_validator("log_level", mode="before")

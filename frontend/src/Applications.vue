@@ -22,6 +22,7 @@ const statuses = ['', 'SUBMITTED', 'INTERVIEW', 'CLOSED'] as const
 const outcomes = ['', 'SUCCESSFUL', 'UNSUCCESSFUL', 'WITHDRAWN', 'JOB_CANCELLED', 'GHOSTED'] as const
 const blankFilters = (): ApplicationFilters => ({ q: '', status: '', outcome: '', company: '', title: '', location: '', contract_type: '', source: '', remote_policy: '', date_from: '', date_to: '', document_filename: '' })
 const filters = reactive<ApplicationFilters>(blankFilters())
+const filtersOpen = ref(false)
 const hasFilters = computed(() => Object.values(filters).some(Boolean))
 const exportAllUrl = computed(() => applicationExportUrl(exportFormat.value))
 const exportCurrentUrl = computed(() => applicationExportUrl(exportFormat.value, filters))
@@ -64,7 +65,8 @@ onUnmounted(() => { window.removeEventListener('hashchange', navigate); window.r
     </div>
     <p class="intro">Keep track of the roles you have applied for.</p>
     <form class="filters" aria-label="Application filters" @submit.prevent="refresh">
-      <div class="filter-heading"><h3>Search and filters</h3><button v-if="hasFilters" type="button" :disabled="loading" @click="clearFilters">Clear filters</button></div>
+      <div class="filter-heading"><div><h3>Search and filters</h3><p v-if="hasFilters" class="filter-status">Filters applied</p></div><div class="filter-actions"><button v-if="hasFilters" type="button" :disabled="loading" @click="clearFilters">Clear filters</button><button type="button" :aria-expanded="filtersOpen" @click="filtersOpen = !filtersOpen">{{ filtersOpen ? 'Hide filters' : 'Show filters' }}</button></div></div>
+      <template v-if="filtersOpen">
       <div class="filter-grid">
         <label class="search-field">Search<input v-model="filters.q" type="search" placeholder="Company, title, description…" /></label>
         <label>Status<select v-model="filters.status"><option v-for="status in statuses" :key="status" :value="status">{{ status || 'Any status' }}</option></select></label>
@@ -75,6 +77,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', navigate); window.r
         <label>Applied from<input v-model="filters.date_from" type="date" /></label><label>Applied to<input v-model="filters.date_to" type="date" /></label>
       </div>
       <button class="primary" type="submit" :disabled="loading">Apply filters</button>
+      </template>
     </form>
 
     <section class="exports" aria-labelledby="exports-title">
@@ -113,7 +116,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', navigate); window.r
 .page-heading .add-link { color:#fff; }
 .filters { background: #fff; border: 1px solid #dce2e9; border-radius: 8px; padding: 24px; margin-bottom: 24px; }
 .exports { display: grid; grid-template-columns: minmax(0, 1fr) 150px auto auto; align-items: end; gap: 14px; background: #f7f9fb; border: 1px solid #dce2e9; border-radius: 8px; padding: 18px; margin-bottom: 24px; }.exports h3 { margin-bottom: 5px; }.exports p { margin: 0; color: #576678; font-size: 13px; }.export-link { display: inline-flex; justify-content: center; align-items: center; min-height: 40px; border: 1px solid #b9c4d2; border-radius: 5px; padding: 9px 13px; text-decoration: none; white-space: nowrap; }
-.filter-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }.filter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }.search-field { grid-column: span 2; }
+.filter-heading, .filter-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }.filter-heading { margin-bottom: 0; }.filter-status { color: #576678; font-size: 13px; margin: 4px 0 0; }.filter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 18px 0 16px; }.search-field { grid-column: span 2; }
 label { display: block; font-size: 14px; font-weight: 600; }
 label span { color: #576678; font-size: 12px; font-weight: 400; }
 input, select { display: block; width: 100%; min-width: 0; border: 1px solid #b9c4d2; border-radius: 5px; padding: 10px; margin-top: 7px; font: inherit; font-weight: 400; color: #202c3d; background: #fff; }

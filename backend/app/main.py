@@ -20,9 +20,9 @@ from app import documents
 from app import exports
 from app import interviews
 from app import work
-from app import agent_auth, agent_ops, integrations, invalidation, scheduler
+from app import agent_auth, agent_errors, agent_ops, integrations, invalidation, scheduler
 from app.interview_schemas import InterviewContext, InterviewCreate, InterviewListItem, InterviewRead, InterviewUpdate, TaskListItem
-from app.activity_schemas import TimelineRead, UndoRead
+from app.activity_schemas import TimelineEntryCreate, TimelineEntryUpdate, TimelineEventRead, TimelineRead, UndoRead
 from app.dashboard_schemas import DashboardRead
 from app.document_schemas import DocumentRead
 from app.models import DocumentType
@@ -93,6 +93,10 @@ def create_app(
     async def undo_unavailable(_request, exc):
         return JSONResponse(status_code=409, content={"detail": str(exc)})
 
+    @application.exception_handler(agent_errors.AgentApiError)
+    async def agent_error(_request, exc):
+        return JSONResponse(status_code=exc.status_code, content=exc.payload())
+
     def get_session():
         with Session(application.state.engine) as session:
             yield session
@@ -105,7 +109,7 @@ def create_app(
         token = authorization[7:] if authorization and authorization.startswith("Bearer ") else None
         with DatabaseSession(application.state.engine) as auth_session:
             if not agent_auth.token_valid(auth_session, token):
-                raise HTTPException(status_code=401, detail="Valid agent bearer token required", headers={"WWW-Authenticate": "Bearer"})
+                raise agent_errors.AgentApiError("INVALID_TOKEN", "Valid agent bearer token required", 401)
         return token
 
     @application.get("/api/settings/agent", response_model=agent_auth.AgentSettingsRead, dependencies=[Depends(local_only)])
@@ -123,18 +127,33 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+    @application.get("/api/settings/agent/connection", response_model=agent_auth.AgentConnectionInfo, dependencies=[Depends(local_only)])
+    def agent_connection_info():
+        address = f"http://{settings.app_host}:{settings.app_port}"
+        remote = f"http://{settings.mcp_host}:{settings.mcp_port}/mcp" if settings.mcp_transport == "streamable-http" else None
+        return agent_auth.AgentConnectionInfo(
+            local_mcp_command="application-tracker-mcp",
+            rest_endpoint=f"{address}/api/agent/",
+            mcp_transport=settings.mcp_transport,
+            remote_mcp_endpoint=remote,
+        )
+
     @application.post("/api/agent/tools/{operation}")
     def agent_operation(operation: str, args: dict, token: str = Depends(agent_token), session: Session = Depends(get_session)):
         permission = agent_ops.PERMISSION_FOR.get(operation)
         if permission is None:
-            raise HTTPException(status_code=404, detail="Unknown agent operation")
+            raise agent_errors.AgentApiError("VALIDATION_ERROR", "Unknown agent operation", 404)
         if not agent_auth.authorized(session, token, permission):
-            raise HTTPException(status_code=403, detail=f"Agent permission required: {permission}")
+            raise agent_errors.AgentApiError("PERMISSION_DENIED", f"Agent permission required: {permission}", 403)
         session.rollback()
         try:
-            return agent_ops.invoke(session, settings, operation, args, mail_provider=mail_provider)
-        except (ValidationError, KeyError) as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            return agent_ops.invoke(
+                session, settings, operation, args, mail_provider=mail_provider,
+                calendar_provider=calendar_provider,
+                token_fingerprint=agent_auth.token_fingerprint(token),
+            )
+        except Exception as exc:
+            raise agent_errors.from_exception(exc) from exc
 
     @application.get("/api/events", dependencies=[Depends(local_only)])
     async def events(request: Request):
@@ -190,6 +209,18 @@ def create_app(
     def get_timeline(application_id: str, session: Session = Depends(get_session)):
         applications.get_application(session, application_id)
         return activity.timeline(session, application_id)
+
+    @application.post("/api/applications/{application_id}/timeline", response_model=TimelineEventRead, status_code=201)
+    def create_timeline_entry(application_id: str, data: TimelineEntryCreate, session: Session = Depends(get_session)):
+        item = activity.create_timeline_entry(session, application_id, data)
+        invalidation.publish(session, "application.updated", application_id)
+        return item
+
+    @application.patch("/api/applications/{application_id}/timeline/{event_id}", response_model=TimelineEventRead)
+    def update_timeline_entry(application_id: str, event_id: str, data: TimelineEntryUpdate, session: Session = Depends(get_session)):
+        item = activity.update_timeline_entry(session, application_id, event_id, data)
+        invalidation.publish(session, "application.updated", application_id)
+        return item
 
     @application.post("/api/applications/{application_id}/undo", response_model=UndoRead)
     def undo_last_change(application_id: str, session: Session = Depends(get_session)):

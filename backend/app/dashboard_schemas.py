@@ -50,4 +50,6 @@ class RecentActivity(BaseModel):
 class DashboardRead(BaseModel):
     counts: DashboardCounts
     upcoming: list[UpcomingItem]
+    due_followups: list[UpcomingItem]
+    overdue_followups: list[UpcomingItem]
     recent_activity: list[RecentActivity]

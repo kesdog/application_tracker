@@ -10,11 +10,11 @@ Selecting an outcome closes the application. To reopen an application that alrea
 
 The focus view contains **Documents**, **Interviews**, **Notes**, **Tasks**, and **Follow-ups**. Attach a CV or cover letter by uploading a file into the tracker data directory, or record an external/local reference with its filename. Uploaded files can be downloaded from the focus view. Schedule, edit, and delete interviews with preparation notes, meeting details, and results. Add/edit a typed note, add a task with an optional due date, complete/cancel/reopen tasks, and record email, phone, or combined follow-ups as drafted, completed, or cancelled. Phone and combined options require an application phone number. Email drafting saves a local `EMAIL_DRAFT` note when no mail account is connected; it never sends a message. Interviews have an explicit calendar file download for manual import.
 
-The **Timeline** records application, note, task, follow-up, interview, outcome, and posting-state activity with the actor and time. Reversible edits expose **Undo last change**. Undo restores the complete prior field snapshot, including coupled values such as a task status and completion timestamp. Application deletion requires a second human confirmation and sets `deleted_at`; deleted applications and their work disappear from normal lists without removing database records.
+The **Timeline** records application, note, task, follow-up, interview, outcome, and posting-state activity with the actor and time. Add an editable email entry when the exact sent or received time matters; system history remains immutable. Reversible edits expose **Undo last change**. Undo restores the complete prior field snapshot, including coupled values such as a task status and completion timestamp. Application deletion requires a second human confirmation and sets `deleted_at`; deleted applications and their work disappear from normal lists without removing database records.
 
 Use the sidebar to open **Interviews** or **Tasks**. Interviews are ordered by scheduled date and show their application, meeting context, and near-term wording such as “Technical interview — tomorrow at 14:00.” Tasks are ordered by due date, show their parent application, and can be completed, cancelled, or reopened from the global view.
 
-Use **Dashboard** to see active application count, due and overdue tasks/follow-ups, upcoming interviews, linked work for the next seven days, and recent activity. The Applications page supports free-text search plus status, outcome, company, position, location, contract, source, remote policy, document filename, and application-date filters. Filters combine, can be cleared together, and retain the existing newest-first order. The export panel downloads all applications or the current filtered view as CSV or formatted XLSX.
+Use **Dashboard** to see active application count, separate due-soon and overdue follow-up lists, due and overdue tasks, upcoming interviews, linked work for the next seven days, and recent activity. The Applications page supports free-text search plus status, outcome, company, position, location, contract, source, remote policy, document filename, and application-date filters. Filters are collapsed by default, combine when shown, can be cleared together, and retain the existing newest-first order. The export panel downloads all applications or the current filtered view as CSV or formatted XLSX.
 
 Use **Settings** to generate an agent token and choose its read, create, edit, draft, task, and interview permissions. The plaintext token is shown only when generated or regenerated. Agent changes appear in the open Applications, Dashboard, Tasks, Interviews, and application focus views through a small server-sent event that tells the UI what to refetch.
 
@@ -175,7 +175,7 @@ Interview context includes the application's document metadata. Global tasks wit
 
 ## Timeline, audit, undo, and deletion API
 
-`GET /api/applications/{id}/timeline` returns newest-first events and `undo_available`. Events contain `event_type`, `summary`, `actor_type`, optional `actor_reference`, metadata, and a UTC timestamp. Actor types are `HUMAN`, `AGENT`, and `SYSTEM`; human REST mutations currently record `HUMAN`, while the shared services preserve agent/system identities supplied by future integrations.
+`GET /api/applications/{id}/timeline` returns newest-first events and `undo_available`. `POST /api/applications/{id}/timeline` adds a manual email entry with a timezone-aware `occurred_at`; `PATCH /api/applications/{id}/timeline/{event_id}` edits a manual entry. Events contain `event_type`, `summary`, `actor_type`, optional `actor_reference`, metadata, and a UTC timestamp. Actor types are `HUMAN`, `AGENT`, and `SYSTEM`; human REST mutations currently record `HUMAN`, while the shared services preserve agent/system identities supplied by future integrations.
 
 `POST /api/applications/{id}/undo` restores the latest reversible mutation and returns the affected entity and fields. One audit entry stores each mutation's complete before/after snapshot, so all fields changed by that operation restore together. Creation and deletion records are audited but are not reversible through this endpoint. A request with no available reversible change returns HTTP 409.
 
@@ -203,9 +203,40 @@ Application filters are combined with AND logic. Text filters are case-insensiti
 
 Open **Settings** in the browser and generate an agent token. Store the shown value in your agent's secure configuration. Only its SHA-256 hash is saved in SQLite. New tokens have read access only; enable other permissions deliberately. Regenerating the token atomically replaces that hash, so the old token is rejected on its next request. Permission toggles take effect immediately. The human settings and UI endpoints require local access; remote clients may reach only the authenticated agent routes when the backend is bound to a network interface. Keep the default loopback binding unless you provide TLS and network access controls.
 
-Agent REST operations use `POST /api/agent/tools/{operation}` with `Authorization: Bearer <token>` and a JSON body. Operations are `list_applications`, `search_applications`, `get_application`, `find_possible_duplicates`, `create_application`, `update_application`, `create_note`, `create_followup`, `draft_followup`, `mark_followup_sent`, `create_task`, `complete_task`, `create_interview`, `update_interview`, `get_interview_context`, `get_application_timeline`, and `get_upcoming_items`. For example, `create_application` takes `{"application":{"job_title":"Engineer","company":"Example","date_applied":"2026-09-25","job_url":"https://example.com/job","phone_number":"+33 6 12 34 56 78"}}`; `update_application` takes `{"application_id":"...","changes":{"status":"INTERVIEW"}}`; `create_followup` accepts a `followup.channel` of `EMAIL`, `PHONE`, or `BOTH`. Read operations take `{}` or IDs/filters as appropriate. The service records agent identity in the timeline and audits. No agent delete operation exists.
+Agent REST operations use `POST /api/agent/tools/{operation}` with `Authorization: Bearer <token>` and a JSON body. `list_applications` and `search_applications` return compact 25-item pages by default; pass `limit` and `cursor` to continue. `get_application` remains the complete record, while `get_application_context` returns the application, work, interviews, documents, recent timeline, and next action in one request. Create operations accept an optional `idempotency_key`; a retry with the same token, operation, and key returns the original result for 30 days. Agent errors use `{ "error": { "code", "message" } }`, and the service records agent identity in the timeline and audits. No agent delete operation exists.
 
-The same operations are available as tools from the local stdio MCP server. Configure an MCP client to run `D:\APP_TRCKR\.venv\Scripts\application-tracker-mcp.exe` with `APPLICATION_TRACKER_AGENT_TOKEN` in that process's environment. The token is checked for every tool call, including after a running MCP process has been connected. The server uses the same configured data directory and application services as REST.
+## AI Agent Integration
+
+Application Tracker exposes one provider-neutral MCP interface backed by `agent_ops.py`:
+
+```text
+Application Tracker MCP
+        |
+        +-- ChatGPT
+        +-- Claude
+        +-- Claude Desktop
+        +-- Codex
+        +-- other MCP-compatible agents
+```
+
+Every MCP and agent REST operation uses the same validation, permissions, idempotency protection, audit records, and application services. There are no vendor-specific tool sets.
+
+For local MCP clients, leave `MCP_TRANSPORT=stdio` (the default) and configure a command such as:
+
+```json
+{
+  "mcpServers": {
+    "application-tracker": {
+      "command": "application-tracker-mcp",
+      "env": { "APPLICATION_TRACKER_AGENT_TOKEN": "<generated-token>" }
+    }
+  }
+}
+```
+
+For Streamable HTTP, set `MCP_TRANSPORT=streamable-http`. The default endpoint is `http://127.0.0.1:8001/mcp` and requires `Authorization: Bearer <generated-token>`. It exposes the exact same tools as stdio. Keep the loopback default unless TLS and network access controls protect any remote deployment. OAuth 2.1 is intentionally deferred; bearer authentication is isolated at the transport boundary so a future OAuth layer can replace or wrap it without changing the tool layer.
+
+The agent REST endpoint is `http://127.0.0.1:8000/api/agent/`. Generate or regenerate the token in **Settings → Agent access**, then enable the least permissions needed. Plaintext tokens are shown only at generation; SQLite stores only their hashes, and regeneration immediately revokes the old token. **Settings → Agent connection help** displays the actual configured local endpoints without exposing a saved token.
 
 `GET /api/events` streams `application.created`, `application.updated`, `interview.updated`, `task.updated`, and `followup.updated` events after agent mutations. Each event contains only an application ID; the browser refetches current data. Browser EventSource reconnects automatically and resumes from the last event ID.
 
@@ -237,9 +268,3 @@ Manual checks:
 
 The 0.9 agent-token flow remains available but has not been activated in the user's database. The Python test client emits one upstream deprecation warning from Starlette; tests pass.
 
-The initial implementation session leaves both development servers running in the background for review. Their process IDs and logs are under the ignored `.run` directory. Before starting your own copies, stop those specific processes (check the command lines first; recorded IDs may be stale after a reboot):
-
-```powershell
-Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -in @([int](Get-Content .run/backend.pid), [int](Get-Content .run/frontend.pid)) } | Select-Object ProcessId, CommandLine
-Stop-Process -Id ([int](Get-Content .run/backend.pid)), ([int](Get-Content .run/frontend.pid))
-```

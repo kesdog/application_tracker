@@ -31,6 +31,13 @@ class AgentTokenCreated(AgentSettingsRead):
     token: str
 
 
+class AgentConnectionInfo(BaseModel):
+    local_mcp_command: str
+    rest_endpoint: str
+    mcp_transport: str
+    remote_mcp_endpoint: str | None
+
+
 def current_settings(session: Session) -> AgentSettingsRead:
     credential = session.get(AgentCredential, 1)
     return AgentSettingsRead(
@@ -41,6 +48,11 @@ def current_settings(session: Session) -> AgentSettingsRead:
 
 def _hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def token_fingerprint(token: str) -> str:
+    """Use the existing stored token hash as an idempotency namespace, never the plaintext token."""
+    return _hash(token)
 
 
 def regenerate(session: Session) -> AgentTokenCreated:

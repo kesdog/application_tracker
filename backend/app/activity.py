@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Any
 
@@ -6,6 +6,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.activity_schemas import TimelineEntryCreate, TimelineEntryUpdate
 from app.models import ActorType, Application, AuditEntry, FollowUp, Interview, Note, Task, TimelineEvent, utc_now
 
 
@@ -75,6 +76,60 @@ def timeline(session: Session, application_id: str) -> dict:
         .order_by(TimelineEvent.created_at.desc(), TimelineEvent.id.desc())
     ))
     return {"events": events, "undo_available": latest_undo(session, application_id) is not None}
+
+
+def create_timeline_entry(
+    session: Session,
+    application_id: str,
+    data: TimelineEntryCreate,
+    *,
+    actor_type: ActorType = ActorType.HUMAN,
+    actor_reference: str | None = None,
+) -> TimelineEvent:
+    application = session.get(Application, application_id)
+    if application is None or application.deleted_at is not None:
+        from app.applications import ApplicationNotFound
+        raise ApplicationNotFound("Application not found")
+    event = TimelineEvent(
+        application_id=application_id,
+        event_type="MANUAL",
+        actor_type=actor_type,
+        actor_reference=actor_reference,
+        summary=data.summary,
+        event_metadata={"source": "manual"},
+        created_at=data.occurred_at.astimezone(timezone.utc).replace(tzinfo=None),
+    )
+    session.add(event)
+    session.commit()
+    session.refresh(event)
+    return event
+
+
+def update_timeline_entry(
+    session: Session,
+    application_id: str,
+    event_id: str,
+    data: TimelineEntryUpdate,
+    *,
+    actor_type: ActorType = ActorType.HUMAN,
+    actor_reference: str | None = None,
+) -> TimelineEvent:
+    event = session.scalar(select(TimelineEvent).where(TimelineEvent.id == event_id, TimelineEvent.application_id == application_id))
+    if event is None:
+        from app.applications import ApplicationNotFound
+        raise ApplicationNotFound("Timeline entry not found for this application")
+    if event.event_type != "MANUAL":
+        raise InvalidActor("Only manually added timeline entries can be edited")
+    changes = data.model_dump(exclude_unset=True)
+    if "summary" in changes and changes["summary"] is not None:
+        event.summary = changes["summary"]
+    if "occurred_at" in changes and changes["occurred_at"] is not None:
+        event.created_at = changes["occurred_at"].astimezone(timezone.utc).replace(tzinfo=None)
+    event.actor_type = actor_type
+    event.actor_reference = actor_reference
+    session.commit()
+    session.refresh(event)
+    return event
 
 
 def latest_undo(session: Session, application_id: str) -> AuditEntry | None:

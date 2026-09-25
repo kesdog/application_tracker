@@ -44,6 +44,8 @@ def dashboard(session: Session) -> dict:
         for item, application in interview_rows
     ]
     upcoming.sort(key=lambda item: (item["due_at"], item["kind"], item["id"]))
+    due_followups = [item for item in upcoming if item["kind"] == "FOLLOWUP" and item["due_at"] >= now]
+    overdue_followups = [item for item in upcoming if item["kind"] == "FOLLOWUP" and item["due_at"] < now]
 
     activity_rows = session.execute(
         select(TimelineEvent, Application).join(Application).where(Application.deleted_at.is_(None))
@@ -64,5 +66,7 @@ def dashboard(session: Session) -> dict:
             "upcoming_interviews": len(interview_rows),
         },
         "upcoming": upcoming,
+        "due_followups": due_followups,
+        "overdue_followups": overdue_followups,
         "recent_activity": recent,
     }

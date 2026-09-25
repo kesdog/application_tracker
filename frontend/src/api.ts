@@ -95,12 +95,13 @@ export interface TimelineEvent {
   metadata: Record<string, unknown>
   created_at: string
 }
+export interface TimelineEntryInput { summary: string; occurred_at: string }
 export interface Timeline { events: TimelineEvent[]; undo_available: boolean }
 export interface UndoResult { audit_id: string; entity_type: string; entity_id: string; fields: string[] }
 export interface DashboardCounts { active_applications: number; followups_due: number; followups_overdue: number; tasks_due: number; tasks_overdue: number; upcoming_interviews: number }
 export interface UpcomingItem { id: string; kind: 'TASK' | 'FOLLOWUP' | 'INTERVIEW'; title: string; due_at: string; status: string; application: ApplicationSummary }
 export interface RecentActivity { id: string; event_type: string; summary: string; actor_type: ActorType; created_at: string; application: ApplicationSummary }
-export interface DashboardData { counts: DashboardCounts; upcoming: UpcomingItem[]; recent_activity: RecentActivity[] }
+export interface DashboardData { counts: DashboardCounts; upcoming: UpcomingItem[]; due_followups: UpcomingItem[]; overdue_followups: UpcomingItem[]; recent_activity: RecentActivity[] }
 export type DocumentType = 'CV' | 'COVER_LETTER'
 export interface ApplicationDocument {
   id: string; application_id: string; type: DocumentType; filename: string
@@ -110,10 +111,12 @@ export interface ApplicationDocument {
 export interface AgentPermissions { read: boolean; create: boolean; edit: boolean; draft: boolean; tasks: boolean; interviews: boolean }
 export interface AgentSettings { configured: boolean; permissions: AgentPermissions }
 export interface AgentTokenCreated extends AgentSettings { token: string }
+export interface AgentConnectionInfo { local_mcp_command: string; rest_endpoint: string; mcp_transport: 'stdio' | 'streamable-http'; remote_mcp_endpoint: string | null }
 export interface IntegrationStatus { mail: { connected: boolean }; calendar: { connected: boolean } }
 export interface DraftResult { location: 'LOCAL_NOTE' | 'MAILBOX'; note_id: string | null; message_reference: string | null; message: string }
 
 export function getAgentSettings(): Promise<AgentSettings> { return request('/api/settings/agent') }
+export function getAgentConnectionInfo(): Promise<AgentConnectionInfo> { return request('/api/settings/agent/connection') }
 export function regenerateAgentToken(): Promise<AgentTokenCreated> { return request('/api/settings/agent/token', { method: 'POST' }) }
 export function saveAgentPermissions(permissions: AgentPermissions): Promise<AgentSettings> {
   return request('/api/settings/agent/permissions', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(permissions) })
@@ -246,6 +249,18 @@ export function deleteApplication(id: string): Promise<void> {
 
 export function getTimeline(id: string): Promise<Timeline> {
   return request(`/api/applications/${encodeURIComponent(id)}/timeline`)
+}
+
+export function createTimelineEntry(id: string, data: TimelineEntryInput): Promise<TimelineEvent> {
+  return request(`/api/applications/${encodeURIComponent(id)}/timeline`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+  })
+}
+
+export function updateTimelineEntry(id: string, eventId: string, data: Partial<TimelineEntryInput>): Promise<TimelineEvent> {
+  return request(`/api/applications/${encodeURIComponent(id)}/timeline/${encodeURIComponent(eventId)}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+  })
 }
 
 export function undoLastChange(id: string): Promise<UndoResult> {
