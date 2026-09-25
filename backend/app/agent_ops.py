@@ -2,7 +2,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app import __version__, activity, agent_auth, agent_context, applications, dashboard, integrations, interviews, invalidation, work
+from app import __version__, activity, agent_auth, agent_context, applications, dashboard, integrations, interviews, invalidation, posting_service, work
 from app import agent_idempotency
 from app.agent_schemas import AgentListRequest
 from app.config import Settings
@@ -18,7 +18,7 @@ PERMISSION_FOR = {
     "list_applications": "read", "search_applications": "read", "get_application": "read", "get_application_context": "read", "get_tracker_info": "read",
     "find_possible_duplicates": "read", "get_application_timeline": "read", "get_upcoming_items": "read",
     "get_interview_context": "read", "create_application": "create", "update_application": "edit",
-    "create_timeline_entry": "edit", "update_timeline_entry": "edit",
+    "create_timeline_entry": "edit", "update_timeline_entry": "edit", "check_posting_status": "edit",
     "create_note": "draft", "create_followup": "draft", "mark_followup_sent": "draft",
     "draft_followup": "draft",
     "create_task": "tasks", "complete_task": "tasks", "create_interview": "interviews",
@@ -104,6 +104,9 @@ def _invoke(
     elif operation == "update_timeline_entry":
         item = activity.update_timeline_entry(session, application_id, args["event_id"], TimelineEntryUpdate.model_validate(args["changes"]), **actor)
         result = TimelineEventRead.model_validate(item).model_dump(mode="json")
+        topic = "application.updated"
+    elif operation == "check_posting_status":
+        result = posting_service.check_application_posting(session, application_id, actor_type=ActorType.AGENT).model_dump(mode="json")
         topic = "application.updated"
     elif operation == "create_note":
         item = work.create_note(session, application_id, NoteCreate.model_validate(args["note"]), **actor)

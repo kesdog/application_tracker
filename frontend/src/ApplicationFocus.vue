@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { deleteApplication, getApplication, updateApplication, type Application, type ApplicationUpdate } from './api'
+import { checkPosting, deleteApplication, getApplication, updateApplication, type Application, type ApplicationUpdate } from './api'
 import ApplicationWork from './ApplicationWork.vue'
 import ApplicationInterviews from './ApplicationInterviews.vue'
 import ApplicationTimeline from './ApplicationTimeline.vue'
@@ -20,6 +20,8 @@ const checkedAt = ref('')
 const timelineVersion = ref(0)
 const contentVersion = ref(0)
 const deleteConfirm = ref(false)
+const checkingPosting = ref(false)
+const postingError = ref('')
 const outcomes = ['SUCCESSFUL', 'UNSUCCESSFUL', 'WITHDRAWN', 'JOB_CANCELLED', 'GHOSTED'] as const
 const statuses = ['SUBMITTED', 'INTERVIEW', 'CLOSED'] as const
 const postingStates = ['UNKNOWN', 'LIVE', 'CLOSED'] as const
@@ -95,6 +97,14 @@ async function save() {
 async function handleUndo() {
   await load()
   contentVersion.value++
+}
+
+async function checkNow() {
+  if (checkingPosting.value || !application.value) return
+  checkingPosting.value = true; postingError.value = ''
+  try { await checkPosting(application.value.id); await load(); timelineVersion.value++ }
+  catch (error) { postingError.value = error instanceof Error ? error.message : 'Unable to check the posting.' }
+  finally { checkingPosting.value = false }
 }
 
 async function removeApplication() {
@@ -200,7 +210,7 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
           </dl>
         </section>
         <section class="panel"><h3>Description</h3><p class="text-block">{{ application.description ?? 'No description added.' }}</p><h3>Requirements</h3><p class="text-block">{{ application.requirements ?? 'No requirements added.' }}</p></section>
-        <section class="panel"><h3>Job posting</h3><dl class="details"><div><dt>Posting status</dt><dd>{{ application.posting_status }}</dd></div><div><dt>Last checked</dt><dd>{{ application.posting_last_checked_at ? new Date(application.posting_last_checked_at).toLocaleString() + ' (local time)' : 'Not checked' }}</dd></div></dl></section>
+        <section class="panel"><div class="posting-heading"><h3>Job posting</h3><button type="button" :disabled="checkingPosting || !application.job_url" @click="checkNow">{{ checkingPosting ? 'Checking…' : 'Check now' }}</button></div><p v-if="postingError" class="error" role="alert">{{ postingError }}</p><dl class="details"><div><dt>Posting status</dt><dd><strong :class="`posting-${application.posting_status.toLowerCase()}`">{{ application.posting_status === 'UNKNOWN' ? 'Unable to verify' : application.posting_status }}</strong></dd></div><div><dt>Last checked</dt><dd>{{ application.posting_last_checked_at ? new Date(application.posting_last_checked_at).toLocaleString() + ' (local time)' : 'Not checked' }}</dd></div></dl><details v-if="application.posting_check_reason" class="posting-details"><summary>Check details</summary><dl class="details"><div><dt>Method</dt><dd>{{ application.posting_check_method }}</dd></div><div><dt>HTTP</dt><dd>{{ application.posting_http_status ?? 'No response' }}</dd></div><div><dt>Reason</dt><dd>{{ application.posting_check_reason }}</dd></div><div><dt>Consecutive inconclusive checks</dt><dd>{{ application.posting_check_failures }}</dd></div></dl></details><p class="hint">A closed posting never closes this application. “Unable to verify” does not mean the job is gone.</p></section>
         <ApplicationDocuments :key="`documents-${contentVersion}`" :application-id="application.id" @changed="timelineVersion++" />
         <ApplicationInterviews :key="`interviews-${contentVersion}`" :application-id="application.id" @changed="timelineVersion++" />
         <ApplicationWork :key="`work-${contentVersion}`" :application-id="application.id" :phone-number="application.phone_number" @changed="timelineVersion++" />
@@ -213,7 +223,7 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
 <style scoped>
 .back { display: inline-block; margin-bottom: 28px; }
 a { color: #24568b; text-underline-offset: 3px; overflow-wrap: anywhere; }
-.focus-heading, .actions, .badges, .header-actions { display: flex; align-items: center; gap: 12px; }
+.focus-heading, .actions, .badges, .header-actions, .posting-heading { display: flex; align-items: center; gap: 12px; }
 .focus-heading { justify-content: space-between; margin-bottom: 20px; }
 .focus-heading > div { min-width: 0; overflow-wrap: anywhere; }
 .primary { background: #263e5c; border-color: #263e5c; color: #fff; }
@@ -237,6 +247,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px
 .checkbox { display: flex; align-items: flex-start; gap: 10px; line-height: 1.5; color: #844d15; }
 .checkbox input { width: auto; margin-top: 3px; }
 .check-now { margin-top: 12px; }
+.posting-heading { justify-content: space-between; }.posting-details { margin-top:16px; }.posting-live { color:#216344 }.posting-closed { color:#a12c32 }.posting-unknown { color:#844d15 }
 .success { color: #216344; font-size: 14px; }
 .badge { display: inline-block; background: #eaf1fc; color: #2a5189; font-size: 12px; font-weight: 700; padding: 5px 8px; border-radius: 4px; }
 .interview { background: #f0e9fa; color: #654388; } .closed, .withdrawn, .ghosted { background: #edf0f3; color: #526174; }

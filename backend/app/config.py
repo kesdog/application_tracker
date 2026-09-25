@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     mcp_transport: Literal["stdio", "streamable-http"] = "stdio"
     mcp_host: str = "127.0.0.1"
     mcp_port: int = Field(default=8001, ge=1, le=65535)
+    posting_check_interval_hours: int = Field(default=24, ge=1, le=8760)
+    posting_check_concurrency: int = Field(default=5, ge=1, le=20)
+    posting_playwright_fallback: bool = False
     log_level: Literal["critical", "error", "warning", "info", "debug", "trace"] = "info"
 
     @field_validator("log_level", mode="before")

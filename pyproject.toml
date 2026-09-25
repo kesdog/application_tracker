@@ -17,12 +17,15 @@ dependencies = [
     "python-multipart>=0.0.20,<1",
     "mcp>=1.20,<2",
     "phonenumberslite>=9.0.40,<10",
+    "httpx>=0.28,<1",
+    "extruct>=0.18,<1",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10", "httpx>=0.28,<1"]
 desktop = ["pystray>=0.19,<1", "Pillow>=11,<13"]
 build-desktop = ["pyinstaller>=6,<7"]
+posting-browser = ["playwright>=1.50,<2"]
 
 [project.scripts]
 application-tracker = "app.main:run"

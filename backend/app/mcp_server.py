@@ -114,6 +114,11 @@ def create_mcp_server(settings: Settings | None = None, token: str | None = None
         return call("update_application", {"application_id": application_id, "changes": changes.model_dump(mode="json", exclude_unset=True)})
 
     @server.tool()
+    def check_posting_status(application_id: str) -> dict:
+        """Deterministically check a saved job URL and update only posting diagnostics/status. It never changes the application lifecycle."""
+        return call("check_posting_status", {"application_id": application_id})
+
+    @server.tool()
     def create_timeline_entry(application_id: str, entry: TimelineEntryCreate) -> dict:
         """Add a manual email timeline event at a verified timestamp. It never changes automatic system history."""
         return call("create_timeline_entry", {"application_id": application_id, "entry": entry.model_dump(mode="json")})

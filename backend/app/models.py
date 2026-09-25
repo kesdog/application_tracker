@@ -79,6 +79,11 @@ class Application(Base):
     )
     # SQLite stores naive datetimes; this column always contains UTC.
     posting_last_checked_at: Mapped[datetime | None]
+    posting_http_status: Mapped[int | None]
+    posting_final_url: Mapped[str | None] = mapped_column(String(2048))
+    posting_check_method: Mapped[str | None] = mapped_column(String(32))
+    posting_check_reason: Mapped[str | None] = mapped_column(String(500))
+    posting_check_failures: Mapped[int] = mapped_column(default=0, server_default="0")
     followup_delay_days: Mapped[int | None]
     max_followup_suggestions: Mapped[int | None]
     deleted_at: Mapped[datetime | None]

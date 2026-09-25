@@ -20,14 +20,15 @@ from app import documents
 from app import exports
 from app import interviews
 from app import work
-from app import agent_auth, agent_errors, agent_ops, integrations, invalidation, scheduler
+from app import agent_auth, agent_errors, agent_ops, integrations, invalidation, posting_service, scheduler
+from app.posting_checker import PostingChecker, render_with_playwright
 from app.interview_schemas import InterviewContext, InterviewCreate, InterviewListItem, InterviewRead, InterviewUpdate, TaskListItem
 from app.activity_schemas import TimelineEntryCreate, TimelineEntryUpdate, TimelineEventRead, TimelineRead, UndoRead
 from app.dashboard_schemas import DashboardRead
 from app.document_schemas import DocumentRead
 from app.models import DocumentType
 from app.work_schemas import FollowUpCreate, FollowUpRead, FollowUpUpdate, NoteCreate, NoteRead, NoteUpdate, TaskCreate, TaskRead, TaskUpdate, WorkRead
-from app.schemas import ApplicationCreate, ApplicationFilters, ApplicationRead, ApplicationUpdate
+from app.schemas import ApplicationCreate, ApplicationFilters, ApplicationRead, ApplicationUpdate, PostingCheckRead
 from sqlalchemy.orm import Session as DatabaseSession
 
 
@@ -52,17 +53,25 @@ def create_app(
         application.state.engine = engine
         reminders = None
         reminder_task = None
+        posting_checks = None
+        posting_task = None
         try:
             migrate_database(engine)
             reminders = scheduler.ReminderScheduler(engine)
             await reminders.refresh()
             application.state.reminders = reminders
             reminder_task = asyncio.create_task(reminders.run())
+            posting_checks = scheduler.PostingCheckScheduler(engine, settings)
+            application.state.posting_checks = posting_checks
+            posting_task = asyncio.create_task(posting_checks.run())
             yield
         finally:
             if reminders is not None and reminder_task is not None:
                 reminders.stop.set()
                 await reminder_task
+            if posting_checks is not None and posting_task is not None:
+                posting_checks.stop.set()
+                await posting_task
             engine.dispose()
 
     application = FastAPI(title="Application Tracker", version=__version__, lifespan=lifespan)
@@ -176,6 +185,13 @@ def create_app(
     @application.patch("/api/applications/{application_id}", response_model=ApplicationRead)
     def update_application(application_id: str, data: ApplicationUpdate, session: Session = Depends(get_session)):
         return applications.update_application(session, application_id, data)
+
+    @application.post("/api/applications/{application_id}/check-posting", response_model=PostingCheckRead)
+    def check_posting(application_id: str, session: Session = Depends(get_session)):
+        checker = PostingChecker(browser_fallback=render_with_playwright if settings.posting_playwright_fallback else None)
+        result = posting_service.check_application_posting(session, application_id, checker)
+        invalidation.publish(session, "application.updated", application_id)
+        return result
 
     @application.delete("/api/applications/{application_id}", status_code=204)
     def delete_application(application_id: str, session: Session = Depends(get_session)):

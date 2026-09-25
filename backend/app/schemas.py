@@ -108,6 +108,11 @@ class ApplicationRead(ApplicationCreate):
     outcome: ApplicationOutcome | None
     posting_status: PostingStatus
     posting_last_checked_at: datetime | None
+    posting_http_status: int | None
+    posting_final_url: str | None
+    posting_check_method: str | None
+    posting_check_reason: str | None
+    posting_check_failures: int
     deleted_at: datetime | None
     duplicate_warnings: list[DuplicateMatch] = Field(default_factory=list)
 
@@ -117,6 +122,21 @@ class ApplicationRead(ApplicationCreate):
         if value is not None and value.tzinfo is None:
             return value.replace(tzinfo=timezone.utc)
         return value
+
+
+class PostingCheckRead(BaseModel):
+    status: PostingStatus
+    checked_at: datetime
+    http_status: int | None
+    final_url: str | None
+    method: str
+    reason: str
+    failures: int
+
+    @field_validator("checked_at")
+    @classmethod
+    def expose_checked_utc(cls, value: datetime) -> datetime:
+        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
 
 
 class ApplicationUpdate(ApplicationCreate):

@@ -33,6 +33,11 @@ export interface Application extends ApplicationCreate {
   requirements: string | null
   posting_status: 'UNKNOWN' | 'LIVE' | 'CLOSED'
   posting_last_checked_at: string | null
+  posting_http_status: number | null
+  posting_final_url: string | null
+  posting_check_method: string | null
+  posting_check_reason: string | null
+  posting_check_failures: number
   followup_delay_days: number | null
   max_followup_suggestions: number | null
   deleted_at: string | null
@@ -111,6 +116,7 @@ export interface ApplicationDocument {
 export interface AgentPermissions { read: boolean; create: boolean; edit: boolean; draft: boolean; tasks: boolean; interviews: boolean }
 export interface AgentSettings { configured: boolean; permissions: AgentPermissions }
 export interface AgentTokenCreated extends AgentSettings { token: string }
+export interface PostingCheckResult { status: Application['posting_status']; checked_at: string; http_status: number | null; final_url: string | null; method: string; reason: string; failures: number }
 export interface AgentConnectionInfo { local_mcp_command: string; rest_endpoint: string; mcp_transport: 'stdio' | 'streamable-http'; remote_mcp_endpoint: string | null }
 export interface IntegrationStatus { mail: { connected: boolean }; calendar: { connected: boolean } }
 export interface DraftResult { location: 'LOCAL_NOTE' | 'MAILBOX'; note_id: string | null; message_reference: string | null; message: string }
@@ -241,6 +247,10 @@ export function updateApplication(id: string, data: ApplicationUpdate): Promise<
   return request(`/api/applications/${encodeURIComponent(id)}`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
   })
+}
+
+export function checkPosting(id: string): Promise<PostingCheckResult> {
+  return request(`/api/applications/${encodeURIComponent(id)}/check-posting`, { method: 'POST' })
 }
 
 export function deleteApplication(id: string): Promise<void> {

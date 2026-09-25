@@ -191,6 +191,14 @@ Application filters are combined with AND logic. Text filters are case-insensiti
 
 `GET /api/reminders` returns the background scheduler's last check and grouped due/overdue follow-ups and tasks, plus upcoming interviews. It refreshes every 60 seconds and only reads records. Follow-ups accept `channel: "EMAIL"`, `"PHONE"`, or `"BOTH"`; legacy records remain `EMAIL`. Phone and combined follow-ups require a saved phone number. `POST /api/applications/{application_id}/followups/{followup_id}/draft` accepts `{"content":"..."}` for email or combined follow-ups. With no connected provider, it stores an `EMAIL_DRAFT` note and returns `location: "LOCAL_NOTE"` with an explicit unsent message. `GET /api/integrations` reports mail and calendar connection status.
 
+## Automatic posting checks
+
+`POST /api/applications/{id}/check-posting` runs a deterministic, local check of the saved job URL. It uses HTTPX first, then Schema.org JobPosting metadata through `extruct`, then carefully selected visible-page phrases. HTTP 404/410, expired `validThrough`, and strong unavailability phrases can confirm a posting is closed. 401, 403, 429, 5xx, timeouts, malformed metadata, and inconclusive pages return **UNKNOWN**; UNKNOWN does not mean closed and never overwrites a previously confirmed LIVE or CLOSED posting.
+
+Checks store the final URL, HTTP response, method, reason, timestamp, and consecutive inconclusive count. A confirmed state change is added to the timeline, but repeated checks are not. Posting status never changes an application's lifecycle, outcome, or ghosted state. The background scheduler checks eligible non-closed URLs no more often than `POSTING_CHECK_INTERVAL_HOURS=24`, with `POSTING_CHECK_CONCURRENCY=5` by default. It uses a polite local user agent and does not retry aggressively, bypass access restrictions, automate logins, or solve CAPTCHAs.
+
+Playwright is optional and never required by the tracker, Windows build, or Docker image. Install `application-tracker[posting-browser]` only when rendered-page fallback is desired; unavailable browser support leaves the result UNKNOWN rather than failing the scheduler.
+
 `GET /api/interviews/{interview_id}/calendar.ics` downloads an importable event for an explicit user action. It does not create or update an external calendar event. The code defines `MailProvider` and `CalendarProvider` interfaces for future connected implementations; this release ships disconnected defaults.
 
 ## Documents and exports API
