@@ -213,6 +213,8 @@ Open **Settings** in the browser and generate an agent token. Store the shown va
 
 Agent REST operations use `POST /api/agent/tools/{operation}` with `Authorization: Bearer <token>` and a JSON body. `list_applications` and `search_applications` return compact 25-item pages by default; pass `limit` and `cursor` to continue. `get_application` remains the complete record, while `get_application_context` returns the application, work, interviews, documents, recent timeline, and next action in one request. Create operations accept an optional `idempotency_key`; a retry with the same token, operation, and key returns the original result for 30 days. Agent errors use `{ "error": { "code", "message" } }`, and the service records agent identity in the timeline and audits. No agent delete operation exists.
 
+When importing from an application confirmation email, agents must supply its text or HTML as `confirmation_email` to `create_application`, or call `extract_confirmation_posting_link` first. The shared extractor always looks for a direct LinkedIn or Indeed listing before saving. LinkedIn links are reduced to a stable job-ID URL; Indeed tracking links with a `jk` key are reduced to a direct `viewjob` URL. An Indeed company-confirmation URL is returned as confirmation evidence only, because it cannot establish whether one specific vacancy is live.
+
 ## AI Agent Integration
 
 Application Tracker exposes one provider-neutral MCP interface backed by `agent_ops.py`:

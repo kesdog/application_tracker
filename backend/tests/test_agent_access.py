@@ -217,6 +217,23 @@ def test_agent_errors_have_stable_payloads(setup):
     assert "exact job URL" in posting.json()["error"]["message"]
 
 
+def test_agent_extracts_confirmation_links_before_creating_an_application(setup):
+    client, _, _ = setup
+    token = client.post("/api/settings/agent/token").json()["token"]
+    client.put("/api/settings/agent/permissions", json={"read": True, "create": True, "edit": False, "draft": False, "tasks": False, "interviews": False})
+    email = 'Full Stack Engineer <a href="linkedin.com/comm/jobs/view/4390679517/?trackingId=abc">View job</a>'
+    extracted = agent_call(client, token, "extract_confirmation_posting_link", {"confirmation_email": email})
+    assert extracted.status_code == 200
+    assert extracted.json()["job_url"] == "https://www.linkedin.com/jobs/view/4390679517/"
+    created = agent_call(client, token, "create_application", {
+        "application": {**draft("Hexaly"), "job_url": None, "email_reference": "LinkedIn confirmation", "source": "OTHER"},
+        "confirmation_email": email,
+    })
+    assert created.status_code == 200
+    assert created.json()["job_url"] == "https://www.linkedin.com/jobs/view/4390679517/"
+    assert created.json()["source"] == "LINKEDIN"
+
+
 def test_mcp_tracker_info_and_streamable_http_share_bearer_auth(setup):
     client, _, settings = setup
     token = client.post("/api/settings/agent/token").json()["token"]

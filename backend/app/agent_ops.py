@@ -2,7 +2,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app import __version__, activity, agent_auth, agent_context, applications, dashboard, integrations, interviews, invalidation, posting_service, work
+from app import __version__, activity, agent_auth, agent_context, applications, confirmation_links, dashboard, integrations, interviews, invalidation, posting_service, work
 from app import agent_idempotency
 from app.agent_schemas import AgentListRequest
 from app.config import Settings
@@ -16,7 +16,7 @@ from app.dashboard_schemas import DashboardRead
 
 PERMISSION_FOR = {
     "list_applications": "read", "search_applications": "read", "get_application": "read", "get_application_context": "read", "get_tracker_info": "read",
-    "find_possible_duplicates": "read", "get_application_timeline": "read", "get_upcoming_items": "read",
+    "find_possible_duplicates": "read", "extract_confirmation_posting_link": "read", "get_application_timeline": "read", "get_upcoming_items": "read",
     "get_interview_context": "read", "create_application": "create", "update_application": "edit",
     "create_timeline_entry": "edit", "update_timeline_entry": "edit", "check_posting_status": "edit",
     "create_note": "draft", "create_followup": "draft", "mark_followup_sent": "draft",
@@ -81,6 +81,8 @@ def _invoke(
         result = agent_context.application_context(session, application_id, settings).model_dump(mode="json")
     elif operation == "find_possible_duplicates":
         result = jsonable_encoder(applications.find_possible_duplicates(session, ApplicationCreate.model_validate(args["application"])))
+    elif operation == "extract_confirmation_posting_link":
+        result = confirmation_links.extract_confirmation_link(args["confirmation_email"]).model_dump()
     elif operation == "get_application_timeline":
         applications.get_application(session, application_id)
         result = TimelineRead.model_validate(activity.timeline(session, application_id)).model_dump(mode="json")
@@ -89,7 +91,14 @@ def _invoke(
     elif operation == "get_interview_context":
         result = InterviewContext.model_validate(interviews.interview_context(session, args["interview_id"])).model_dump(mode="json")
     elif operation == "create_application":
-        item = applications.create_application(session, ApplicationCreate.model_validate(args["application"]), **actor)
+        data = dict(args["application"])
+        if not data.get("job_url") and args.get("confirmation_email"):
+            extracted = confirmation_links.extract_confirmation_link(args["confirmation_email"])
+            if extracted.job_url:
+                data["job_url"] = extracted.job_url
+                if not data.get("source") or data["source"] == "OTHER":
+                    data["source"] = extracted.source
+        item = applications.create_application(session, ApplicationCreate.model_validate(data), **actor)
         application_id = item.id
         result = ApplicationRead.model_validate(item).model_dump(mode="json")
         topic = "application.created"

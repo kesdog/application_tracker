@@ -104,9 +104,14 @@ def create_mcp_server(settings: Settings | None = None, token: str | None = None
         return call("find_possible_duplicates", {"application": application.model_dump(mode="json")})
 
     @server.tool()
-    def create_application(application: ApplicationCreate, idempotency_key: str | None = None) -> dict:
-        """Create an application. An idempotency key makes a retry return the original record instead of creating another."""
-        return call("create_application", {"application": application.model_dump(mode="json"), "idempotency_key": idempotency_key})
+    def extract_confirmation_posting_link(confirmation_email: str) -> dict:
+        """Extract a direct LinkedIn/Indeed job link from confirmation-email text or HTML before creating an application."""
+        return call("extract_confirmation_posting_link", {"confirmation_email": confirmation_email})
+
+    @server.tool()
+    def create_application(application: ApplicationCreate, confirmation_email: str | None = None, idempotency_key: str | None = None) -> dict:
+        """Create an application. Always supply the confirmation email text/HTML when available: a direct LinkedIn or Indeed posting link is recovered before save. An idempotency key makes a retry return the original record instead of creating another."""
+        return call("create_application", {"application": application.model_dump(mode="json"), "confirmation_email": confirmation_email, "idempotency_key": idempotency_key})
 
     @server.tool()
     def update_application(application_id: str, changes: ApplicationUpdate) -> dict:

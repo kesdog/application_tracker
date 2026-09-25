@@ -15,7 +15,7 @@ from app.models import PostingStatus, utc_now
 
 STRONG_CLOSED_PHRASES = (
     "this job is no longer available", "this position has been filled", "applications are closed",
-    "this job has expired", "we are no longer accepting applications", "job not found",
+    "this job has expired", "we are no longer accepting applications", "no longer accepting applications", "job not found",
     "position is no longer available",
 )
 LIVE_SIGNALS = ("apply now", "apply for this job", "submit application", "job description")

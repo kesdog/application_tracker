@@ -20,6 +20,8 @@ def test_deterministic_html_hierarchy():
     assert closed.status == PostingStatus.CLOSED and closed.method == "HTML"
     assert inspect_html('<p>The role was filled with useful experience.</p>', 'https://example.test/job', now).status == PostingStatus.UNKNOWN
     assert inspect_html('<button>Apply now</button>', 'https://example.test/job', now).status == PostingStatus.LIVE
+    linkedin = inspect_html('<p>This role is no longer accepting applications.</p>', 'https://www.linkedin.com/jobs/view/4390679517/', now)
+    assert linkedin.status == PostingStatus.CLOSED and linkedin.method == "HTML"
 
 
 def test_unknown_check_preserves_live_status_and_tracks_failures(tmp_path):
