@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "application-tracker"
-version = "0.8.0"
+version = "0.9.0"
 description = "Local application tracker"
 requires-python = ">=3.11"
 dependencies = [
@@ -15,6 +15,7 @@ dependencies = [
     "alembic>=1.13,<2",
     "openpyxl>=3.1,<4",
     "python-multipart>=0.0.20,<1",
+    "mcp>=1.20,<2",
 ]
 
 [project.optional-dependencies]
@@ -22,6 +23,7 @@ dev = ["pytest>=8,<10", "httpx>=0.28,<1"]
 
 [project.scripts]
 application-tracker = "app.main:run"
+application-tracker-mcp = "app.mcp_server:run"
 
 [tool.setuptools.packages.find]
 where = ["backend"]

@@ -97,6 +97,15 @@ export interface ApplicationDocument {
   storage_path: string | null; external_reference: string | null
   created_at: string; updated_at: string
 }
+export interface AgentPermissions { read: boolean; create: boolean; edit: boolean; draft: boolean; tasks: boolean; interviews: boolean }
+export interface AgentSettings { configured: boolean; permissions: AgentPermissions }
+export interface AgentTokenCreated extends AgentSettings { token: string }
+
+export function getAgentSettings(): Promise<AgentSettings> { return request('/api/settings/agent') }
+export function regenerateAgentToken(): Promise<AgentTokenCreated> { return request('/api/settings/agent/token', { method: 'POST' }) }
+export function saveAgentPermissions(permissions: AgentPermissions): Promise<AgentSettings> {
+  return request('/api/settings/agent/permissions', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(permissions) })
+}
 
 export function getWork(id: string): Promise<ApplicationWork> {
   return request(`/api/applications/${encodeURIComponent(id)}/work`)

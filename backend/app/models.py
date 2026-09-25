@@ -232,3 +232,22 @@ class AuditEntry(Base):
     created_at: Mapped[datetime] = mapped_column(default=utc_now, index=True)
     reversible: Mapped[bool] = mapped_column(Boolean, default=False)
     undone_at: Mapped[datetime | None]
+
+
+class AgentCredential(Base):
+    __tablename__ = "agent_credentials"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64))
+    permissions: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(default=utc_now, onupdate=utc_now)
+
+
+class InvalidationEvent(Base):
+    __tablename__ = "invalidation_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    topic: Mapped[str] = mapped_column(String(80))
+    application_id: Mapped[str | None] = mapped_column(String(36))
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { deleteApplication, getApplication, updateApplication, type Application, type ApplicationUpdate } from './api'
 import ApplicationWork from './ApplicationWork.vue'
 import ApplicationInterviews from './ApplicationInterviews.vue'
@@ -101,7 +101,15 @@ async function removeApplication() {
   } finally { saving.value = false }
 }
 
-onMounted(load)
+function onInvalidation(event: Event) {
+  const changedId = (event as CustomEvent<{ application_id: string | null }>).detail.application_id
+  if (changedId !== props.id) return
+  void load()
+  contentVersion.value++
+  timelineVersion.value++
+}
+onMounted(() => { void load(); window.addEventListener('tracker:invalidate', onInvalidation) })
+onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidation))
 </script>
 
 <template>

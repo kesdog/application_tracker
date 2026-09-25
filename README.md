@@ -1,6 +1,6 @@
 # Application Tracker
 
-Version **0.8.0** adds CV and cover-letter attachments plus filter-aware CSV/XLSX exports to the FastAPI, SQLite WAL, and Vue 3 + TypeScript tracker.
+Version **0.9.0** adds controlled agent access through REST and MCP, plus live updates in the open UI, to the FastAPI, SQLite WAL, and Vue 3 + TypeScript tracker.
 
 Use **Add application** to record a job title, company, date applied, and either a job URL or email reference. Saved records appear in a compact table ordered by applied date, newest first. Every new application starts as `SUBMITTED` with no outcome. Job URLs open in a new tab; email references are displayed in the source column. On narrow windows, scroll the table horizontally to see all columns. The health screen remains available under **System status**.
 
@@ -15,6 +15,8 @@ The **Timeline** records application, note, task, follow-up, interview, outcome,
 Use the top navigation to open **Interviews** or **Tasks**. Interviews are ordered by scheduled date and show their application, meeting context, and near-term wording such as “Technical interview — tomorrow at 14:00.” Tasks are ordered by due date, show their parent application, and can be completed, cancelled, or reopened from the global view.
 
 Use **Dashboard** to see active application count, due and overdue tasks/follow-ups, upcoming interviews, linked work for the next seven days, and recent activity. The Applications page supports free-text search plus status, outcome, company, position, location, contract, source, remote policy, document filename, and application-date filters. Filters combine, can be cleared together, and retain the existing newest-first order. The export panel downloads all applications or the current filtered view as CSV or formatted XLSX.
+
+Use **Settings** to generate an agent token and choose its read, create, edit, draft, task, and interview permissions. The plaintext token is shown only when generated or regenerated. Agent changes appear in the open Applications, Dashboard, Tasks, Interviews, and application focus views through a small server-sent event that tells the UI what to refetch.
 
 Creation checks normalized company/title and job URLs against existing applications. A likely duplicate is still saved, then shown as an advisory warning with links and reasons so the user can compare records without blocking legitimate repeat applications.
 
@@ -80,7 +82,7 @@ Relative data paths resolve against the project root, regardless of the terminal
 `GET /api/health` checks the live database connection and returns:
 
 ```json
-{"status":"ok","version":"0.8.0","database":"connected"}
+{"status":"ok","version":"0.9.0","database":"connected"}
 ```
 
 It returns HTTP 503 if the database query fails. The frontend checks on load and when **Check again** is clicked, with a five-second timeout. It clears stale version/database values on a failed check. Continuous polling is not part of this release.
@@ -116,7 +118,7 @@ Example POST body:
 }
 ```
 
-Alembic applies pending migrations automatically at backend startup, including upgrades from existing 0.1.0–0.7.0 databases. Migration `0006_documents` adds application document metadata while preserving existing records. Child tables enforce application foreign keys and valid statuses; follow-up numbers are unique within each application. Startup stops if migration fails. Tests use temporary databases. To inspect or explicitly apply migrations from the project root:
+Alembic applies pending migrations automatically at backend startup, including upgrades from existing 0.1.0–0.8.0 databases. Migration `0007_agent_access` adds hashed agent credentials, permissions, and small UI invalidation events while preserving existing records. Child tables enforce application foreign keys and valid statuses; follow-up numbers are unique within each application. Startup stops if migration fails. Tests use temporary databases. To inspect or explicitly apply migrations from the project root:
 
 ```powershell
 .\.venv\Scripts\python.exe -m alembic current
@@ -189,6 +191,16 @@ Application filters are combined with AND logic. Text filters are case-insensiti
 
 `GET /api/exports/applications.csv` and `GET /api/exports/applications.xlsx` export all active records when called without parameters. Both accept the same query filters as `GET /api/applications`, so the Applications page can export its current view exactly. CSV is UTF-8 with a header row. XLSX contains real date cells, a formatted and frozen header, worksheet filters, readable widths, document filenames, and status/outcome colors.
 
+## Agent access and live updates
+
+Open **Settings** in the browser and generate an agent token. Store the shown value in your agent's secure configuration. Only its SHA-256 hash is saved in SQLite. New tokens have read access only; enable other permissions deliberately. Regenerating the token atomically replaces that hash, so the old token is rejected on its next request. Permission toggles take effect immediately. The human settings and UI endpoints require local access; remote clients may reach only the authenticated agent routes when the backend is bound to a network interface. Keep the default loopback binding unless you provide TLS and network access controls.
+
+Agent REST operations use `POST /api/agent/tools/{operation}` with `Authorization: Bearer <token>` and a JSON body. Operations are `list_applications`, `search_applications`, `get_application`, `find_possible_duplicates`, `create_application`, `update_application`, `create_note`, `create_followup`, `mark_followup_sent`, `create_task`, `complete_task`, `create_interview`, `update_interview`, `get_interview_context`, `get_application_timeline`, and `get_upcoming_items`. For example, `create_application` takes `{"application":{"job_title":"Engineer","company":"Example","date_applied":"2026-09-25","job_url":"https://example.com/job"}}`; `update_application` takes `{"application_id":"...","changes":{"status":"INTERVIEW"}}`. Read operations take `{}` or IDs/filters as appropriate. The service records agent identity in the timeline and audits. No agent delete operation exists.
+
+The same operations are available as tools from the local stdio MCP server. Configure an MCP client to run `D:\APP_TRCKR\.venv\Scripts\application-tracker-mcp.exe` with `APPLICATION_TRACKER_AGENT_TOKEN` in that process's environment. The token is checked for every tool call, including after a running MCP process has been connected. The server uses the same configured data directory and application services as REST.
+
+`GET /api/events` streams `application.created`, `application.updated`, `interview.updated`, `task.updated`, and `followup.updated` events after agent mutations. Each event contains only an application ID; the browser refetches current data. Browser EventSource reconnects automatically and resumes from the last event ID.
+
 ## Verify
 
 ```powershell
@@ -202,14 +214,14 @@ The frontend build runs the Vue/TypeScript checker and creates `frontend/dist`. 
 
 Manual checks:
 
-1. Start both servers, create an application, and open its focus view.
-2. Attach a CV upload and a cover-letter reference. Download the uploaded CV and confirm both filenames are listed.
-3. Return to Applications, filter by part of the CV filename, and confirm only its application remains.
-4. Export the current view to CSV and XLSX, then export all records.
-5. Open the workbook and confirm the frozen styled header, filters, date cells, status colors, widths, and row count.
-6. Expand **System status** and confirm backend version **0.8.0** and **SQLite · Connected**.
+1. Start both servers and open the Applications page.
+2. In Settings, generate a token and enable the desired permissions.
+3. Create and update an application through the agent REST path or MCP while the Applications page remains open. Confirm its table updates without a browser reload.
+4. Regenerate the token; confirm the previous token receives HTTP 401 or an MCP tool error immediately.
+5. Confirm an agent delete operation is unavailable, and the Settings page never shows the old token again.
+6. Expand **System status** and confirm backend version **0.9.0** and **SQLite · Connected**.
 
-Verified for this release: 119 backend tests, 27 frontend tests, the frontend production build, Alembic migration consistency, dependency checks, and a browser workflow. Coverage includes uploaded/reference documents, storage ownership, document filename filtering, all/filtered CSV exports, XLSX structure/formatting, filter serialization, multipart uploads, and the existing application/work behavior. The Python test client currently emits two upstream deprecation warnings from Starlette; tests pass.
+Verified for this release: backend and frontend tests, the frontend production build, Alembic migration consistency, dependency checks, and browser loading of Settings. Coverage includes token hashing and rotation, permission enforcement, forbidden agent deletion, MCP and REST service equivalence, SSE invalidation, and existing application behavior. The live token workflow requires explicit approval before activation in the user's database. The Python test client currently emits one upstream deprecation warning from Starlette; tests pass.
 
 The initial implementation session leaves both development servers running in the background for review. Their process IDs and logs are under the ignored `.run` directory. Before starting your own copies, stop those specific processes (check the command lines first; recorded IDs may be stale after a reboot):
 

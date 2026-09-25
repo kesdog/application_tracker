@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { listInterviews, type InterviewListItem } from './api'
 import { dateTimeText, interviewTypeText, relativeDateText } from './dateText'
 
@@ -17,7 +17,9 @@ async function load() {
   finally { loading.value = false }
 }
 
-onMounted(load)
+const onInvalidation = () => { void load() }
+onMounted(() => { void load(); window.addEventListener('tracker:invalidate', onInvalidation) })
+onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidation))
 </script>
 
 <template>

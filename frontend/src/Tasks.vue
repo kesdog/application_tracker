@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { listTasks, updateTask, type TaskListItem } from './api'
 import { dateTimeText, relativeDateText } from './dateText'
 
@@ -25,7 +25,9 @@ async function setStatus(item: TaskListItem, status: TaskListItem['status']) {
   finally { loading.value = false }
 }
 
-onMounted(load)
+const onInvalidation = () => { void load() }
+onMounted(() => { void load(); window.addEventListener('tracker:invalidate', onInvalidation) })
+onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidation))
 </script>
 
 <template>

@@ -1,9 +1,9 @@
 from contextlib import asynccontextmanager
 import logging
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Response, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 import uvicorn
@@ -18,6 +18,7 @@ from app import documents
 from app import exports
 from app import interviews
 from app import work
+from app import agent_auth, agent_ops, invalidation
 from app.interview_schemas import InterviewContext, InterviewCreate, InterviewListItem, InterviewRead, InterviewUpdate, TaskListItem
 from app.activity_schemas import TimelineRead, UndoRead
 from app.dashboard_schemas import DashboardRead
@@ -25,6 +26,7 @@ from app.document_schemas import DocumentRead
 from app.models import DocumentType
 from app.work_schemas import FollowUpCreate, FollowUpRead, FollowUpUpdate, NoteCreate, NoteRead, NoteUpdate, TaskCreate, TaskRead, TaskUpdate, WorkRead
 from app.schemas import ApplicationCreate, ApplicationFilters, ApplicationRead, ApplicationUpdate
+from sqlalchemy.orm import Session as DatabaseSession
 
 
 class HealthResponse(BaseModel):
@@ -49,6 +51,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application = FastAPI(title="Application Tracker", version=__version__, lifespan=lifespan)
     application.state.settings = settings
 
+    @application.middleware("http")
+    async def protect_human_routes(request: Request, call_next):
+        local = request.client is None or request.client.host in {"127.0.0.1", "::1", "testclient"}
+        if not local and not request.url.path.startswith("/api/agent/"):
+            return JSONResponse(status_code=403, content={"detail": "Local access required"})
+        return await call_next(request)
+
     @application.exception_handler(applications.ApplicationNotFound)
     async def not_found(_request, exc):
         return JSONResponse(status_code=404, content={"detail": str(exc)})
@@ -68,6 +77,51 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def get_session():
         with Session(application.state.engine) as session:
             yield session
+
+    def local_only(request: Request):
+        if request.client and request.client.host not in {"127.0.0.1", "::1", "testclient"}:
+            raise HTTPException(status_code=403, detail="Local access required")
+
+    def agent_token(authorization: str | None = Header(default=None)) -> str:
+        token = authorization[7:] if authorization and authorization.startswith("Bearer ") else None
+        with DatabaseSession(application.state.engine) as auth_session:
+            if not agent_auth.token_valid(auth_session, token):
+                raise HTTPException(status_code=401, detail="Valid agent bearer token required", headers={"WWW-Authenticate": "Bearer"})
+        return token
+
+    @application.get("/api/settings/agent", response_model=agent_auth.AgentSettingsRead, dependencies=[Depends(local_only)])
+    def get_agent_settings(session: Session = Depends(get_session)):
+        return agent_auth.current_settings(session)
+
+    @application.post("/api/settings/agent/token", response_model=agent_auth.AgentTokenCreated, dependencies=[Depends(local_only)])
+    def regenerate_agent_token(session: Session = Depends(get_session)):
+        return agent_auth.regenerate(session)
+
+    @application.put("/api/settings/agent/permissions", response_model=agent_auth.AgentSettingsRead, dependencies=[Depends(local_only)])
+    def update_agent_permissions(data: agent_auth.PermissionSettings, session: Session = Depends(get_session)):
+        try:
+            return agent_auth.update_permissions(session, data)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @application.post("/api/agent/tools/{operation}")
+    def agent_operation(operation: str, args: dict, token: str = Depends(agent_token), session: Session = Depends(get_session)):
+        permission = agent_ops.PERMISSION_FOR.get(operation)
+        if permission is None:
+            raise HTTPException(status_code=404, detail="Unknown agent operation")
+        if not agent_auth.authorized(session, token, permission):
+            raise HTTPException(status_code=403, detail=f"Agent permission required: {permission}")
+        session.rollback()
+        try:
+            return agent_ops.invoke(session, settings, operation, args)
+        except (ValidationError, KeyError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @application.get("/api/events", dependencies=[Depends(local_only)])
+    async def events(request: Request):
+        supplied = request.headers.get("last-event-id")
+        cursor = int(supplied) if supplied and supplied.isdecimal() else None
+        return StreamingResponse(invalidation.stream(application.state.engine, cursor), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     @application.post("/api/applications", response_model=ApplicationRead, status_code=201)
     def create_application(data: ApplicationCreate, session: Session = Depends(get_session)):

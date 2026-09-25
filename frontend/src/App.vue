@@ -5,11 +5,13 @@ import Applications from './Applications.vue'
 import Interviews from './Interviews.vue'
 import Tasks from './Tasks.vue'
 import Dashboard from './Dashboard.vue'
+import AgentSettings from './AgentSettings.vue'
 
 const status = ref<'checking' | 'connected' | 'disconnected'>('checking')
 const health = ref<Health | null>(null)
 const hash = ref(window.location.hash || '#/applications')
-const page = computed(() => hash.value.startsWith('#/dashboard') ? 'dashboard' : hash.value.startsWith('#/interviews') ? 'interviews' : hash.value.startsWith('#/tasks') ? 'tasks' : 'applications')
+const page = computed(() => hash.value.startsWith('#/settings') ? 'settings' : hash.value.startsWith('#/dashboard') ? 'dashboard' : hash.value.startsWith('#/interviews') ? 'interviews' : hash.value.startsWith('#/tasks') ? 'tasks' : 'applications')
+let events: EventSource | null = null
 function route() { hash.value = window.location.hash || '#/applications' }
 
 async function checkConnection() {
@@ -23,17 +25,24 @@ async function checkConnection() {
   }
 }
 
-onMounted(() => { window.addEventListener('hashchange', route); void checkConnection() })
-onUnmounted(() => window.removeEventListener('hashchange', route))
+onMounted(() => {
+  window.addEventListener('hashchange', route); void checkConnection()
+  events = new EventSource('/api/events')
+  for (const topic of ['application.updated', 'application.created', 'interview.updated', 'task.updated', 'followup.updated']) {
+    events.addEventListener(topic, (event) => window.dispatchEvent(new CustomEvent('tracker:invalidate', { detail: { topic, ...JSON.parse((event as MessageEvent).data) } })))
+  }
+})
+onUnmounted(() => { window.removeEventListener('hashchange', route); events?.close() })
 </script>
 
 <template>
   <div class="shell">
-    <header><div class="brand"><span class="app-mark" aria-hidden="true">AT</span><h1>Application Tracker</h1></div><nav aria-label="Primary"><a href="#/dashboard" :class="{ active: page === 'dashboard' }">Dashboard</a><a href="#/applications" :class="{ active: page === 'applications' }">Applications</a><a href="#/interviews" :class="{ active: page === 'interviews' }">Interviews</a><a href="#/tasks" :class="{ active: page === 'tasks' }">Tasks</a></nav></header>
+    <header><div class="brand"><span class="app-mark" aria-hidden="true">AT</span><h1>Application Tracker</h1></div><nav aria-label="Primary"><a href="#/dashboard" :class="{ active: page === 'dashboard' }">Dashboard</a><a href="#/applications" :class="{ active: page === 'applications' }">Applications</a><a href="#/interviews" :class="{ active: page === 'interviews' }">Interviews</a><a href="#/tasks" :class="{ active: page === 'tasks' }">Tasks</a><a href="#/settings" :class="{ active: page === 'settings' }">Settings</a></nav></header>
     <main>
       <Dashboard v-if="page === 'dashboard'" />
       <Interviews v-else-if="page === 'interviews'" />
       <Tasks v-else-if="page === 'tasks'" />
+      <AgentSettings v-else-if="page === 'settings'" />
       <Applications v-else />
 
       <details class="system-status"><summary>System status · {{ status === 'connected' ? `Connected · ${health?.version}` : status }}</summary>
@@ -52,7 +61,7 @@ onUnmounted(() => window.removeEventListener('hashchange', route))
       </section>
       </details>
     </main>
-    <footer>Application Tracker <span>0.8.0</span></footer>
+    <footer>Application Tracker <span>0.9.0</span></footer>
   </div>
 </template>
 
@@ -83,5 +92,5 @@ dl { margin: 0; border-top: 1px solid #e5e9ee; padding-top: 8px; }
 dl div { display: flex; justify-content: space-between; gap: 16px; padding-top: 16px; font-size: 14px; }
 dt { color: #576678; } dd { margin: 0; font-weight: 550; text-align: right; }
 footer { padding: 20px 32px; color: #627084; font-size: 12px; } footer span { margin-left: 8px; }
-@media (max-width: 600px) { header { padding: 14px 16px; align-items: flex-start; flex-direction: column; } nav { width: 100%; justify-content: space-between; gap: 2px; } nav a { padding: 8px 6px; font-size: 12px; } main { margin: 30px auto; padding: 0 16px; } .status-card { padding: 20px; } h2 { font-size: 25px; } }
+@media (max-width: 600px) { header { padding: 14px 16px; align-items: flex-start; flex-direction: column; } nav { width: 100%; justify-content: space-between; gap: 2px; flex-wrap:wrap; } nav a { padding: 8px 6px; font-size: 12px; } main { margin: 30px auto; padding: 0 16px; } .status-card { padding: 20px; } h2 { font-size: 25px; } }
 </style>

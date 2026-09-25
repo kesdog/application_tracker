@@ -81,11 +81,16 @@ function clearFilters() {
   void refresh()
 }
 
+function onInvalidation() {
+  if (!focusedId.value) void refresh()
+}
+
 onMounted(() => {
   window.addEventListener('hashchange', navigate)
+  window.addEventListener('tracker:invalidate', onInvalidation)
   if (!focusedId.value) void refresh()
 })
-onUnmounted(() => window.removeEventListener('hashchange', navigate))
+onUnmounted(() => { window.removeEventListener('hashchange', navigate); window.removeEventListener('tracker:invalidate', onInvalidation) })
 </script>
 
 <template>
