@@ -1,6 +1,6 @@
 # Application Tracker
 
-Version **0.7.0** adds application search and combined filters, advisory duplicate warnings, and an operational dashboard to the FastAPI, SQLite WAL, and Vue 3 + TypeScript tracker.
+Version **0.8.0** adds CV and cover-letter attachments plus filter-aware CSV/XLSX exports to the FastAPI, SQLite WAL, and Vue 3 + TypeScript tracker.
 
 Use **Add application** to record a job title, company, date applied, and either a job URL or email reference. Saved records appear in a compact table ordered by applied date, newest first. Every new application starts as `SUBMITTED` with no outcome. Job URLs open in a new tab; email references are displayed in the source column. On narrow windows, scroll the table horizontally to see all columns. The health screen remains available under **System status**.
 
@@ -8,13 +8,13 @@ Click a position in the table to open its focus view. **Edit application** lets 
 
 Selecting an outcome closes the application. To reopen an application that already has an outcome, select an active status and explicitly check **Clear the existing outcome**. Posting state is independent of the application lifecycle; marking a posting closed does not close the application. Posting checks are recorded manually.
 
-The focus view contains **Interviews**, **Notes**, **Tasks**, and **Follow-ups**. Schedule, edit, and delete interviews with preparation notes, meeting details, and results. Add/edit a typed note, add a task with an optional due date, complete/cancel/reopen tasks, and record follow-ups as drafted, sent, or cancelled. Notes retain their creator and creation time when edited. Each application has its own follow-up sequence starting at 1.
+The focus view contains **Documents**, **Interviews**, **Notes**, **Tasks**, and **Follow-ups**. Attach a CV or cover letter by uploading a file into the tracker data directory, or record an external/local reference with its filename. Uploaded files can be downloaded from the focus view. Schedule, edit, and delete interviews with preparation notes, meeting details, and results. Add/edit a typed note, add a task with an optional due date, complete/cancel/reopen tasks, and record follow-ups as drafted, sent, or cancelled.
 
 The **Timeline** records application, note, task, follow-up, interview, outcome, and posting-state activity with the actor and time. Reversible edits expose **Undo last change**. Undo restores the complete prior field snapshot, including coupled values such as a task status and completion timestamp. Application deletion requires a second human confirmation and sets `deleted_at`; deleted applications and their work disappear from normal lists without removing database records.
 
 Use the top navigation to open **Interviews** or **Tasks**. Interviews are ordered by scheduled date and show their application, meeting context, and near-term wording such as “Technical interview — tomorrow at 14:00.” Tasks are ordered by due date, show their parent application, and can be completed, cancelled, or reopened from the global view.
 
-Use **Dashboard** to see active application count, due and overdue tasks/follow-ups, upcoming interviews, linked work for the next seven days, and recent activity. The Applications page supports free-text search plus status, outcome, company, position, location, contract, source, remote policy, and application-date filters. Filters combine, can be cleared together, and retain the existing newest-first order.
+Use **Dashboard** to see active application count, due and overdue tasks/follow-ups, upcoming interviews, linked work for the next seven days, and recent activity. The Applications page supports free-text search plus status, outcome, company, position, location, contract, source, remote policy, document filename, and application-date filters. Filters combine, can be cleared together, and retain the existing newest-first order. The export panel downloads all applications or the current filtered view as CSV or formatted XLSX.
 
 Creation checks normalized company/title and job URLs against existing applications. A likely duplicate is still saved, then shown as an advisory warning with links and reasons so the user can compare records without blocking legitimate repeat applications.
 
@@ -80,7 +80,7 @@ Relative data paths resolve against the project root, regardless of the terminal
 `GET /api/health` checks the live database connection and returns:
 
 ```json
-{"status":"ok","version":"0.7.0","database":"connected"}
+{"status":"ok","version":"0.8.0","database":"connected"}
 ```
 
 It returns HTTP 503 if the database query fails. The frontend checks on load and when **Check again** is clicked, with a five-second timeout. It clears stale version/database values on a failed check. Continuous polling is not part of this release.
@@ -116,7 +116,7 @@ Example POST body:
 }
 ```
 
-Alembic applies pending migrations automatically at backend startup, including upgrades from existing 0.1.0–0.6.0 databases. The fifth migration adds `deleted_at`, timeline events, audit entries, actor identity, and undo state while preserving existing records; 0.7.0 requires no schema change. Child tables enforce application foreign keys and valid statuses; follow-up numbers are unique within each application. Startup stops if migration fails. Tests use temporary databases. To inspect or explicitly apply migrations from the project root:
+Alembic applies pending migrations automatically at backend startup, including upgrades from existing 0.1.0–0.7.0 databases. Migration `0006_documents` adds application document metadata while preserving existing records. Child tables enforce application foreign keys and valid statuses; follow-up numbers are unique within each application. Startup stops if migration fails. Tests use temporary databases. To inspect or explicitly apply migrations from the project root:
 
 ```powershell
 .\.venv\Scripts\python.exe -m alembic current
@@ -165,7 +165,7 @@ Interviews belong to an application and require a type plus a timezone-aware sch
 | `GET /api/interviews/{id}/context` | Read the interview, full parent application, related notes/tasks, and available document metadata |
 | `GET /api/tasks` | List all application-linked tasks in due-date order with application summaries |
 
-The context response currently returns `documents: []` because document storage is introduced in 0.8.0. Global tasks with no due date sort after dated tasks. Interview and task writes remain in the existing application-scoped routes so parent ownership is always checked.
+Interview context includes the application's document metadata. Global tasks with no due date sort after dated tasks. Interview and task writes remain in the existing application-scoped routes so parent ownership is always checked.
 
 ## Timeline, audit, undo, and deletion API
 
@@ -177,11 +177,17 @@ Timeline and audit records are written in the same transaction as their domain m
 
 ## Search, duplicate warnings, and dashboard API
 
-Application filters are combined with AND logic. Text filters are case-insensitive partial matches; `q` searches title, company, location, remote policy, contract type, source, description, requirements, job URL, and email reference. Status/outcome are exact enum matches and date bounds are inclusive. `document_filename` intentionally returns no matches until documents are introduced in 0.8.0.
+Application filters are combined with AND logic. Text filters are case-insensitive partial matches; `q` searches title, company, location, remote policy, contract type, source, description, requirements, job URL, and email reference. Status/outcome are exact enum matches, date bounds are inclusive, and `document_filename` matches attached filenames.
 
 `POST /api/applications` includes `duplicate_warnings` in its normal application response. A match is reported for the same normalized company/title or normalized job URL, with a recent-date reason when application dates are within 30 days. Warnings never change the HTTP 201 response or prevent persistence. Normal list/detail responses contain an empty warning list.
 
 `GET /api/dashboard` returns operational counts, due/overdue tasks and follow-ups, interviews scheduled within seven days, a due-date-ordered upcoming work list, and the ten most recent timeline events. Soft-deleted applications and their child work are excluded. Completed/cancelled tasks and sent/cancelled follow-ups do not count as due.
+
+## Documents and exports API
+
+`GET /api/applications/{id}/documents` lists CV and cover-letter metadata. `POST` to the same path accepts multipart form data with `document_type` (`CV` or `COVER_LETTER`) and exactly one source: `file`, or `external_reference` plus `filename`. Uploaded files are copied beneath `APP_DATA_DIR/documents/{application_id}`. `GET /api/applications/{id}/documents/{document_id}/content` downloads an uploaded file; referenced documents have no content endpoint payload.
+
+`GET /api/exports/applications.csv` and `GET /api/exports/applications.xlsx` export all active records when called without parameters. Both accept the same query filters as `GET /api/applications`, so the Applications page can export its current view exactly. CSV is UTF-8 with a header row. XLSX contains real date cells, a formatted and frozen header, worksheet filters, readable widths, document filenames, and status/outcome colors.
 
 ## Verify
 
@@ -196,15 +202,14 @@ The frontend build runs the Vue/TypeScript checker and creates `frontend/dist`. 
 
 Manual checks:
 
-1. Start both servers, create an application, and click its position in the table.
-2. Create several varied applications, then search by title and filter by company, status, and date. Combine filters and clear them.
-3. Create a second record with the same company/title or job URL. Confirm it saves and shows a possible-duplicate warning linking to the first record.
-4. Add overdue and upcoming tasks/follow-ups plus an upcoming interview.
-5. Open **Dashboard** and confirm counts, due-date order, application links, and recent activity change with the data.
-6. Complete a due task, refresh Dashboard, and confirm its count/item disappear.
-7. Expand **System status** and confirm backend version **0.7.0** and **SQLite · Connected**.
+1. Start both servers, create an application, and open its focus view.
+2. Attach a CV upload and a cover-letter reference. Download the uploaded CV and confirm both filenames are listed.
+3. Return to Applications, filter by part of the CV filename, and confirm only its application remains.
+4. Export the current view to CSV and XLSX, then export all records.
+5. Open the workbook and confirm the frozen styled header, filters, date cells, status colors, widths, and row count.
+6. Expand **System status** and confirm backend version **0.8.0** and **SQLite · Connected**.
 
-Verified for this release: 114 backend tests, 24 frontend tests, the frontend production build, Alembic migration consistency, dependency checks, and a browser workflow. Coverage includes combined filters, free-text search, placeholder document filtering, non-blocking duplicate detection, dashboard counts/order, soft-delete exclusion, query serialization, and the existing application/work behavior. The Python test client currently emits two upstream deprecation warnings from Starlette; tests pass.
+Verified for this release: 119 backend tests, 27 frontend tests, the frontend production build, Alembic migration consistency, dependency checks, and a browser workflow. Coverage includes uploaded/reference documents, storage ownership, document filename filtering, all/filtered CSV exports, XLSX structure/formatting, filter serialization, multipart uploads, and the existing application/work behavior. The Python test client currently emits two upstream deprecation warnings from Starlette; tests pass.
 
 The initial implementation session leaves both development servers running in the background for review. Their process IDs and logs are under the ignored `.run` directory. Before starting your own copies, stop those specific processes (check the command lines first; recorded IDs may be stale after a reboot):
 

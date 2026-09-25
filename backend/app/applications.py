@@ -1,11 +1,11 @@
 from datetime import timezone
 
 from pydantic import ValidationError
-from sqlalchemy import false, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.activity import InvalidActor, record_audit, record_event
-from app.models import ActorType, Application, ApplicationStatus, utc_now
+from app.models import ActorType, Application, ApplicationDocument, ApplicationStatus, utc_now
 from app.schemas import ApplicationCreate, ApplicationFilters, ApplicationUpdate
 
 
@@ -64,8 +64,11 @@ def list_applications(session: Session, filters: ApplicationFilters | None = Non
     if filters.date_to:
         query = query.where(Application.date_applied <= filters.date_to)
     if filters.document_filename:
-        # Documents are introduced in 0.8.0; keep the filter contract stable now.
-        query = query.where(false())
+        document_match = select(ApplicationDocument.id).where(
+            ApplicationDocument.application_id == Application.id,
+            func.lower(ApplicationDocument.filename).contains(filters.document_filename.casefold(), autoescape=True),
+        ).exists()
+        query = query.where(document_match)
     return list(session.scalars(query.order_by(Application.date_applied.desc(), Application.id)))
 
 

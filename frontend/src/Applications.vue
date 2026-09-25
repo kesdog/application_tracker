@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { createApplication, listApplications, type Application, type ApplicationFilters, type DuplicateMatch } from './api'
+import { applicationExportUrl, createApplication, listApplications, type Application, type ApplicationFilters, type DuplicateMatch } from './api'
 import ApplicationFocus from './ApplicationFocus.vue'
 
 function selectedId() {
@@ -21,6 +21,7 @@ const loadError = ref('')
 const formError = ref('')
 const success = ref('')
 const duplicateWarnings = ref<DuplicateMatch[]>([])
+const exportFormat = ref<'csv' | 'xlsx'>('csv')
 const statuses = ['', 'SUBMITTED', 'INTERVIEW', 'CLOSED'] as const
 const outcomes = ['', 'SUCCESSFUL', 'UNSUCCESSFUL', 'WITHDRAWN', 'JOB_CANCELLED', 'GHOSTED'] as const
 function today() {
@@ -28,9 +29,11 @@ function today() {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 const form = reactive({ job_title: '', company: '', date_applied: today(), job_url: '', email_reference: '' })
-const blankFilters = (): ApplicationFilters => ({ q: '', status: '', outcome: '', company: '', title: '', location: '', contract_type: '', source: '', remote_policy: '', date_from: '', date_to: '' })
+const blankFilters = (): ApplicationFilters => ({ q: '', status: '', outcome: '', company: '', title: '', location: '', contract_type: '', source: '', remote_policy: '', date_from: '', date_to: '', document_filename: '' })
 const filters = reactive<ApplicationFilters>(blankFilters())
 const hasFilters = computed(() => Object.values(filters).some(Boolean))
+const exportAllUrl = computed(() => applicationExportUrl(exportFormat.value))
+const exportCurrentUrl = computed(() => applicationExportUrl(exportFormat.value, filters))
 
 async function refresh() {
   loading.value = true
@@ -126,10 +129,18 @@ onUnmounted(() => window.removeEventListener('hashchange', navigate))
         <label>Outcome<select v-model="filters.outcome"><option v-for="outcome in outcomes" :key="outcome" :value="outcome">{{ outcome || 'Any outcome' }}</option></select></label>
         <label>Company<input v-model="filters.company" /></label><label>Position<input v-model="filters.title" /></label><label>Location<input v-model="filters.location" /></label>
         <label>Contract type<input v-model="filters.contract_type" /></label><label>Source<input v-model="filters.source" /></label><label>Remote policy<input v-model="filters.remote_policy" /></label>
+        <label>Document filename<input v-model="filters.document_filename" placeholder="CV or cover letter filename" /></label>
         <label>Applied from<input v-model="filters.date_from" type="date" /></label><label>Applied to<input v-model="filters.date_to" type="date" /></label>
       </div>
       <button class="primary" type="submit" :disabled="loading">Apply filters</button>
     </form>
+
+    <section class="exports" aria-labelledby="exports-title">
+      <div><h3 id="exports-title">Export applications</h3><p>Download every application or exactly the current filtered view.</p></div>
+      <label>Format<select v-model="exportFormat"><option value="csv">CSV</option><option value="xlsx">XLSX</option></select></label>
+      <a class="export-link" :href="exportAllUrl" :download="`applications.${exportFormat}`">Export all</a>
+      <a class="export-link primary" :href="exportCurrentUrl" :download="`applications.${exportFormat}`">Export current view</a>
+    </section>
 
     <div class="list-heading"><span>{{ applications.length }} {{ applications.length === 1 ? 'application' : 'applications' }}{{ hasFilters ? ' matched' : '' }}</span><button type="button" :disabled="loading || saving" @click="refresh">{{ loading ? 'Loading…' : 'Refresh list' }}</button></div>
     <p v-if="loadError" class="error" role="alert">{{ loadError }}</p>
@@ -157,6 +168,7 @@ onUnmounted(() => window.removeEventListener('hashchange', navigate))
 .primary { background: #263e5c; border-color: #263e5c; color: #fff; }
 .primary:hover:enabled { background: #192d45; }
 .application-form, .filters { background: #fff; border: 1px solid #dce2e9; border-radius: 8px; padding: 24px; margin-bottom: 24px; }
+.exports { display: grid; grid-template-columns: minmax(0, 1fr) 150px auto auto; align-items: end; gap: 14px; background: #f7f9fb; border: 1px solid #dce2e9; border-radius: 8px; padding: 18px; margin-bottom: 24px; }.exports h3 { margin-bottom: 5px; }.exports p { margin: 0; color: #576678; font-size: 13px; }.export-link { display: inline-flex; justify-content: center; align-items: center; min-height: 40px; border: 1px solid #b9c4d2; border-radius: 5px; padding: 9px 13px; text-decoration: none; white-space: nowrap; }
 .filter-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }.filter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }.search-field { grid-column: span 2; }
 fieldset { border: 0; padding: 0; margin: 20px 0; min-width: 0; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
@@ -184,5 +196,5 @@ a { color: #24568b; text-underline-offset: 3px; }
 .success { color: #216344; padding: 12px 16px; background: #eaf5ee; border-radius: 6px; font-size: 14px; }
 .duplicate-warning { color: #71430f; padding: 15px 18px; background: #fff1de; border: 1px solid #f0d4ae; border-radius: 6px; font-size: 14px; margin-bottom: 20px; }.duplicate-warning p { margin: 6px 0; }.duplicate-warning ul { margin: 8px 0 0; padding-left: 20px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-@media (max-width: 750px) { .filter-grid { grid-template-columns: 1fr 1fr; }.search-field { grid-column: span 2; } }@media (max-width: 600px) { .form-grid, .filter-grid { grid-template-columns: 1fr; } .search-field { grid-column: span 1; }.application-form, .filters { padding: 18px; } .page-heading { align-items: flex-start; } }
+@media (max-width: 900px) { .exports { grid-template-columns: 1fr 150px; }.exports div { grid-column: span 2; } }@media (max-width: 750px) { .filter-grid { grid-template-columns: 1fr 1fr; }.search-field { grid-column: span 2; } }@media (max-width: 600px) { .form-grid, .filter-grid, .exports { grid-template-columns: 1fr; } .exports div { grid-column: span 1; }.search-field { grid-column: span 1; }.application-form, .filters { padding: 18px; } .page-heading { align-items: flex-start; } }
 </style>

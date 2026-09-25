@@ -3,6 +3,7 @@ from typing import Annotated, Self
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, HttpUrl, TypeAdapter, field_validator, model_validator
 
+from app.document_schemas import DocumentRead
 from app.models import InterviewType
 from app.schemas import ApplicationRead
 from app.work_schemas import NoteRead, TaskRead
@@ -100,4 +101,4 @@ class InterviewContext(BaseModel):
     application: ApplicationRead
     notes: list[NoteRead]
     tasks: list[TaskRead]
-    documents: list[dict[str, str | None]]
+    documents: list[DocumentRead]

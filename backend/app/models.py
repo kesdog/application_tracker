@@ -104,6 +104,11 @@ class InterviewType(str, Enum):
     OTHER = "OTHER"
 
 
+class DocumentType(str, Enum):
+    CV = "CV"
+    COVER_LETTER = "COVER_LETTER"
+
+
 def utc_now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -171,6 +176,29 @@ class Interview(Base):
     email_reference: Mapped[str | None] = mapped_column(String(2048))
     notes: Mapped[str | None] = mapped_column(Text)
     result: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(default=utc_now, onupdate=utc_now)
+
+
+class ApplicationDocument(Base):
+    __tablename__ = "application_documents"
+    __table_args__ = (
+        CheckConstraint(
+            "(storage_path IS NOT NULL AND external_reference IS NULL) OR "
+            "(storage_path IS NULL AND external_reference IS NOT NULL)",
+            name="document_upload_or_reference",
+        ),
+        CheckConstraint("length(trim(filename)) > 0", name="document_filename_required"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    application_id: Mapped[str] = mapped_column(ForeignKey("applications.id"), index=True)
+    type: Mapped[DocumentType] = mapped_column(
+        SqlEnum(DocumentType, native_enum=False, create_constraint=True, name="document_type")
+    )
+    filename: Mapped[str] = mapped_column(String(500))
+    storage_path: Mapped[str | None] = mapped_column(String(2048))
+    external_reference: Mapped[str | None] = mapped_column(String(2048))
     created_at: Mapped[datetime] = mapped_column(default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(default=utc_now, onupdate=utc_now)
 

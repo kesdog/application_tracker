@@ -4,6 +4,7 @@ import { deleteApplication, getApplication, updateApplication, type Application,
 import ApplicationWork from './ApplicationWork.vue'
 import ApplicationInterviews from './ApplicationInterviews.vue'
 import ApplicationTimeline from './ApplicationTimeline.vue'
+import ApplicationDocuments from './ApplicationDocuments.vue'
 
 const props = defineProps<{ id: string }>()
 const application = ref<Application | null>(null)
@@ -176,6 +177,7 @@ onMounted(load)
         </section>
         <section class="panel"><h3>Description</h3><p class="text-block">{{ application.description ?? 'No description added.' }}</p><h3>Requirements</h3><p class="text-block">{{ application.requirements ?? 'No requirements added.' }}</p></section>
         <section class="panel"><h3>Job posting</h3><dl class="details"><div><dt>Posting status</dt><dd>{{ application.posting_status }}</dd></div><div><dt>Last checked</dt><dd>{{ application.posting_last_checked_at ? new Date(application.posting_last_checked_at).toLocaleString() + ' (local time)' : 'Not checked' }}</dd></div></dl></section>
+        <ApplicationDocuments :key="`documents-${contentVersion}`" :application-id="application.id" @changed="timelineVersion++" />
         <ApplicationInterviews :key="`interviews-${contentVersion}`" :application-id="application.id" @changed="timelineVersion++" />
         <ApplicationWork :key="`work-${contentVersion}`" :application-id="application.id" @changed="timelineVersion++" />
         <ApplicationTimeline :key="timelineVersion" :application-id="application.id" @undone="handleUndo" />

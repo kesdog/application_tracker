@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.applications import ApplicationNotFound, get_application
 from app.activity import record_audit, record_event
 from app.interview_schemas import InterviewCreate, InterviewUpdate
-from app.models import ActorType, Application, AuditEntry, Interview, Note, Task
+from app.models import ActorType, Application, ApplicationDocument, AuditEntry, Interview, Note, Task
 
 
 def get_interview(session: Session, interview_id: str) -> Interview:
@@ -89,7 +89,9 @@ def interview_context(session: Session, interview_id: str) -> dict:
         "application": application,
         "notes": list(session.scalars(select(Note).where(Note.application_id == application.id).order_by(Note.created_at.desc(), Note.id))),
         "tasks": list(session.scalars(select(Task).where(Task.application_id == application.id).order_by(Task.due_at.is_(None), Task.due_at, Task.id))),
-        "documents": [],
+        "documents": list(session.scalars(select(ApplicationDocument).where(
+            ApplicationDocument.application_id == application.id
+        ).order_by(ApplicationDocument.created_at.desc(), ApplicationDocument.id.desc()))),
     }
 
 

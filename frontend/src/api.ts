@@ -71,7 +71,7 @@ export interface InterviewContext {
   application: Application
   notes: Note[]
   tasks: Task[]
-  documents: Array<Record<string, string | null>>
+  documents: ApplicationDocument[]
 }
 
 export type ActorType = 'HUMAN' | 'AGENT' | 'SYSTEM'
@@ -91,6 +91,12 @@ export interface DashboardCounts { active_applications: number; followups_due: n
 export interface UpcomingItem { id: string; kind: 'TASK' | 'FOLLOWUP' | 'INTERVIEW'; title: string; due_at: string; status: string; application: ApplicationSummary }
 export interface RecentActivity { id: string; event_type: string; summary: string; actor_type: ActorType; created_at: string; application: ApplicationSummary }
 export interface DashboardData { counts: DashboardCounts; upcoming: UpcomingItem[]; recent_activity: RecentActivity[] }
+export type DocumentType = 'CV' | 'COVER_LETTER'
+export interface ApplicationDocument {
+  id: string; application_id: string; type: DocumentType; filename: string
+  storage_path: string | null; external_reference: string | null
+  created_at: string; updated_at: string
+}
 
 export function getWork(id: string): Promise<ApplicationWork> {
   return request(`/api/applications/${encodeURIComponent(id)}/work`)
@@ -159,10 +165,40 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export function listApplications(filters: ApplicationFilters = {}): Promise<Application[]> {
-  const params = new URLSearchParams()
-  for (const [key, value] of Object.entries(filters)) if (value) params.set(key, value)
+  const params = filterParams(filters)
   const query = params.toString()
   return request(`/api/applications${query ? `?${query}` : ''}`)
+}
+
+function filterParams(filters: ApplicationFilters): URLSearchParams {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(filters)) if (value) params.set(key, value)
+  return params
+}
+
+export function applicationExportUrl(format: 'csv' | 'xlsx', filters: ApplicationFilters = {}): string {
+  const query = filterParams(filters).toString()
+  return `/api/exports/applications.${format}${query ? `?${query}` : ''}`
+}
+
+export function listDocuments(applicationId: string): Promise<ApplicationDocument[]> {
+  return request(`/api/applications/${encodeURIComponent(applicationId)}/documents`)
+}
+
+export function createDocument(
+  applicationId: string,
+  data: { document_type: DocumentType; file?: File; filename?: string; external_reference?: string },
+): Promise<ApplicationDocument> {
+  const body = new FormData()
+  body.set('document_type', data.document_type)
+  if (data.file) body.set('file', data.file)
+  if (data.filename) body.set('filename', data.filename)
+  if (data.external_reference) body.set('external_reference', data.external_reference)
+  return request(`/api/applications/${encodeURIComponent(applicationId)}/documents`, { method: 'POST', body })
+}
+
+export function documentContentUrl(applicationId: string, documentId: string): string {
+  return `/api/applications/${encodeURIComponent(applicationId)}/documents/${encodeURIComponent(documentId)}/content`
 }
 
 export function getDashboard(): Promise<DashboardData> { return request('/api/dashboard') }

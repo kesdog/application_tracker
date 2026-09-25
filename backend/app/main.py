@@ -1,8 +1,8 @@
 from contextlib import asynccontextmanager
 import logging
 
-from fastapi import Depends, FastAPI, HTTPException, Response
-from fastapi.responses import JSONResponse
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Response, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -14,11 +14,15 @@ from app.database import create_database, migrate_database
 from app import applications
 from app import activity
 from app import dashboard as dashboard_service
+from app import documents
+from app import exports
 from app import interviews
 from app import work
 from app.interview_schemas import InterviewContext, InterviewCreate, InterviewListItem, InterviewRead, InterviewUpdate, TaskListItem
 from app.activity_schemas import TimelineRead, UndoRead
 from app.dashboard_schemas import DashboardRead
+from app.document_schemas import DocumentRead
+from app.models import DocumentType
 from app.work_schemas import FollowUpCreate, FollowUpRead, FollowUpUpdate, NoteCreate, NoteRead, NoteUpdate, TaskCreate, TaskRead, TaskUpdate, WorkRead
 from app.schemas import ApplicationCreate, ApplicationFilters, ApplicationRead, ApplicationUpdate
 
@@ -85,6 +89,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def delete_application(application_id: str, session: Session = Depends(get_session)):
         applications.delete_application(session, application_id)
         return Response(status_code=204)
+
+    @application.get("/api/applications/{application_id}/documents", response_model=list[DocumentRead])
+    def list_documents(application_id: str, session: Session = Depends(get_session)):
+        return documents.list_documents(session, application_id)
+
+    @application.post("/api/applications/{application_id}/documents", response_model=DocumentRead, status_code=201)
+    def create_document(
+        application_id: str,
+        document_type: DocumentType = Form(),
+        filename: str | None = Form(default=None),
+        external_reference: str | None = Form(default=None),
+        file: UploadFile | None = File(default=None),
+        session: Session = Depends(get_session),
+    ):
+        return documents.create_document(
+            session, application_id, document_type, settings.app_data_dir,
+            upload=file, filename=filename, external_reference=external_reference,
+        )
+
+    @application.get("/api/applications/{application_id}/documents/{document_id}/content")
+    def download_document(application_id: str, document_id: str, session: Session = Depends(get_session)):
+        path, filename = documents.uploaded_path(session, application_id, document_id, settings.app_data_dir)
+        return FileResponse(path, filename=filename)
 
     @application.get("/api/applications/{application_id}/timeline", response_model=TimelineRead)
     def get_timeline(application_id: str, session: Session = Depends(get_session)):
@@ -160,6 +187,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.get("/api/dashboard", response_model=DashboardRead)
     def get_dashboard(session: Session = Depends(get_session)):
         return dashboard_service.dashboard(session)
+
+    @application.get("/api/exports/applications.csv")
+    def export_applications_csv(filters: ApplicationFilters = Depends(), session: Session = Depends(get_session)):
+        return Response(
+            content=exports.csv_export(session, filters), media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="applications.csv"'},
+        )
+
+    @application.get("/api/exports/applications.xlsx")
+    def export_applications_xlsx(filters: ApplicationFilters = Depends(), session: Session = Depends(get_session)):
+        return Response(
+            content=exports.xlsx_export(session, filters),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": 'attachment; filename="applications.xlsx"'},
+        )
 
     @application.get("/api/health", response_model=HealthResponse)
     def health() -> HealthResponse:
