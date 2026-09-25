@@ -26,6 +26,7 @@ export interface Application extends ApplicationCreate {
   posting_last_checked_at: string | null
   followup_delay_days: number | null
   max_followup_suggestions: number | null
+  deleted_at: string | null
 }
 
 export type NoteType = 'GENERAL' | 'ASSESSMENT' | 'EMAIL_DRAFT' | 'INTERVIEW' | 'AGENT'
@@ -65,6 +66,20 @@ export interface InterviewContext {
   tasks: Task[]
   documents: Array<Record<string, string | null>>
 }
+
+export type ActorType = 'HUMAN' | 'AGENT' | 'SYSTEM'
+export interface TimelineEvent {
+  id: string
+  application_id: string
+  event_type: string
+  actor_type: ActorType
+  actor_reference: string | null
+  summary: string
+  metadata: Record<string, unknown>
+  created_at: string
+}
+export interface Timeline { events: TimelineEvent[]; undo_available: boolean }
+export interface UndoResult { audit_id: string; entity_type: string; entity_id: string; fields: string[] }
 
 export function getWork(id: string): Promise<ApplicationWork> {
   return request(`/api/applications/${encodeURIComponent(id)}/work`)
@@ -144,6 +159,18 @@ export function updateApplication(id: string, data: ApplicationUpdate): Promise<
   return request(`/api/applications/${encodeURIComponent(id)}`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
   })
+}
+
+export function deleteApplication(id: string): Promise<void> {
+  return request(`/api/applications/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export function getTimeline(id: string): Promise<Timeline> {
+  return request(`/api/applications/${encodeURIComponent(id)}/timeline`)
+}
+
+export function undoLastChange(id: string): Promise<UndoResult> {
+  return request(`/api/applications/${encodeURIComponent(id)}/undo`, { method: 'POST' })
 }
 
 export function createApplication(data: ApplicationCreate): Promise<Application> {

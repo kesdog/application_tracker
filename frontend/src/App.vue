@@ -50,7 +50,7 @@ onUnmounted(() => window.removeEventListener('hashchange', route))
       </section>
       </details>
     </main>
-    <footer>Application Tracker <span>0.5.0</span></footer>
+    <footer>Application Tracker <span>0.6.0</span></footer>
   </div>
 </template>
 

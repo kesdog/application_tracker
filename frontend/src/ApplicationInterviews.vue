@@ -4,6 +4,7 @@ import { createInterview, deleteInterview, listApplicationInterviews, updateInte
 import { dateTimeText, interviewTypeText, relativeDateText } from './dateText'
 
 const props = defineProps<{ applicationId: string }>()
+const emit = defineEmits<{ changed: [] }>()
 const types: InterviewType[] = ['PHONE', 'HR', 'TECHNICAL', 'ONSITE', 'FINAL', 'OTHER']
 const interviews = ref<Interview[]>([])
 const busy = ref(false)
@@ -62,6 +63,7 @@ async function save() {
     interviews.value = editingId.value ? interviews.value.map(item => item.id === saved.id ? saved : item) : [...interviews.value, saved]
     interviews.value.sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at) || a.id.localeCompare(b.id))
     notice.value = editingId.value ? 'Interview updated.' : 'Interview added.'
+    emit('changed')
     open.value = false; editingId.value = null
   } catch (reason) { error.value = reason instanceof Error ? reason.message : 'Unable to save interview.' }
   finally { busy.value = false }
@@ -74,6 +76,7 @@ async function remove(item: Interview) {
     await deleteInterview(props.applicationId, item.id)
     interviews.value = interviews.value.filter(row => row.id !== item.id)
     deletingId.value = null; notice.value = 'Interview deleted.'
+    emit('changed')
   } catch (reason) { error.value = reason instanceof Error ? reason.message : 'Unable to delete interview.' }
   finally { busy.value = false }
 }

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { getApplication, updateApplication, type Application, type ApplicationUpdate } from './api'
+import { deleteApplication, getApplication, updateApplication, type Application, type ApplicationUpdate } from './api'
 import ApplicationWork from './ApplicationWork.vue'
 import ApplicationInterviews from './ApplicationInterviews.vue'
+import ApplicationTimeline from './ApplicationTimeline.vue'
 
 const props = defineProps<{ id: string }>()
 const application = ref<Application | null>(null)
@@ -14,6 +15,9 @@ const saveError = ref('')
 const saved = ref(false)
 const clearOutcome = ref(false)
 const checkedAt = ref('')
+const timelineVersion = ref(0)
+const contentVersion = ref(0)
+const deleteConfirm = ref(false)
 const outcomes = ['SUCCESSFUL', 'UNSUCCESSFUL', 'WITHDRAWN', 'JOB_CANCELLED', 'GHOSTED'] as const
 const statuses = ['SUBMITTED', 'INTERVIEW', 'CLOSED'] as const
 const postingStates = ['UNKNOWN', 'LIVE', 'CLOSED'] as const
@@ -69,6 +73,7 @@ async function save() {
     application.value = await updateApplication(props.id, changes)
     draft.value = null
     saved.value = true
+    timelineVersion.value++
   } catch (error) {
     saveError.value = error instanceof TypeError || (error instanceof Error && error.name === 'AbortError')
       ? 'Could not confirm the save. Your edits are still here. Cancel editing and reload the record to check its saved state.'
@@ -76,6 +81,23 @@ async function save() {
   } finally {
     saving.value = false
   }
+}
+
+async function handleUndo() {
+  await load()
+  contentVersion.value++
+}
+
+async function removeApplication() {
+  if (!deleteConfirm.value) { deleteConfirm.value = true; return }
+  saving.value = true; saveError.value = ''
+  try {
+    await deleteApplication(props.id)
+    window.location.hash = '#/applications'
+  } catch (error) {
+    saveError.value = error instanceof Error ? error.message : 'Unable to delete application.'
+    deleteConfirm.value = false
+  } finally { saving.value = false }
 }
 
 onMounted(load)
@@ -87,7 +109,8 @@ onMounted(load)
     <p v-if="loading" role="status">Loading application…</p>
     <div v-else-if="loadError" role="alert"><p class="error">{{ loadError }}</p><button type="button" @click="load">Try again</button></div>
     <template v-else-if="application">
-      <div class="focus-heading"><div><p class="eyebrow">{{ application.company }}</p><h2 id="focus-title">{{ application.job_title }}</h2></div><button v-if="!draft" type="button" class="primary" @click="edit">Edit application</button></div>
+      <div class="focus-heading"><div><p class="eyebrow">{{ application.company }}</p><h2 id="focus-title">{{ application.job_title }}</h2></div><div v-if="!draft" class="header-actions"><button type="button" class="primary" @click="edit">Edit application</button><button type="button" :disabled="saving" :class="{ danger: deleteConfirm }" @click="removeApplication">{{ deleteConfirm ? 'Confirm delete' : 'Delete application' }}</button></div></div>
+      <p v-if="saveError && !draft" class="error" role="alert">{{ saveError }}</p>
       <p v-if="saved" class="success" role="status">Changes saved.</p>
 
       <form v-if="draft" class="panel" @submit.prevent="save">
@@ -153,8 +176,9 @@ onMounted(load)
         </section>
         <section class="panel"><h3>Description</h3><p class="text-block">{{ application.description ?? 'No description added.' }}</p><h3>Requirements</h3><p class="text-block">{{ application.requirements ?? 'No requirements added.' }}</p></section>
         <section class="panel"><h3>Job posting</h3><dl class="details"><div><dt>Posting status</dt><dd>{{ application.posting_status }}</dd></div><div><dt>Last checked</dt><dd>{{ application.posting_last_checked_at ? new Date(application.posting_last_checked_at).toLocaleString() + ' (local time)' : 'Not checked' }}</dd></div></dl></section>
-        <ApplicationInterviews :application-id="application.id" />
-        <ApplicationWork :application-id="application.id" />
+        <ApplicationInterviews :key="`interviews-${contentVersion}`" :application-id="application.id" @changed="timelineVersion++" />
+        <ApplicationWork :key="`work-${contentVersion}`" :application-id="application.id" @changed="timelineVersion++" />
+        <ApplicationTimeline :key="timelineVersion" :application-id="application.id" @undone="handleUndo" />
       </template>
     </template>
   </section>
@@ -163,11 +187,12 @@ onMounted(load)
 <style scoped>
 .back { display: inline-block; margin-bottom: 28px; }
 a { color: #24568b; text-underline-offset: 3px; overflow-wrap: anywhere; }
-.focus-heading, .actions, .badges { display: flex; align-items: center; gap: 12px; }
+.focus-heading, .actions, .badges, .header-actions { display: flex; align-items: center; gap: 12px; }
 .focus-heading { justify-content: space-between; margin-bottom: 20px; }
 .focus-heading > div { min-width: 0; overflow-wrap: anywhere; }
 .primary { background: #263e5c; border-color: #263e5c; color: #fff; }
 .primary:hover:enabled { background: #192d45; }
+.danger { color: #a12c32; border-color: #a12c32; background: #fff5f5; }
 .panel { background: #fff; border: 1px solid #dce2e9; border-radius: 8px; padding: 24px; margin: 20px 0; }
 .details { margin-top: 16px; }
 .details > div { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 20px; }

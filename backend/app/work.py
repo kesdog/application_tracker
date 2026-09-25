@@ -4,8 +4,9 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.applications import ApplicationNotFound, get_application
+from app.activity import record_audit, record_event
 from app.config import Settings
-from app.models import FollowUp, FollowUpStatus, Note, Task, TaskStatus, utc_now
+from app.models import ActorType, FollowUp, FollowUpStatus, Note, Task, TaskStatus, utc_now
 from app.work_schemas import FollowUpCreate, FollowUpUpdate, NoteCreate, NoteUpdate, TaskCreate, TaskUpdate
 
 
@@ -34,41 +35,75 @@ def child(session, model, application_id, item_id):
     return item
 
 
-def save(session, item):
-    session.add(item)
+def finish(session, item):
     session.commit()
     session.refresh(item)
     return item
 
 
-def create_note(session: Session, application_id: str, data: NoteCreate, *, actor: str = "HUMAN") -> Note:
+def create_note(
+    session: Session, application_id: str, data: NoteCreate, *,
+    actor_type: ActorType = ActorType.HUMAN, actor_reference: str | None = None,
+) -> Note:
     get_application(session, application_id)
-    return save(session, Note(application_id=application_id, created_by=actor, **data.model_dump()))
+    item = Note(application_id=application_id, created_by=actor_reference or actor_type.value, **data.model_dump())
+    session.add(item); session.flush()
+    record_event(session, application_id, "NOTE_ADDED", f"{item.type.value.title()} note added", actor_type=actor_type, actor_reference=actor_reference, metadata={"note_id": item.id})
+    record_audit(session, application_id, "NOTE", item.id, "CREATE", new=data.model_dump(), actor_type=actor_type, actor_reference=actor_reference)
+    return finish(session, item)
 
 
-def update_note(session: Session, application_id: str, item_id: str, data: NoteUpdate) -> Note:
+def update_note(
+    session: Session, application_id: str, item_id: str, data: NoteUpdate, *,
+    actor_type: ActorType = ActorType.HUMAN, actor_reference: str | None = None,
+) -> Note:
     item = child(session, Note, application_id, item_id)
-    for name, value in data.model_dump(exclude_unset=True).items():
+    changes = {name: value for name, value in data.model_dump(exclude_unset=True).items() if value != getattr(item, name)}
+    previous = {name: getattr(item, name) for name in changes}
+    for name, value in changes.items():
         setattr(item, name, value)
-    return save(session, item)
+    if changes:
+        record_event(session, application_id, "NOTE_CHANGED", "Note updated", actor_type=actor_type, actor_reference=actor_reference, metadata={"note_id": item.id, "fields": sorted(changes)})
+        record_audit(session, application_id, "NOTE", item.id, "UPDATE", previous=previous, new=changes, actor_type=actor_type, actor_reference=actor_reference, reversible=True)
+    return finish(session, item)
 
 
-def create_task(session: Session, application_id: str, data: TaskCreate) -> Task:
+def create_task(
+    session: Session, application_id: str, data: TaskCreate, *,
+    actor_type: ActorType = ActorType.HUMAN, actor_reference: str | None = None,
+) -> Task:
     get_application(session, application_id)
-    return save(session, Task(application_id=application_id, **data.model_dump()))
+    item = Task(application_id=application_id, **data.model_dump())
+    session.add(item); session.flush()
+    record_event(session, application_id, "TASK_CREATED", f"Task created: {item.title}", actor_type=actor_type, actor_reference=actor_reference, metadata={"task_id": item.id})
+    record_audit(session, application_id, "TASK", item.id, "CREATE", new=data.model_dump(), actor_type=actor_type, actor_reference=actor_reference)
+    return finish(session, item)
 
 
-def update_task(session: Session, application_id: str, item_id: str, data: TaskUpdate) -> Task:
+def update_task(
+    session: Session, application_id: str, item_id: str, data: TaskUpdate, *,
+    actor_type: ActorType = ActorType.HUMAN, actor_reference: str | None = None,
+) -> Task:
     item = child(session, Task, application_id, item_id)
     changes = data.model_dump(exclude_unset=True)
     if "status" in changes and changes["status"] != item.status:
-        item.completed_at = utc_now() if changes["status"] == TaskStatus.COMPLETED else None
+        changes["completed_at"] = utc_now() if changes["status"] == TaskStatus.COMPLETED else None
+    changes = {name: value for name, value in changes.items() if value != getattr(item, name)}
+    previous = {name: getattr(item, name) for name in changes}
     for name, value in changes.items():
         setattr(item, name, value)
-    return save(session, item)
+    if changes:
+        event_type = "TASK_COMPLETED" if changes.get("status") == TaskStatus.COMPLETED else "TASK_CHANGED"
+        summary = f"Task completed: {item.title}" if event_type == "TASK_COMPLETED" else f"Task updated: {item.title}"
+        record_event(session, application_id, event_type, summary, actor_type=actor_type, actor_reference=actor_reference, metadata={"task_id": item.id})
+        record_audit(session, application_id, "TASK", item.id, "UPDATE", previous=previous, new=changes, actor_type=actor_type, actor_reference=actor_reference, reversible=True)
+    return finish(session, item)
 
 
-def create_followup(session: Session, application_id: str, data: FollowUpCreate, settings: Settings) -> FollowUp:
+def create_followup(
+    session: Session, application_id: str, data: FollowUpCreate, settings: Settings, *,
+    actor_type: ActorType = ActorType.HUMAN, actor_reference: str | None = None,
+) -> FollowUp:
     # Take SQLite's write lock before reading the next sequence number. API calls
     # supply a fresh session; simultaneous creates serialize within busy_timeout.
     session.execute(text("BEGIN IMMEDIATE"))
@@ -76,14 +111,29 @@ def create_followup(session: Session, application_id: str, data: FollowUpCreate,
     sequence = (session.scalar(select(func.max(FollowUp.sequence_number)).where(FollowUp.application_id == application_id)) or 0) + 1
     due_at = data.due_at or utc_now() + timedelta(days=effective_settings(application, settings)["followup_delay_days"])
     # The suggestion cap is not a limit on manual creation. No email is sent here.
-    return save(session, FollowUp(application_id=application_id, sequence_number=sequence, due_at=due_at, template_reference=data.template_reference))
+    item = FollowUp(application_id=application_id, sequence_number=sequence, due_at=due_at, template_reference=data.template_reference)
+    session.add(item); session.flush()
+    record_event(session, application_id, "FOLLOWUP_CREATED", f"Follow-up #{sequence} created", actor_type=actor_type, actor_reference=actor_reference, metadata={"followup_id": item.id})
+    record_audit(session, application_id, "FOLLOWUP", item.id, "CREATE", new={"sequence_number": sequence, "due_at": due_at, "template_reference": data.template_reference}, actor_type=actor_type, actor_reference=actor_reference)
+    return finish(session, item)
 
 
-def update_followup(session: Session, application_id: str, item_id: str, data: FollowUpUpdate) -> FollowUp:
+def update_followup(
+    session: Session, application_id: str, item_id: str, data: FollowUpUpdate, *,
+    actor_type: ActorType = ActorType.HUMAN, actor_reference: str | None = None,
+) -> FollowUp:
     item = child(session, FollowUp, application_id, item_id)
     changes = data.model_dump(exclude_unset=True)
     if "status" in changes and changes["status"] != item.status:
-        item.sent_at = utc_now() if changes["status"] == FollowUpStatus.SENT else None
+        changes["sent_at"] = utc_now() if changes["status"] == FollowUpStatus.SENT else None
+    changes = {name: value for name, value in changes.items() if value != getattr(item, name)}
+    previous = {name: getattr(item, name) for name in changes}
     for name, value in changes.items():
         setattr(item, name, value)
-    return save(session, item)
+    if changes:
+        status = changes.get("status")
+        event_type = "FOLLOWUP_SENT" if status == FollowUpStatus.SENT else "FOLLOWUP_DRAFTED" if status == FollowUpStatus.DRAFTED else "FOLLOWUP_CHANGED"
+        summary = f"Follow-up #{item.sequence_number} {status.value.lower()}" if status else f"Follow-up #{item.sequence_number} updated"
+        record_event(session, application_id, event_type, summary, actor_type=actor_type, actor_reference=actor_reference, metadata={"followup_id": item.id})
+        record_audit(session, application_id, "FOLLOWUP", item.id, "UPDATE", previous=previous, new=changes, actor_type=actor_type, actor_reference=actor_reference, reversible=True)
+    return finish(session, item)

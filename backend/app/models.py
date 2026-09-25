@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 from enum import Enum
 from uuid import uuid4
 
-from sqlalchemy import CheckConstraint, Enum as SqlEnum, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Enum as SqlEnum, ForeignKey, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -28,6 +28,12 @@ class PostingStatus(str, Enum):
     UNKNOWN = "UNKNOWN"
     LIVE = "LIVE"
     CLOSED = "CLOSED"
+
+
+class ActorType(str, Enum):
+    HUMAN = "HUMAN"
+    AGENT = "AGENT"
+    SYSTEM = "SYSTEM"
 
 
 class Application(Base):
@@ -65,6 +71,7 @@ class Application(Base):
     posting_last_checked_at: Mapped[datetime | None]
     followup_delay_days: Mapped[int | None]
     max_followup_suggestions: Mapped[int | None]
+    deleted_at: Mapped[datetime | None]
 
 
 class NoteType(str, Enum):
@@ -166,3 +173,34 @@ class Interview(Base):
     result: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(default=utc_now, onupdate=utc_now)
+
+
+class TimelineEvent(Base):
+    __tablename__ = "timeline_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    application_id: Mapped[str] = mapped_column(ForeignKey("applications.id"), index=True)
+    event_type: Mapped[str] = mapped_column(String(80), index=True)
+    actor_type: Mapped[ActorType] = mapped_column(SqlEnum(ActorType, native_enum=False, create_constraint=True, name="actor_type"))
+    actor_reference: Mapped[str | None] = mapped_column(String(300))
+    summary: Mapped[str] = mapped_column(String(500))
+    event_metadata: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(default=utc_now, index=True)
+
+
+class AuditEntry(Base):
+    __tablename__ = "audit_entries"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    application_id: Mapped[str] = mapped_column(ForeignKey("applications.id"), index=True)
+    entity_type: Mapped[str] = mapped_column(String(50))
+    entity_id: Mapped[str] = mapped_column(String(36))
+    action: Mapped[str] = mapped_column(String(50))
+    field: Mapped[str | None] = mapped_column(String(100))
+    previous_value: Mapped[dict | None] = mapped_column(JSON)
+    new_value: Mapped[dict | None] = mapped_column(JSON)
+    actor_type: Mapped[ActorType] = mapped_column(SqlEnum(ActorType, native_enum=False, create_constraint=True, name="audit_actor_type"))
+    actor_reference: Mapped[str | None] = mapped_column(String(300))
+    created_at: Mapped[datetime] = mapped_column(default=utc_now, index=True)
+    reversible: Mapped[bool] = mapped_column(Boolean, default=False)
+    undone_at: Mapped[datetime | None]

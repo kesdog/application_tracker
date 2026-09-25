@@ -3,6 +3,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { createFollowUp, createNote, createTask, getWork, updateFollowUp, updateNote, updateTask, type ApplicationWork, type FollowUp, type Note, type NoteType, type Task } from './api'
 
 const props = defineProps<{ applicationId: string }>()
+const emit = defineEmits<{ changed: [] }>()
 const work = ref<ApplicationWork | null>(null)
 const busy = ref(false)
 const error = ref('')
@@ -30,7 +31,7 @@ async function perform(action: () => Promise<void>, message: string) {
   busy.value = true
   error.value = ''
   notice.value = ''
-  try { await action(); notice.value = message }
+  try { await action(); notice.value = message; emit('changed') }
   catch (cause) {
     error.value = cause instanceof TypeError || (cause instanceof Error && cause.name === 'AbortError')
       ? 'Could not confirm the save. Your entries are kept. Refresh work below before retrying to check whether it was saved.'

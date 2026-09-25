@@ -1,6 +1,6 @@
 # Application Tracker
 
-Version **0.5.0** adds first-class interviews and global upcoming Interviews and Tasks views to the FastAPI, SQLite WAL, and Vue 3 + TypeScript tracker.
+Version **0.6.0** adds a chronological activity timeline, mutation audit records, one-step undo, and human-only soft deletion to the FastAPI, SQLite WAL, and Vue 3 + TypeScript tracker.
 
 Use **Add application** to record a job title, company, date applied, and either a job URL or email reference. Saved records appear in a compact table ordered by applied date, newest first. Every new application starts as `SUBMITTED` with no outcome. Job URLs open in a new tab; email references are displayed in the source column. On narrow windows, scroll the table horizontally to see all columns. The health screen remains available under **System status**.
 
@@ -9,6 +9,8 @@ Click a position in the table to open its focus view. **Edit application** lets 
 Selecting an outcome closes the application. To reopen an application that already has an outcome, select an active status and explicitly check **Clear the existing outcome**. Posting state is independent of the application lifecycle; marking a posting closed does not close the application. Posting checks are recorded manually.
 
 The focus view contains **Interviews**, **Notes**, **Tasks**, and **Follow-ups**. Schedule, edit, and delete interviews with preparation notes, meeting details, and results. Add/edit a typed note, add a task with an optional due date, complete/cancel/reopen tasks, and record follow-ups as drafted, sent, or cancelled. Notes retain their creator and creation time when edited. Each application has its own follow-up sequence starting at 1.
+
+The **Timeline** records application, note, task, follow-up, interview, outcome, and posting-state activity with the actor and time. Reversible edits expose **Undo last change**. Undo restores the complete prior field snapshot, including coupled values such as a task status and completion timestamp. Application deletion requires a second human confirmation and sets `deleted_at`; deleted applications and their work disappear from normal lists without removing database records.
 
 Use the top navigation to open **Interviews** or **Tasks**. Interviews are ordered by scheduled date and show their application, meeting context, and near-term wording such as “Technical interview — tomorrow at 14:00.” Tasks are ordered by due date, show their parent application, and can be completed, cancelled, or reopened from the global view.
 
@@ -74,7 +76,7 @@ Relative data paths resolve against the project root, regardless of the terminal
 `GET /api/health` checks the live database connection and returns:
 
 ```json
-{"status":"ok","version":"0.5.0","database":"connected"}
+{"status":"ok","version":"0.6.0","database":"connected"}
 ```
 
 It returns HTTP 503 if the database query fails. The frontend checks on load and when **Check again** is clicked, with a five-second timeout. It clears stale version/database values on a failed check. Continuous polling is not part of this release.
@@ -85,6 +87,7 @@ It returns HTTP 503 if the database query fails. The frontend checks on load and
 - `GET /api/applications` returns the saved records, ordered by applied date descending, then ID.
 - `GET /api/applications/{id}` returns a full application or HTTP 404.
 - `PATCH /api/applications/{id}` updates only supplied fields and returns the saved application. Omitted fields stay unchanged; explicit null clears an optional field. Required fields cannot be null. Missing records return HTTP 404.
+- `DELETE /api/applications/{id}` performs a human-only soft deletion and returns HTTP 204. Deleted records return HTTP 404 and are excluded from normal application and global work lists.
 - Invalid data returns HTTP 422. Titles and companies must contain non-whitespace text; job URLs must use HTTP or HTTPS. At least one non-empty job URL or email reference is required. Status and outcome cannot be supplied on creation.
 
 Lifecycle rules are enforced in the backend service and supported by a database constraint:
@@ -109,7 +112,7 @@ Example POST body:
 }
 ```
 
-Alembic applies pending migrations automatically at backend startup, including upgrades from existing 0.1.0–0.4.0 databases. The fourth migration adds interviews and its application/scheduled-date indexes while preserving existing records. Child tables enforce application foreign keys and valid statuses; follow-up numbers are unique within each application. Startup stops if migration fails. Tests use temporary databases. To inspect or explicitly apply migrations from the project root:
+Alembic applies pending migrations automatically at backend startup, including upgrades from existing 0.1.0–0.5.0 databases. The fifth migration adds `deleted_at`, timeline events, audit entries, actor identity, and undo state while preserving existing records. Child tables enforce application foreign keys and valid statuses; follow-up numbers are unique within each application. Startup stops if migration fails. Tests use temporary databases. To inspect or explicitly apply migrations from the project root:
 
 ```powershell
 .\.venv\Scripts\python.exe -m alembic current
@@ -160,6 +163,14 @@ Interviews belong to an application and require a type plus a timezone-aware sch
 
 The context response currently returns `documents: []` because document storage is introduced in 0.8.0. Global tasks with no due date sort after dated tasks. Interview and task writes remain in the existing application-scoped routes so parent ownership is always checked.
 
+## Timeline, audit, undo, and deletion API
+
+`GET /api/applications/{id}/timeline` returns newest-first events and `undo_available`. Events contain `event_type`, `summary`, `actor_type`, optional `actor_reference`, metadata, and a UTC timestamp. Actor types are `HUMAN`, `AGENT`, and `SYSTEM`; human REST mutations currently record `HUMAN`, while the shared services preserve agent/system identities supplied by future integrations.
+
+`POST /api/applications/{id}/undo` restores the latest reversible mutation and returns the affected entity and fields. One audit entry stores each mutation's complete before/after snapshot, so all fields changed by that operation restore together. Creation and deletion records are audited but are not reversible through this endpoint. A request with no available reversible change returns HTTP 409.
+
+Timeline and audit records are written in the same transaction as their domain mutation. Recorded events include application creation and edits, status/outcome/posting changes, notes, task creation/completion, follow-up creation/drafting/sending, interview creation/changes, deletion, and undo. Application deletion is rejected when the service actor is not `HUMAN`.
+
 ## Verify
 
 ```powershell
@@ -174,16 +185,14 @@ The frontend build runs the Vue/TypeScript checker and creates `frontend/dist`. 
 Manual checks:
 
 1. Start both servers, create an application, and click its position in the table.
-2. Add two dated interviews to the first application and one to another application. Edit one interview and retain its result.
-3. Open **Interviews** and confirm all three are ordered by date with clear application context and upcoming wording.
-4. Under Notes, add an `ASSESSMENT` note, then edit its content.
-5. Add tasks with different due dates across both applications. Open **Tasks**, confirm date order and application links, then complete one.
-6. Add two follow-ups: use the default date for one and choose a date for the other. Confirm sequence numbers 1 and 2.
-7. Mark the first follow-up drafted, then sent. Cancel the second. Confirm their statuses and sent timestamp.
-8. Refresh the page and confirm all records persist and remain associated with the correct application.
-9. Expand **System status** and confirm backend version **0.5.0** and **SQLite · Connected**.
+2. Change its status, add a note, complete a task, and edit an interview.
+3. Confirm each action appears newest-first in **Timeline** with a human actor and clear summary.
+4. Choose **Undo last change** and confirm the edited field and any coupled timestamp return to their prior values.
+5. Refresh the page and confirm the timeline and restored state persist.
+6. Create a second application, choose **Delete application**, then **Confirm delete**. Confirm it disappears from Applications, Interviews, and Tasks.
+7. Expand **System status** and confirm backend version **0.6.0** and **SQLite · Connected**.
 
-Verified for this release: 91 backend tests, 19 frontend tests, the frontend production build, Alembic migration consistency, and dependency checks. Coverage includes interview ownership and validation, UTC normalization, date ordering, global application context, interview context data, delete behavior, migration from 0.4.0, and the existing application/work behavior. The Python test client currently emits two upstream deprecation warnings from Starlette; tests pass.
+Verified for this release: 99 backend tests, 22 frontend tests, the frontend production build, Alembic migration consistency, dependency checks, and a browser workflow. Browser checks cover chronological event rendering, automatic refresh after task completion, atomic undo restoring task status/timestamp, the application delete confirmation step, and a clean-data return. Backend coverage includes automatic event creation, human/agent actor identity, soft-delete filtering, agent deletion rejection, migration from 0.5.0, and the existing application/work behavior. The Python test client currently emits two upstream deprecation warnings from Starlette; tests pass.
 
 The initial implementation session leaves both development servers running in the background for review. Their process IDs and logs are under the ignored `.run` directory. Before starting your own copies, stop those specific processes (check the command lines first; recorded IDs may be stale after a reboot):
 

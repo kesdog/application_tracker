@@ -58,8 +58,9 @@ class ApplicationRead(ApplicationCreate):
     outcome: ApplicationOutcome | None
     posting_status: PostingStatus
     posting_last_checked_at: datetime | None
+    deleted_at: datetime | None
 
-    @field_validator("posting_last_checked_at")
+    @field_validator("posting_last_checked_at", "deleted_at")
     @classmethod
     def expose_utc(cls, value: datetime | None) -> datetime | None:
         if value is not None and value.tzinfo is None:

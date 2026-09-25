@@ -12,9 +12,11 @@ from app import __version__
 from app.config import Settings
 from app.database import create_database, migrate_database
 from app import applications
+from app import activity
 from app import interviews
 from app import work
 from app.interview_schemas import InterviewContext, InterviewCreate, InterviewListItem, InterviewRead, InterviewUpdate, TaskListItem
+from app.activity_schemas import TimelineRead, UndoRead
 from app.work_schemas import FollowUpCreate, FollowUpRead, FollowUpUpdate, NoteCreate, NoteRead, NoteUpdate, TaskCreate, TaskRead, TaskUpdate, WorkRead
 from app.schemas import ApplicationCreate, ApplicationRead, ApplicationUpdate
 
@@ -49,6 +51,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def invalid_application(_request, exc):
         return JSONResponse(status_code=422, content={"detail": str(exc)})
 
+    @application.exception_handler(activity.InvalidActor)
+    async def invalid_actor(_request, exc):
+        return JSONResponse(status_code=403, content={"detail": str(exc)})
+
+    @application.exception_handler(activity.UndoUnavailable)
+    async def undo_unavailable(_request, exc):
+        return JSONResponse(status_code=409, content={"detail": str(exc)})
+
     def get_session():
         with Session(application.state.engine) as session:
             yield session
@@ -68,6 +78,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.patch("/api/applications/{application_id}", response_model=ApplicationRead)
     def update_application(application_id: str, data: ApplicationUpdate, session: Session = Depends(get_session)):
         return applications.update_application(session, application_id, data)
+
+    @application.delete("/api/applications/{application_id}", status_code=204)
+    def delete_application(application_id: str, session: Session = Depends(get_session)):
+        applications.delete_application(session, application_id)
+        return Response(status_code=204)
+
+    @application.get("/api/applications/{application_id}/timeline", response_model=TimelineRead)
+    def get_timeline(application_id: str, session: Session = Depends(get_session)):
+        applications.get_application(session, application_id)
+        return activity.timeline(session, application_id)
+
+    @application.post("/api/applications/{application_id}/undo", response_model=UndoRead)
+    def undo_last_change(application_id: str, session: Session = Depends(get_session)):
+        applications.get_application(session, application_id)
+        return activity.undo_last(session, application_id)
 
     @application.get("/api/applications/{application_id}/work", response_model=WorkRead)
     def get_work(application_id: str, session: Session = Depends(get_session)):
