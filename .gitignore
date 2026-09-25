@@ -1,5 +1,12 @@
 .venv/
 .env
+# Local test files and test directories stay out of the application repository.
+**/tests/
+**/*test*.py
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
 data/
 __pycache__/
 *.py[cod]
