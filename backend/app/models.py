@@ -88,6 +88,15 @@ class FollowUpStatus(str, Enum):
     CANCELLED = "CANCELLED"
 
 
+class InterviewType(str, Enum):
+    PHONE = "PHONE"
+    HR = "HR"
+    TECHNICAL = "TECHNICAL"
+    ONSITE = "ONSITE"
+    FINAL = "FINAL"
+    OTHER = "OTHER"
+
+
 def utc_now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -136,3 +145,24 @@ class FollowUp(Base):
     sent_at: Mapped[datetime | None]
     status: Mapped[FollowUpStatus] = mapped_column(SqlEnum(FollowUpStatus, native_enum=False, create_constraint=True, name="followup_status"), default=FollowUpStatus.PENDING)
     template_reference: Mapped[str | None] = mapped_column(String(2048))
+
+
+class Interview(Base):
+    __tablename__ = "interviews"
+    __table_args__ = (
+        CheckConstraint("duration IS NULL OR duration > 0", name="interview_duration_positive"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    application_id: Mapped[str] = mapped_column(ForeignKey("applications.id"), index=True)
+    type: Mapped[InterviewType] = mapped_column(SqlEnum(InterviewType, native_enum=False, create_constraint=True, name="interview_type"))
+    scheduled_at: Mapped[datetime] = mapped_column(index=True)
+    duration: Mapped[int | None]
+    location: Mapped[str | None] = mapped_column(String(300))
+    meeting_url: Mapped[str | None] = mapped_column(String(2048))
+    interviewer: Mapped[str | None] = mapped_column(String(300))
+    email_reference: Mapped[str | None] = mapped_column(String(2048))
+    notes: Mapped[str | None] = mapped_column(Text)
+    result: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(default=utc_now, onupdate=utc_now)

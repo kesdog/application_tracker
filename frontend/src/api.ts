@@ -37,6 +37,35 @@ export interface FollowUpInput { due_at: string | null; template_reference: stri
 export interface FollowUp extends FollowUpInput { id: string; application_id: string; sequence_number: number; status: 'PENDING' | 'DRAFTED' | 'SENT' | 'CANCELLED'; sent_at: string | null }
 export interface ApplicationWork { notes: Note[]; tasks: Task[]; followups: FollowUp[]; followup_delay_days: number; max_followup_suggestions: number }
 
+export type InterviewType = 'PHONE' | 'HR' | 'TECHNICAL' | 'ONSITE' | 'FINAL' | 'OTHER'
+export interface InterviewInput {
+  type: InterviewType
+  scheduled_at: string
+  duration: number | null
+  location: string | null
+  meeting_url: string | null
+  interviewer: string | null
+  email_reference: string | null
+  notes: string | null
+  result: string | null
+}
+export interface Interview extends InterviewInput {
+  id: string
+  application_id: string
+  created_at: string
+  updated_at: string
+}
+export interface ApplicationSummary { id: string; job_title: string; company: string }
+export interface InterviewListItem extends Interview { application: ApplicationSummary }
+export interface TaskListItem extends Task { application: ApplicationSummary }
+export interface InterviewContext {
+  interview: Interview
+  application: Application
+  notes: Note[]
+  tasks: Task[]
+  documents: Array<Record<string, string | null>>
+}
+
 export function getWork(id: string): Promise<ApplicationWork> {
   return request(`/api/applications/${encodeURIComponent(id)}/work`)
 }
@@ -53,6 +82,34 @@ export const updateTask = (id: string, taskId: string, data: { status: Task['sta
 export const createFollowUp = (id: string, data: FollowUpInput) => writeChild<FollowUp>(id, 'followups', data)
 export const updateFollowUp = (id: string, followupId: string, data: { status: FollowUp['status'] }) => writeChild<FollowUp>(id, 'followups', data, followupId)
 
+export function listApplicationInterviews(applicationId: string): Promise<Interview[]> {
+  return request(`/api/applications/${encodeURIComponent(applicationId)}/interviews`)
+}
+
+export function createInterview(applicationId: string, data: InterviewInput): Promise<Interview> {
+  return writeChild<Interview>(applicationId, 'interviews', data)
+}
+
+export function updateInterview(applicationId: string, interviewId: string, data: Partial<InterviewInput>): Promise<Interview> {
+  return writeChild<Interview>(applicationId, 'interviews', data, interviewId)
+}
+
+export function deleteInterview(applicationId: string, interviewId: string): Promise<void> {
+  return request(`/api/applications/${encodeURIComponent(applicationId)}/interviews/${encodeURIComponent(interviewId)}`, { method: 'DELETE' })
+}
+
+export function listInterviews(): Promise<InterviewListItem[]> {
+  return request('/api/interviews')
+}
+
+export function getInterviewContext(interviewId: string): Promise<InterviewContext> {
+  return request(`/api/interviews/${encodeURIComponent(interviewId)}/context`)
+}
+
+export function listTasks(): Promise<TaskListItem[]> {
+  return request('/api/tasks')
+}
+
 export type ApplicationUpdate = Partial<Omit<Application, 'id'>>
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -68,6 +125,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
         : typeof detail === 'string' ? detail : `Request failed (${response.status})`
       throw new Error(message)
     }
+    if (response.status === 204) return undefined as T
     return await response.json() as T
   } finally {
     clearTimeout(timeout)

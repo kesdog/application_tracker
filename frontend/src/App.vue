@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getHealth, type Health } from './api'
 import Applications from './Applications.vue'
+import Interviews from './Interviews.vue'
+import Tasks from './Tasks.vue'
 
 const status = ref<'checking' | 'connected' | 'disconnected'>('checking')
 const health = ref<Health | null>(null)
+const hash = ref(window.location.hash || '#/applications')
+const page = computed(() => hash.value.startsWith('#/interviews') ? 'interviews' : hash.value.startsWith('#/tasks') ? 'tasks' : 'applications')
+function route() { hash.value = window.location.hash || '#/applications' }
 
 async function checkConnection() {
   status.value = 'checking'
@@ -17,14 +22,17 @@ async function checkConnection() {
   }
 }
 
-onMounted(checkConnection)
+onMounted(() => { window.addEventListener('hashchange', route); void checkConnection() })
+onUnmounted(() => window.removeEventListener('hashchange', route))
 </script>
 
 <template>
   <div class="shell">
-    <header><span class="app-mark" aria-hidden="true">AT</span><h1>Application Tracker</h1></header>
+    <header><div class="brand"><span class="app-mark" aria-hidden="true">AT</span><h1>Application Tracker</h1></div><nav aria-label="Primary"><a href="#/applications" :class="{ active: page === 'applications' }">Applications</a><a href="#/interviews" :class="{ active: page === 'interviews' }">Interviews</a><a href="#/tasks" :class="{ active: page === 'tasks' }">Tasks</a></nav></header>
     <main>
-      <Applications />
+      <Interviews v-if="page === 'interviews'" />
+      <Tasks v-else-if="page === 'tasks'" />
+      <Applications v-else />
 
       <details class="system-status"><summary>System status · {{ status === 'connected' ? `Connected · ${health?.version}` : status }}</summary>
       <section class="status-card" aria-label="Connection status" aria-live="polite" :aria-busy="status === 'checking'">
@@ -42,7 +50,7 @@ onMounted(checkConnection)
       </section>
       </details>
     </main>
-    <footer>Application Tracker <span>0.4.0</span></footer>
+    <footer>Application Tracker <span>0.5.0</span></footer>
   </div>
 </template>
 
@@ -51,7 +59,9 @@ onMounted(checkConnection)
 * { box-sizing: border-box; }
 body { margin: 0; }
 .shell { min-height: 100vh; display: flex; flex-direction: column; }
-header { display: flex; align-items: center; gap: 12px; padding: 20px 32px; background: #fff; border-bottom: 1px solid #dde2e9; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 16px 32px; background: #fff; border-bottom: 1px solid #dde2e9; }
+.brand, nav { display: flex; align-items: center; gap: 12px; }
+nav { gap: 6px; } nav a { color: #526174; text-decoration: none; font-size: 14px; font-weight: 600; padding: 9px 11px; border-radius: 6px; } nav a:hover, nav a.active { background: #edf1f5; color: #1f3857; }
 .app-mark { padding: 8px; background: #263e5c; color: #fff; font-size: 13px; font-weight: 700; border-radius: 6px; }
 h1 { font-size: 17px; font-weight: 650; margin: 0; }
 main { width: min(100%, 1200px); margin: 40px auto; padding: 0 24px; flex: 1; }
@@ -71,5 +81,5 @@ dl { margin: 0; border-top: 1px solid #e5e9ee; padding-top: 8px; }
 dl div { display: flex; justify-content: space-between; gap: 16px; padding-top: 16px; font-size: 14px; }
 dt { color: #576678; } dd { margin: 0; font-weight: 550; text-align: right; }
 footer { padding: 20px 32px; color: #627084; font-size: 12px; } footer span { margin-left: 8px; }
-@media (max-width: 480px) { header { padding: 16px 20px; } main { margin: 36px auto; padding: 0 16px; } .status-card { padding: 20px; } h2 { font-size: 25px; } }
+@media (max-width: 600px) { header { padding: 14px 16px; align-items: flex-start; flex-direction: column; } nav { width: 100%; justify-content: space-between; } main { margin: 30px auto; padding: 0 16px; } .status-card { padding: 20px; } h2 { font-size: 25px; } }
 </style>

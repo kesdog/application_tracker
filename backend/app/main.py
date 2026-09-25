@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 import logging
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.exc import SQLAlchemyError
@@ -12,7 +12,9 @@ from app import __version__
 from app.config import Settings
 from app.database import create_database, migrate_database
 from app import applications
+from app import interviews
 from app import work
+from app.interview_schemas import InterviewContext, InterviewCreate, InterviewListItem, InterviewRead, InterviewUpdate, TaskListItem
 from app.work_schemas import FollowUpCreate, FollowUpRead, FollowUpUpdate, NoteCreate, NoteRead, NoteUpdate, TaskCreate, TaskRead, TaskUpdate, WorkRead
 from app.schemas import ApplicationCreate, ApplicationRead, ApplicationUpdate
 
@@ -94,6 +96,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.patch("/api/applications/{application_id}/followups/{item_id}", response_model=FollowUpRead)
     def update_followup(application_id: str, item_id: str, data: FollowUpUpdate, session: Session = Depends(get_session)):
         return work.update_followup(session, application_id, item_id, data)
+
+    @application.get("/api/applications/{application_id}/interviews", response_model=list[InterviewRead])
+    def list_application_interviews(application_id: str, session: Session = Depends(get_session)):
+        return interviews.list_application_interviews(session, application_id)
+
+    @application.post("/api/applications/{application_id}/interviews", response_model=InterviewRead, status_code=201)
+    def create_interview(application_id: str, data: InterviewCreate, session: Session = Depends(get_session)):
+        return interviews.create_interview(session, application_id, data)
+
+    @application.patch("/api/applications/{application_id}/interviews/{interview_id}", response_model=InterviewRead)
+    def update_interview(application_id: str, interview_id: str, data: InterviewUpdate, session: Session = Depends(get_session)):
+        return interviews.update_interview(session, application_id, interview_id, data)
+
+    @application.delete("/api/applications/{application_id}/interviews/{interview_id}", status_code=204)
+    def delete_interview(application_id: str, interview_id: str, session: Session = Depends(get_session)):
+        interviews.delete_interview(session, application_id, interview_id)
+        return Response(status_code=204)
+
+    @application.get("/api/interviews", response_model=list[InterviewListItem])
+    def list_interviews(session: Session = Depends(get_session)):
+        return interviews.list_interviews(session)
+
+    @application.get("/api/interviews/{interview_id}", response_model=InterviewRead)
+    def get_interview(interview_id: str, session: Session = Depends(get_session)):
+        return interviews.get_interview(session, interview_id)
+
+    @application.get("/api/interviews/{interview_id}/context", response_model=InterviewContext)
+    def get_interview_context(interview_id: str, session: Session = Depends(get_session)):
+        return interviews.interview_context(session, interview_id)
+
+    @application.get("/api/tasks", response_model=list[TaskListItem])
+    def list_tasks(session: Session = Depends(get_session)):
+        return interviews.list_tasks(session)
 
     @application.get("/api/health", response_model=HealthResponse)
     def health() -> HealthResponse:

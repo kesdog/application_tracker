@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { getApplication, updateApplication, type Application, type ApplicationUpdate } from './api'
 import ApplicationWork from './ApplicationWork.vue'
+import ApplicationInterviews from './ApplicationInterviews.vue'
 
 const props = defineProps<{ id: string }>()
 const application = ref<Application | null>(null)
@@ -152,6 +153,7 @@ onMounted(load)
         </section>
         <section class="panel"><h3>Description</h3><p class="text-block">{{ application.description ?? 'No description added.' }}</p><h3>Requirements</h3><p class="text-block">{{ application.requirements ?? 'No requirements added.' }}</p></section>
         <section class="panel"><h3>Job posting</h3><dl class="details"><div><dt>Posting status</dt><dd>{{ application.posting_status }}</dd></div><div><dt>Last checked</dt><dd>{{ application.posting_last_checked_at ? new Date(application.posting_last_checked_at).toLocaleString() + ' (local time)' : 'Not checked' }}</dd></div></dl></section>
+        <ApplicationInterviews :application-id="application.id" />
         <ApplicationWork :application-id="application.id" />
       </template>
     </template>

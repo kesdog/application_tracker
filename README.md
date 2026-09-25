@@ -1,6 +1,6 @@
 # Application Tracker
 
-Version **0.4.0** adds application notes, tasks, and follow-ups to the FastAPI, SQLite WAL, and Vue 3 + TypeScript tracker.
+Version **0.5.0** adds first-class interviews and global upcoming Interviews and Tasks views to the FastAPI, SQLite WAL, and Vue 3 + TypeScript tracker.
 
 Use **Add application** to record a job title, company, date applied, and either a job URL or email reference. Saved records appear in a compact table ordered by applied date, newest first. Every new application starts as `SUBMITTED` with no outcome. Job URLs open in a new tab; email references are displayed in the source column. On narrow windows, scroll the table horizontally to see all columns. The health screen remains available under **System status**.
 
@@ -8,7 +8,9 @@ Click a position in the table to open its focus view. **Edit application** lets 
 
 Selecting an outcome closes the application. To reopen an application that already has an outcome, select an active status and explicitly check **Clear the existing outcome**. Posting state is independent of the application lifecycle; marking a posting closed does not close the application. Posting checks are recorded manually.
 
-The focus view now contains **Notes**, **Tasks**, and **Follow-ups**. Add/edit a typed note, add a task with an optional due date, complete/cancel/reopen tasks, and record follow-ups as drafted, sent, or cancelled. Notes retain their creator and creation time when edited. Each application has its own follow-up sequence starting at 1.
+The focus view contains **Interviews**, **Notes**, **Tasks**, and **Follow-ups**. Schedule, edit, and delete interviews with preparation notes, meeting details, and results. Add/edit a typed note, add a task with an optional due date, complete/cancel/reopen tasks, and record follow-ups as drafted, sent, or cancelled. Notes retain their creator and creation time when edited. Each application has its own follow-up sequence starting at 1.
+
+Use the top navigation to open **Interviews** or **Tasks**. Interviews are ordered by scheduled date and show their application, meeting context, and near-term wording such as “Technical interview — tomorrow at 14:00.” Tasks are ordered by due date, show their parent application, and can be completed, cancelled, or reopened from the global view.
 
 Follow-ups are tracking records: no email is drafted in a mailbox or sent by these actions. To retain draft text, use an `EMAIL_DRAFT` note. Automatic suggestions, scheduling, and external integrations remain later-release features.
 
@@ -72,7 +74,7 @@ Relative data paths resolve against the project root, regardless of the terminal
 `GET /api/health` checks the live database connection and returns:
 
 ```json
-{"status":"ok","version":"0.4.0","database":"connected"}
+{"status":"ok","version":"0.5.0","database":"connected"}
 ```
 
 It returns HTTP 503 if the database query fails. The frontend checks on load and when **Check again** is clicked, with a five-second timeout. It clears stale version/database values on a failed check. Continuous polling is not part of this release.
@@ -107,7 +109,7 @@ Example POST body:
 }
 ```
 
-Alembic applies pending migrations automatically at backend startup, including upgrades from existing 0.1.0–0.3.0 databases. The third migration adds notes, tasks, follow-ups, and nullable application preference overrides while preserving existing records. Child tables enforce application foreign keys and valid statuses; follow-up numbers are unique within each application. Startup stops if migration fails. Tests use temporary databases. To inspect or explicitly apply migrations from the project root:
+Alembic applies pending migrations automatically at backend startup, including upgrades from existing 0.1.0–0.4.0 databases. The fourth migration adds interviews and its application/scheduled-date indexes while preserving existing records. Child tables enforce application foreign keys and valid statuses; follow-up numbers are unique within each application. Startup stops if migration fails. Tests use temporary databases. To inspect or explicitly apply migrations from the project root:
 
 ```powershell
 .\.venv\Scripts\python.exe -m alembic current
@@ -141,6 +143,23 @@ Follow-up statuses are `PENDING`, `DRAFTED`, `SENT`, and `CANCELLED`. Marking se
 
 All input datetimes require an explicit timezone. SQLite stores UTC, API responses include `Z`, and forms/display use local time. To mark a task complete or a follow-up sent, PATCH `{"status":"COMPLETED"}` or `{"status":"SENT"}` to its corresponding endpoint. These operations do not change the parent application's lifecycle.
 
+## Interviews and global work API
+
+Interviews belong to an application and require a type plus a timezone-aware scheduled date. Types are `PHONE`, `HR`, `TECHNICAL`, `ONSITE`, `FINAL`, and `OTHER`. Duration is optional and stored in minutes. Location, meeting URL, interviewer, email reference, preparation notes, and result are optional.
+
+| Method and path | Behavior |
+| --- | --- |
+| `GET /api/applications/{application_id}/interviews` | List one application's interviews in date order |
+| `POST /api/applications/{application_id}/interviews` | Schedule an interview |
+| `PATCH /api/applications/{application_id}/interviews/{id}` | Edit supplied interview fields |
+| `DELETE /api/applications/{application_id}/interviews/{id}` | Delete an interview through the human UI/API |
+| `GET /api/interviews` | List all interviews in date order with application summaries |
+| `GET /api/interviews/{id}` | Read one interview |
+| `GET /api/interviews/{id}/context` | Read the interview, full parent application, related notes/tasks, and available document metadata |
+| `GET /api/tasks` | List all application-linked tasks in due-date order with application summaries |
+
+The context response currently returns `documents: []` because document storage is introduced in 0.8.0. Global tasks with no due date sort after dated tasks. Interview and task writes remain in the existing application-scoped routes so parent ownership is always checked.
+
 ## Verify
 
 ```powershell
@@ -155,15 +174,16 @@ The frontend build runs the Vue/TypeScript checker and creates `frontend/dist`. 
 Manual checks:
 
 1. Start both servers, create an application, and click its position in the table.
-2. Under Notes, add an `ASSESSMENT` note, then edit its content.
-3. Add a task with a due date, complete it, and confirm its completion time is shown.
-4. Add two follow-ups: use the default date for one and choose a date for the other. Confirm sequence numbers 1 and 2.
-5. Mark the first follow-up drafted, then sent. Cancel the second. Confirm their statuses and sent timestamp.
-6. Refresh the page and confirm all records persist. Open another application and confirm its sections contain only its own records.
-7. Edit per-application follow-up preferences, then clear them to restore global defaults.
-8. Expand **System status** and confirm backend version **0.4.0** and **SQLite · Connected**.
+2. Add two dated interviews to the first application and one to another application. Edit one interview and retain its result.
+3. Open **Interviews** and confirm all three are ordered by date with clear application context and upcoming wording.
+4. Under Notes, add an `ASSESSMENT` note, then edit its content.
+5. Add tasks with different due dates across both applications. Open **Tasks**, confirm date order and application links, then complete one.
+6. Add two follow-ups: use the default date for one and choose a date for the other. Confirm sequence numbers 1 and 2.
+7. Mark the first follow-up drafted, then sent. Cancel the second. Confirm their statuses and sent timestamp.
+8. Refresh the page and confirm all records persist and remain associated with the correct application.
+9. Expand **System status** and confirm backend version **0.5.0** and **SQLite · Connected**.
 
-Verified for this release: 79 backend tests, 16 frontend tests, and the frontend production build. Browser checks cover note creation/editing, due-task creation/completion, two numbered follow-ups, drafted/sent/cancelled states, persistence after refresh, separation between applications, and preference overrides/inheritance. Backend coverage includes foreign-key enforcement, invalid input, child ownership, UTC dates, stable completion/sent timestamps, concurrent follow-up numbering, unrestricted manual creation, migration from 0.3.0, restart persistence, and migration/model consistency. Browser sample records were kept in an isolated `.run` database. The Python test client currently emits two upstream deprecation warnings from Starlette; tests pass.
+Verified for this release: 91 backend tests, 19 frontend tests, the frontend production build, Alembic migration consistency, and dependency checks. Coverage includes interview ownership and validation, UTC normalization, date ordering, global application context, interview context data, delete behavior, migration from 0.4.0, and the existing application/work behavior. The Python test client currently emits two upstream deprecation warnings from Starlette; tests pass.
 
 The initial implementation session leaves both development servers running in the background for review. Their process IDs and logs are under the ignored `.run` directory. Before starting your own copies, stop those specific processes (check the command lines first; recorded IDs may be stale after a reboot):
 
