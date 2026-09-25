@@ -3,7 +3,7 @@ from typing import Annotated
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.models import FollowUpStatus, NoteType, TaskStatus
+from app.models import FollowUpChannel, FollowUpStatus, NoteType, TaskStatus
 
 Content = Annotated[str, Field(min_length=1)]
 Title = Annotated[str, Field(min_length=1, max_length=300)]
@@ -51,17 +51,21 @@ class TaskUpdate(Input):
 class FollowUpCreate(Input):
     due_at: AwareDatetime | None = None
     template_reference: str | None = Field(default=None, max_length=2048)
+    channel: FollowUpChannel = FollowUpChannel.EMAIL
 
 
 class FollowUpUpdate(Input):
     due_at: AwareDatetime | None = None
     template_reference: str | None = Field(default=None, max_length=2048)
     status: FollowUpStatus | None = None
+    channel: FollowUpChannel | None = None
 
     @model_validator(mode="after")
     def due_date_required(self):
         if "due_at" in self.model_fields_set and self.due_at is None:
             raise ValueError("due_at cannot be null")
+        if "channel" in self.model_fields_set and self.channel is None:
+            raise ValueError("channel cannot be null")
         return self
 
 
@@ -97,6 +101,7 @@ class FollowUpRead(Read):
     due_at: datetime
     sent_at: datetime | None
     status: FollowUpStatus
+    channel: FollowUpChannel
     template_reference: str | None
 
 

@@ -50,6 +50,7 @@ class Application(Base):
     date_applied: Mapped[date]
     job_url: Mapped[str | None] = mapped_column(String(2048))
     email_reference: Mapped[str | None] = mapped_column(String(2048))
+    phone_number: Mapped[str | None] = mapped_column(String(20))
     location: Mapped[str | None] = mapped_column(String(300))
     remote_policy: Mapped[str | None] = mapped_column(String(300))
     contract_type: Mapped[str | None] = mapped_column(String(300))
@@ -93,6 +94,12 @@ class FollowUpStatus(str, Enum):
     DRAFTED = "DRAFTED"
     SENT = "SENT"
     CANCELLED = "CANCELLED"
+
+
+class FollowUpChannel(str, Enum):
+    EMAIL = "EMAIL"
+    PHONE = "PHONE"
+    BOTH = "BOTH"
 
 
 class InterviewType(str, Enum):
@@ -156,6 +163,7 @@ class FollowUp(Base):
     due_at: Mapped[datetime]
     sent_at: Mapped[datetime | None]
     status: Mapped[FollowUpStatus] = mapped_column(SqlEnum(FollowUpStatus, native_enum=False, create_constraint=True, name="followup_status"), default=FollowUpStatus.PENDING)
+    channel: Mapped[FollowUpChannel] = mapped_column(SqlEnum(FollowUpChannel, native_enum=False, create_constraint=False, name="followup_channel"), default=FollowUpChannel.EMAIL, server_default="EMAIL")
     template_reference: Mapped[str | None] = mapped_column(String(2048))
 
 

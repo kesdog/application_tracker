@@ -1,14 +1,14 @@
 # Application Tracker
 
-Version **0.9.0** adds controlled agent access through REST and MCP, plus live updates in the open UI, to the FastAPI, SQLite WAL, and Vue 3 + TypeScript tracker.
+Version **0.10.0** adds validated application phone numbers, email/phone/both follow-ups, a read-only reminder scheduler, local email-draft fallback, calendar downloads, and Windows/Docker packaging to the FastAPI, SQLite WAL, and Vue 3 + TypeScript tracker.
 
-Use **Add application** to record a job title, company, date applied, and either a job URL or email reference. Saved records appear in a compact table ordered by applied date, newest first. Every new application starts as `SUBMITTED` with no outcome. Job URLs open in a new tab; email references are displayed in the source column. On narrow windows, scroll the table horizontally to see all columns. The health screen remains available under **System status**.
+Use **Add application** to record a job title, company, date applied, and either a job URL or email reference. An optional phone number supports call follow-ups. French national numbers and numbers with an international `+` prefix are accepted, validated, and stored in E.164 format. The same backend schema validates human API, agent REST, and MCP requests. Saved records appear in a compact table ordered by applied date, newest first. Every new application starts as `SUBMITTED` with no outcome. Job URLs open in a new tab; email references are displayed in the source column. On narrow windows, scroll the table horizontally to see all columns. The health screen remains available under **System status**.
 
 Click a position in the table to open its focus view. **Edit application** lets you update its title, company, date, sources, location, remote policy, contract type, source, description, requirements, status, outcome, and posting state. **Cancel** discards the current draft. Focus URLs use a hash and can be bookmarked or refreshed without a router dependency. Return with **All applications** to see updated status/outcome badges.
 
 Selecting an outcome closes the application. To reopen an application that already has an outcome, select an active status and explicitly check **Clear the existing outcome**. Posting state is independent of the application lifecycle; marking a posting closed does not close the application. Posting checks are recorded manually.
 
-The focus view contains **Documents**, **Interviews**, **Notes**, **Tasks**, and **Follow-ups**. Attach a CV or cover letter by uploading a file into the tracker data directory, or record an external/local reference with its filename. Uploaded files can be downloaded from the focus view. Schedule, edit, and delete interviews with preparation notes, meeting details, and results. Add/edit a typed note, add a task with an optional due date, complete/cancel/reopen tasks, and record follow-ups as drafted, sent, or cancelled.
+The focus view contains **Documents**, **Interviews**, **Notes**, **Tasks**, and **Follow-ups**. Attach a CV or cover letter by uploading a file into the tracker data directory, or record an external/local reference with its filename. Uploaded files can be downloaded from the focus view. Schedule, edit, and delete interviews with preparation notes, meeting details, and results. Add/edit a typed note, add a task with an optional due date, complete/cancel/reopen tasks, and record email, phone, or combined follow-ups as drafted, completed, or cancelled. Phone and combined options require an application phone number. Email drafting saves a local `EMAIL_DRAFT` note when no mail account is connected; it never sends a message. Interviews have an explicit calendar file download for manual import.
 
 The **Timeline** records application, note, task, follow-up, interview, outcome, and posting-state activity with the actor and time. Reversible edits expose **Undo last change**. Undo restores the complete prior field snapshot, including coupled values such as a task status and completion timestamp. Application deletion requires a second human confirmation and sets `deleted_at`; deleted applications and their work disappear from normal lists without removing database records.
 
@@ -20,7 +20,7 @@ Use **Settings** to generate an agent token and choose its read, create, edit, d
 
 Creation checks normalized company/title and job URLs against existing applications. A likely duplicate is still saved, then shown as an advisory warning with links and reasons so the user can compare records without blocking legitimate repeat applications.
 
-Follow-ups are tracking records: no email is drafted in a mailbox or sent by these actions. To retain draft text, use an `EMAIL_DRAFT` note. Automatic suggestions, scheduling, and external integrations remain later-release features.
+Follow-ups are tracking records. Creating or marking one complete never places a call or sends email. The background scheduler refreshes due/overdue work every minute without changing applications or contacting anyone.
 
 ## Requirements and installation
 
@@ -61,6 +61,8 @@ Open <http://127.0.0.1:5173>. The API is at <http://127.0.0.1:8000/api/health> a
 
 Vite proxies `/api` to the configured backend. Restart both servers after changing host/port settings. The frontend remains bound to localhost. No CORS configuration is needed for this development setup.
 
+For a single production process, build the frontend with `pnpm --dir frontend build`, then run `application-tracker` (or `python -m app.main`). The backend serves the compiled UI at <http://127.0.0.1:8000/> and the API under `/api`.
+
 ## Settings and storage
 
 The backend reads the root `.env` file; process environment variables take precedence.
@@ -70,7 +72,9 @@ The backend reads the root `.env` file; process environment variables take prece
 | `APP_HOST` | `127.0.0.1` | Backend bind address |
 | `APP_PORT` | `8000` | Backend port, 1–65535 |
 | `APP_ENV` | `development` | Environment label available to the app |
+| `APP_ALLOW_REMOTE_HUMAN` | `false` | Permit non-loopback access to the unauthenticated human UI/API; enable only behind a trusted local port binding or access control |
 | `APP_DATA_DIR` | `./data` | Directory created during backend startup |
+| `APP_STATIC_DIR` | `./frontend/dist` | Compiled Vue frontend served by the backend when present |
 | `LOG_LEVEL` | `info` | Uvicorn logging level; case insensitive |
 | `FOLLOWUP_DELAY_DAYS` | `7` | Default delay from creation for a follow-up without a supplied due date (0–3650) |
 | `MAX_FOLLOWUP_SUGGESTIONS` | `2` | Stored limit for future automatic suggestions (0–100); never restricts manual creation |
@@ -82,7 +86,7 @@ Relative data paths resolve against the project root, regardless of the terminal
 `GET /api/health` checks the live database connection and returns:
 
 ```json
-{"status":"ok","version":"0.9.0","database":"connected"}
+{"status":"ok","version":"0.10.0","database":"connected"}
 ```
 
 It returns HTTP 503 if the database query fails. The frontend checks on load and when **Check again** is clicked, with a five-second timeout. It clears stale version/database values on a failed check. Continuous polling is not part of this release.
@@ -94,7 +98,7 @@ It returns HTTP 503 if the database query fails. The frontend checks on load and
 - `GET /api/applications/{id}` returns a full application or HTTP 404.
 - `PATCH /api/applications/{id}` updates only supplied fields and returns the saved application. Omitted fields stay unchanged; explicit null clears an optional field. Required fields cannot be null. Missing records return HTTP 404.
 - `DELETE /api/applications/{id}` performs a human-only soft deletion and returns HTTP 204. Deleted records return HTTP 404 and are excluded from normal application and global work lists.
-- Invalid data returns HTTP 422. Titles and companies must contain non-whitespace text; job URLs must use HTTP or HTTPS. At least one non-empty job URL or email reference is required. Status and outcome cannot be supplied on creation.
+- Invalid data returns HTTP 422. Titles and companies must contain non-whitespace text; job URLs must use HTTP or HTTPS. At least one non-empty job URL or email reference is required. The optional `phone_number` accepts a French national number or a `+` country code and is normalized to E.164. Status and outcome cannot be supplied on creation.
 
 Lifecycle rules are enforced in the backend service and supported by a database constraint:
 
@@ -118,7 +122,7 @@ Example POST body:
 }
 ```
 
-Alembic applies pending migrations automatically at backend startup, including upgrades from existing 0.1.0–0.8.0 databases. Migration `0007_agent_access` adds hashed agent credentials, permissions, and small UI invalidation events while preserving existing records. Child tables enforce application foreign keys and valid statuses; follow-up numbers are unique within each application. Startup stops if migration fails. Tests use temporary databases. To inspect or explicitly apply migrations from the project root:
+Alembic applies pending migrations automatically at backend startup, including upgrades from existing 0.1.0–0.9.0 databases. Migration `0008_phone_and_followup_channels` adds optional application phone numbers and defaults existing follow-ups to `EMAIL` while preserving existing records. Child tables enforce application foreign keys and valid statuses; follow-up numbers are unique within each application. Startup stops if migration fails. Tests use temporary databases. To inspect or explicitly apply migrations from the project root:
 
 ```powershell
 .\.venv\Scripts\python.exe -m alembic current
@@ -185,21 +189,31 @@ Application filters are combined with AND logic. Text filters are case-insensiti
 
 `GET /api/dashboard` returns operational counts, due/overdue tasks and follow-ups, interviews scheduled within seven days, a due-date-ordered upcoming work list, and the ten most recent timeline events. Soft-deleted applications and their child work are excluded. Completed/cancelled tasks and sent/cancelled follow-ups do not count as due.
 
+`GET /api/reminders` returns the background scheduler's last check and grouped due/overdue follow-ups and tasks, plus upcoming interviews. It refreshes every 60 seconds and only reads records. Follow-ups accept `channel: "EMAIL"`, `"PHONE"`, or `"BOTH"`; legacy records remain `EMAIL`. Phone and combined follow-ups require a saved phone number. `POST /api/applications/{application_id}/followups/{followup_id}/draft` accepts `{"content":"..."}` for email or combined follow-ups. With no connected provider, it stores an `EMAIL_DRAFT` note and returns `location: "LOCAL_NOTE"` with an explicit unsent message. `GET /api/integrations` reports mail and calendar connection status.
+
+`GET /api/interviews/{interview_id}/calendar.ics` downloads an importable event for an explicit user action. It does not create or update an external calendar event. The code defines `MailProvider` and `CalendarProvider` interfaces for future connected implementations; this release ships disconnected defaults.
+
 ## Documents and exports API
 
 `GET /api/applications/{id}/documents` lists CV and cover-letter metadata. `POST` to the same path accepts multipart form data with `document_type` (`CV` or `COVER_LETTER`) and exactly one source: `file`, or `external_reference` plus `filename`. Uploaded files are copied beneath `APP_DATA_DIR/documents/{application_id}`. `GET /api/applications/{id}/documents/{document_id}/content` downloads an uploaded file; referenced documents have no content endpoint payload.
 
-`GET /api/exports/applications.csv` and `GET /api/exports/applications.xlsx` export all active records when called without parameters. Both accept the same query filters as `GET /api/applications`, so the Applications page can export its current view exactly. CSV is UTF-8 with a header row. XLSX contains real date cells, a formatted and frozen header, worksheet filters, readable widths, document filenames, and status/outcome colors.
+`GET /api/exports/applications.csv` and `GET /api/exports/applications.xlsx` export all active records when called without parameters. Both accept the same query filters as `GET /api/applications`, so the Applications page can export its current view exactly. CSV is UTF-8 with a header row. XLSX contains real date cells, a formatted and frozen header, worksheet filters, readable widths, document filenames, phone numbers, and status/outcome colors.
 
 ## Agent access and live updates
 
 Open **Settings** in the browser and generate an agent token. Store the shown value in your agent's secure configuration. Only its SHA-256 hash is saved in SQLite. New tokens have read access only; enable other permissions deliberately. Regenerating the token atomically replaces that hash, so the old token is rejected on its next request. Permission toggles take effect immediately. The human settings and UI endpoints require local access; remote clients may reach only the authenticated agent routes when the backend is bound to a network interface. Keep the default loopback binding unless you provide TLS and network access controls.
 
-Agent REST operations use `POST /api/agent/tools/{operation}` with `Authorization: Bearer <token>` and a JSON body. Operations are `list_applications`, `search_applications`, `get_application`, `find_possible_duplicates`, `create_application`, `update_application`, `create_note`, `create_followup`, `mark_followup_sent`, `create_task`, `complete_task`, `create_interview`, `update_interview`, `get_interview_context`, `get_application_timeline`, and `get_upcoming_items`. For example, `create_application` takes `{"application":{"job_title":"Engineer","company":"Example","date_applied":"2026-09-25","job_url":"https://example.com/job"}}`; `update_application` takes `{"application_id":"...","changes":{"status":"INTERVIEW"}}`. Read operations take `{}` or IDs/filters as appropriate. The service records agent identity in the timeline and audits. No agent delete operation exists.
+Agent REST operations use `POST /api/agent/tools/{operation}` with `Authorization: Bearer <token>` and a JSON body. Operations are `list_applications`, `search_applications`, `get_application`, `find_possible_duplicates`, `create_application`, `update_application`, `create_note`, `create_followup`, `draft_followup`, `mark_followup_sent`, `create_task`, `complete_task`, `create_interview`, `update_interview`, `get_interview_context`, `get_application_timeline`, and `get_upcoming_items`. For example, `create_application` takes `{"application":{"job_title":"Engineer","company":"Example","date_applied":"2026-09-25","job_url":"https://example.com/job","phone_number":"+33 6 12 34 56 78"}}`; `update_application` takes `{"application_id":"...","changes":{"status":"INTERVIEW"}}`; `create_followup` accepts a `followup.channel` of `EMAIL`, `PHONE`, or `BOTH`. Read operations take `{}` or IDs/filters as appropriate. The service records agent identity in the timeline and audits. No agent delete operation exists.
 
 The same operations are available as tools from the local stdio MCP server. Configure an MCP client to run `D:\APP_TRCKR\.venv\Scripts\application-tracker-mcp.exe` with `APPLICATION_TRACKER_AGENT_TOKEN` in that process's environment. The token is checked for every tool call, including after a running MCP process has been connected. The server uses the same configured data directory and application services as REST.
 
 `GET /api/events` streams `application.created`, `application.updated`, `interview.updated`, `task.updated`, and `followup.updated` events after agent mutations. Each event contains only an application ID; the browser refetches current data. Browser EventSource reconnects automatically and resumes from the last event ID.
+
+## Windows executable and Docker
+
+After `pnpm --dir frontend build`, run `./build-windows.ps1` from PowerShell to create `build/windows/ApplicationTracker/ApplicationTracker.exe`. This is a folder-based executable: distribute the entire `ApplicationTracker` folder together. The launcher starts the API on loopback, opens the UI, and keeps running in the system tray when the browser closes. The tray menu has **Open**, **Status**, **Copy API address**, **Settings**, and **Exit**. Exit requests a clean Uvicorn shutdown. By default, the executable stores SQLite and documents under `%LOCALAPPDATA%/ApplicationTracker`; `APP_DATA_DIR` can override this. Startup errors are written to `startup-error.log` in that data directory.
+
+Build and run the Docker image with `docker compose up --build -d`, then open <http://127.0.0.1:8000/>. `compose.yaml` maps the port to the host's loopback interface and persists SQLite and documents in the `tracker-data` volume. The container binds internally to `0.0.0.0` and sets `APP_ALLOW_REMOTE_HUMAN=true` so the local host can reach the UI through Docker's network bridge. Do not publish this unauthenticated human UI on a public network without separate access control. Stop an already-running local backend on port 8000 before starting Docker.
 
 ## Verify
 
@@ -210,7 +224,7 @@ pnpm --dir frontend test
 pnpm --dir frontend build
 ```
 
-The frontend build runs the Vue/TypeScript checker and creates `frontend/dist`. To inspect that build, run `pnpm --dir frontend preview` and open <http://127.0.0.1:4173> while the backend is running. Combined production hosting is planned for 0.10.0.
+The frontend build runs the Vue/TypeScript checker and creates `frontend/dist`. The backend then serves that build at its root URL. The automated suite covers phone normalization and rejection through human and agent paths, follow-up channels, reminder classification, local draft fallback, and explicit calendar download.
 
 Manual checks:
 
@@ -219,9 +233,9 @@ Manual checks:
 3. Create and update an application through the agent REST path or MCP while the Applications page remains open. Confirm its table updates without a browser reload.
 4. Regenerate the token; confirm the previous token receives HTTP 401 or an MCP tool error immediately.
 5. Confirm an agent delete operation is unavailable, and the Settings page never shows the old token again.
-6. Expand **System status** and confirm backend version **0.9.0** and **SQLite · Connected**.
+6. Expand **System status** and confirm backend version **0.10.0** and **SQLite · Connected**.
 
-Verified for this release: backend and frontend tests, the frontend production build, Alembic migration consistency, dependency checks, and browser loading of Settings. Coverage includes token hashing and rotation, permission enforcement, forbidden agent deletion, MCP and REST service equivalence, SSE invalidation, and existing application behavior. The live token workflow requires explicit approval before activation in the user's database. The Python test client currently emits one upstream deprecation warning from Starlette; tests pass.
+The 0.9 agent-token flow remains available but has not been activated in the user's database. The Python test client emits one upstream deprecation warning from Starlette; tests pass.
 
 The initial implementation session leaves both development servers running in the background for review. Their process IDs and logs are under the ignored `.run` directory. Before starting your own copies, stop those specific processes (check the command lines first; recorded IDs may be stale after a reboot):
 

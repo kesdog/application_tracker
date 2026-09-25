@@ -14,7 +14,7 @@ from app.schemas import ApplicationFilters
 HEADERS = [
     "Date Applied", "Company", "Job Title", "Status", "Outcome", "Location",
     "Remote Policy", "Contract Type", "Source", "Job URL", "Email Reference",
-    "Posting Status", "Documents",
+    "Phone Number", "Posting Status", "Documents",
 ]
 
 
@@ -28,7 +28,7 @@ def _rows(session: Session, filters: ApplicationFilters) -> list[list]:
         record.date_applied, record.company, record.job_title, record.status.value,
         record.outcome.value if record.outcome else "", record.location or "",
         record.remote_policy or "", record.contract_type or "", record.source or "",
-        record.job_url or "", record.email_reference or "", record.posting_status.value,
+        record.job_url or "", record.email_reference or "", record.phone_number or "", record.posting_status.value,
         "; ".join(sorted(documents.get(record.id, []), key=str.casefold)),
     ] for record in records]
 
@@ -57,13 +57,13 @@ def xlsx_export(session: Session, filters: ApplicationFilters) -> bytes:
         cell.alignment = Alignment(vertical="center")
     sheet.row_dimensions[1].height = 24
     sheet.freeze_panes = "A2"
-    sheet.auto_filter.ref = f"A1:M{max(sheet.max_row, 1)}"
+    sheet.auto_filter.ref = f"A1:N{max(sheet.max_row, 1)}"
     sheet.column_dimensions["A"].width = 14
     for column in ("B", "C"):
         sheet.column_dimensions[column].width = 28
-    for column in ("D", "E", "F", "G", "H", "I", "L"):
+    for column in ("D", "E", "F", "G", "H", "I", "L", "M"):
         sheet.column_dimensions[column].width = 18
-    for column in ("J", "K", "M"):
+    for column in ("J", "K", "N"):
         sheet.column_dimensions[column].width = 36
 
     fills = {

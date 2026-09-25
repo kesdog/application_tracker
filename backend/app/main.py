@@ -1,8 +1,10 @@
 from contextlib import asynccontextmanager
+import asyncio
 import logging
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -18,7 +20,7 @@ from app import documents
 from app import exports
 from app import interviews
 from app import work
-from app import agent_auth, agent_ops, invalidation
+from app import agent_auth, agent_ops, integrations, invalidation, scheduler
 from app.interview_schemas import InterviewContext, InterviewCreate, InterviewListItem, InterviewRead, InterviewUpdate, TaskListItem
 from app.activity_schemas import TimelineRead, UndoRead
 from app.dashboard_schemas import DashboardRead
@@ -35,26 +37,43 @@ class HealthResponse(BaseModel):
     database: str
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    mail_provider: integrations.MailProvider | None = None,
+    calendar_provider: integrations.CalendarProvider | None = None,
+) -> FastAPI:
     settings = settings or Settings()
+    mail_provider = mail_provider or integrations.DisconnectedMailProvider()
+    calendar_provider = calendar_provider or integrations.DisconnectedCalendarProvider()
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         engine = create_database(settings.app_data_dir)
         application.state.engine = engine
+        reminders = None
+        reminder_task = None
         try:
             migrate_database(engine)
+            reminders = scheduler.ReminderScheduler(engine)
+            await reminders.refresh()
+            application.state.reminders = reminders
+            reminder_task = asyncio.create_task(reminders.run())
             yield
         finally:
+            if reminders is not None and reminder_task is not None:
+                reminders.stop.set()
+                await reminder_task
             engine.dispose()
 
     application = FastAPI(title="Application Tracker", version=__version__, lifespan=lifespan)
     application.state.settings = settings
+    application.state.mail_provider = mail_provider
+    application.state.calendar_provider = calendar_provider
 
     @application.middleware("http")
     async def protect_human_routes(request: Request, call_next):
         local = request.client is None or request.client.host in {"127.0.0.1", "::1", "testclient"}
-        if not local and not request.url.path.startswith("/api/agent/"):
+        if not local and not settings.app_allow_remote_human and not request.url.path.startswith("/api/agent/"):
             return JSONResponse(status_code=403, content={"detail": "Local access required"})
         return await call_next(request)
 
@@ -79,7 +98,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             yield session
 
     def local_only(request: Request):
-        if request.client and request.client.host not in {"127.0.0.1", "::1", "testclient"}:
+        if not settings.app_allow_remote_human and request.client and request.client.host not in {"127.0.0.1", "::1", "testclient"}:
             raise HTTPException(status_code=403, detail="Local access required")
 
     def agent_token(authorization: str | None = Header(default=None)) -> str:
@@ -113,7 +132,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=403, detail=f"Agent permission required: {permission}")
         session.rollback()
         try:
-            return agent_ops.invoke(session, settings, operation, args)
+            return agent_ops.invoke(session, settings, operation, args, mail_provider=mail_provider)
         except (ValidationError, KeyError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -205,6 +224,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def update_followup(application_id: str, item_id: str, data: FollowUpUpdate, session: Session = Depends(get_session)):
         return work.update_followup(session, application_id, item_id, data)
 
+    @application.post("/api/applications/{application_id}/followups/{item_id}/draft", response_model=integrations.DraftResult)
+    def draft_followup(application_id: str, item_id: str, data: integrations.DraftRequest, session: Session = Depends(get_session)):
+        return integrations.draft_followup(session, application_id, item_id, data, mail_provider)
+
     @application.get("/api/applications/{application_id}/interviews", response_model=list[InterviewRead])
     def list_application_interviews(application_id: str, session: Session = Depends(get_session)):
         return interviews.list_application_interviews(session, application_id)
@@ -234,6 +257,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def get_interview_context(interview_id: str, session: Session = Depends(get_session)):
         return interviews.interview_context(session, interview_id)
 
+    @application.get("/api/interviews/{interview_id}/calendar.ics")
+    def download_interview_calendar(interview_id: str, session: Session = Depends(get_session)):
+        interview = interviews.get_interview(session, interview_id)
+        parent = applications.get_application(session, interview.application_id)
+        return Response(content=integrations.calendar_file(parent, interview), media_type="text/calendar; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="interview-{interview.id}.ics"'})
+
     @application.get("/api/tasks", response_model=list[TaskListItem])
     def list_tasks(session: Session = Depends(get_session)):
         return interviews.list_tasks(session)
@@ -241,6 +270,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.get("/api/dashboard", response_model=DashboardRead)
     def get_dashboard(session: Session = Depends(get_session)):
         return dashboard_service.dashboard(session)
+
+    @application.get("/api/reminders")
+    def get_reminders():
+        return application.state.reminders.snapshot
+
+    @application.get("/api/integrations")
+    def get_integration_status():
+        return {"mail": {"connected": mail_provider.is_connected()}, "calendar": {"connected": calendar_provider.is_connected()}}
 
     @application.get("/api/exports/applications.csv")
     def export_applications_csv(filters: ApplicationFilters = Depends(), session: Session = Depends(get_session)):
@@ -266,6 +303,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             logging.getLogger(__name__).exception("Database health check failed")
             raise HTTPException(status_code=503, detail="Database unavailable") from exc
         return HealthResponse(status="ok", version=__version__, database="connected")
+
+    if (settings.app_static_dir / "index.html").is_file():
+        application.mount("/assets", StaticFiles(directory=settings.app_static_dir / "assets"), name="assets")
+
+        @application.get("/", include_in_schema=False)
+        def frontend_index():
+            return FileResponse(settings.app_static_dir / "index.html")
+
+        @application.get("/{path:path}", include_in_schema=False)
+        def frontend_fallback(path: str):
+            if path.startswith("api/"):
+                raise HTTPException(status_code=404, detail="Not found")
+            return FileResponse(settings.app_static_dir / "index.html")
 
     return application
 

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { createFollowUp, createNote, createTask, getWork, updateFollowUp, updateNote, updateTask, type ApplicationWork, type FollowUp, type Note, type NoteType, type Task } from './api'
+import { createFollowUp, createNote, createTask, draftEmailFollowup, getWork, updateFollowUp, updateNote, updateTask, type ApplicationWork, type FollowUp, type FollowUpChannel, type Note, type NoteType, type Task } from './api'
 
-const props = defineProps<{ applicationId: string }>()
+const props = defineProps<{ applicationId: string; phoneNumber: string | null }>()
 const emit = defineEmits<{ changed: [] }>()
 const work = ref<ApplicationWork | null>(null)
 const busy = ref(false)
@@ -11,10 +11,12 @@ const notice = ref('')
 const noteTypes: NoteType[] = ['GENERAL', 'ASSESSMENT', 'EMAIL_DRAFT', 'INTERVIEW', 'AGENT']
 const noteForm = reactive({ id: '', content: '', type: 'GENERAL' as NoteType })
 const taskForm = reactive({ title: '', description: '', due_at: '' })
-const followupForm = reactive({ due_at: '', template_reference: '' })
+const followupForm = reactive({ due_at: '', template_reference: '', channel: 'EMAIL' as FollowUpChannel })
 const noteOpen = ref(false)
 const taskOpen = ref(false)
 const followupOpen = ref(false)
+const draftingId = ref<string | null>(null)
+const draftContent = ref('')
 const dateText = (value: string | null) => value ? new Date(value).toLocaleString() : 'No date set'
 const isoDate = (value: string) => value ? new Date(value).toISOString() : null
 
@@ -74,9 +76,9 @@ function setTaskStatus(task: Task, status: Task['status']) {
 
 function saveFollowup() {
   return perform(async () => {
-    const item = await createFollowUp(props.applicationId, { due_at: isoDate(followupForm.due_at), template_reference: followupForm.template_reference || null })
+    const item = await createFollowUp(props.applicationId, { due_at: isoDate(followupForm.due_at), template_reference: followupForm.template_reference || null, channel: followupForm.channel })
     work.value!.followups.push(item)
-    Object.assign(followupForm, { due_at: '', template_reference: '' })
+    Object.assign(followupForm, { due_at: '', template_reference: '', channel: 'EMAIL' })
     followupOpen.value = false
   }, 'Follow-up added.')
 }
@@ -85,7 +87,20 @@ function setFollowupStatus(item: FollowUp, status: FollowUp['status']) {
   return perform(async () => {
     const saved = await updateFollowUp(props.applicationId, item.id, { status })
     work.value!.followups = work.value!.followups.map(row => row.id === saved.id ? saved : row)
-  }, 'Follow-up updated. No email was sent by the tracker.')
+  }, 'Follow-up updated. The tracker did not place a call or send email.')
+}
+
+async function saveEmailDraft(item: FollowUp) {
+  if (busy.value) return
+  busy.value = true; error.value = ''; notice.value = ''
+  try {
+    const result = await draftEmailFollowup(props.applicationId, item.id, draftContent.value)
+    work.value = await getWork(props.applicationId)
+    notice.value = result.message
+    draftingId.value = null; draftContent.value = ''
+    emit('changed')
+  } catch (cause) { error.value = cause instanceof Error ? cause.message : 'Unable to save the draft.' }
+  finally { busy.value = false }
 }
 
 onMounted(load)
@@ -137,10 +152,12 @@ onMounted(load)
       <section class="panel" aria-labelledby="followups-title">
         <div class="section-heading"><h3 id="followups-title">Follow-ups <span>{{ work.followups.length }}</span></h3><button v-if="!followupOpen" type="button" :disabled="busy" @click="followupOpen = true">Add follow-up</button></div>
         <p class="muted">Default delay: {{ work.followup_delay_days }} days. Automatic suggestion limit: {{ work.max_followup_suggestions }}. You can add as many manual follow-ups as needed.</p>
-        <p class="muted">These are tracking records. Marking drafted or sent does not create or send email.</p>
+        <p class="muted">These are tracking records. The tracker does not place calls or send email.</p>
         <form v-if="followupOpen" @submit.prevent="saveFollowup">
           <fieldset :disabled="busy"><legend>New follow-up</legend>
             <label>Follow-up due (local time)<input v-model="followupForm.due_at" type="datetime-local" /></label>
+            <label>Contact by<select v-model="followupForm.channel"><option value="EMAIL">Email</option><option value="PHONE" :disabled="!phoneNumber">Phone call</option><option value="BOTH" :disabled="!phoneNumber">Email and phone call</option></select></label>
+            <p v-if="!phoneNumber" class="muted">Add a phone number to the application to plan a call.</p>
             <p class="muted">Leave the date blank for {{ work.followup_delay_days }} days from now.</p>
             <label>Template reference<input v-model="followupForm.template_reference" maxlength="2048" placeholder="Optional name or reference" /></label>
             <div class="actions"><button class="primary" type="submit">Save follow-up</button><button type="button" @click="followupOpen = false">Cancel follow-up</button></div>
@@ -148,10 +165,13 @@ onMounted(load)
         </form>
         <p v-if="!work.followups.length" class="muted">No follow-ups yet.</p>
         <article v-for="item in work.followups" :key="item.id" class="item" :aria-label="`Follow-up ${item.sequence_number}`">
-          <div class="section-heading"><strong>Follow-up #{{ item.sequence_number }}</strong><span class="badge" :class="item.status.toLowerCase()">{{ item.status }}</span></div>
-          <p class="meta">Due: {{ dateText(item.due_at) }}<template v-if="item.sent_at"> · Sent {{ dateText(item.sent_at) }}</template></p>
+          <div class="section-heading"><strong>Follow-up #{{ item.sequence_number }} · {{ item.channel === 'BOTH' ? 'Email + phone' : item.channel === 'PHONE' ? 'Phone call' : 'Email' }}</strong><span class="badge" :class="item.status.toLowerCase()">{{ item.status === 'SENT' && item.channel !== 'EMAIL' ? 'COMPLETED' : item.status }}</span></div>
+          <p class="meta">Due: {{ dateText(item.due_at) }}<template v-if="item.sent_at"> · {{ item.channel === 'EMAIL' ? 'Sent' : 'Completed' }} {{ dateText(item.sent_at) }}</template></p>
           <p v-if="item.template_reference" class="content">Template: {{ item.template_reference }}</p>
-          <div class="actions"><button v-if="item.status === 'PENDING'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'DRAFTED')">Mark drafted</button><button v-if="item.status === 'PENDING' || item.status === 'DRAFTED'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'SENT')">Mark sent</button><button v-if="item.status === 'PENDING' || item.status === 'DRAFTED'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'CANCELLED')">Cancel follow-up</button><button v-if="item.status === 'CANCELLED' || item.status === 'SENT'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'PENDING')">Reopen follow-up</button></div>
+          <p v-if="item.channel !== 'EMAIL' && phoneNumber" class="meta">Call: <a :href="`tel:${phoneNumber}`">{{ phoneNumber }}</a></p>
+          <form v-if="draftingId === item.id" @submit.prevent="saveEmailDraft(item)"><label>Email draft content<textarea v-model="draftContent" required rows="5"></textarea></label><p class="muted">If mail is not connected, this will be saved as an EMAIL_DRAFT note. It will not be sent.</p><div class="actions"><button class="primary" type="submit" :disabled="busy">Save draft</button><button type="button" @click="draftingId = null">Cancel</button></div></form>
+          <div class="actions"><button v-if="item.status === 'PENDING' && item.channel !== 'PHONE'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'DRAFTED')">Mark drafted</button><button v-if="item.status === 'PENDING' || item.status === 'DRAFTED'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'SENT')">Mark followed up</button><button v-if="item.status === 'PENDING' || item.status === 'DRAFTED'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'CANCELLED')">Cancel follow-up</button><button v-if="item.status === 'CANCELLED' || item.status === 'SENT'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'PENDING')">Reopen follow-up</button></div>
+          <div v-if="item.channel !== 'PHONE' && (item.status === 'PENDING' || item.status === 'DRAFTED')" class="actions"><button type="button" :disabled="busy" @click="draftingId = item.id; draftContent = ''">Write email draft</button></div>
         </article>
       </section>
     </template>

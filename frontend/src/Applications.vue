@@ -28,7 +28,7 @@ function today() {
   const date = new Date()
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
-const form = reactive({ job_title: '', company: '', date_applied: today(), job_url: '', email_reference: '' })
+const form = reactive({ job_title: '', company: '', date_applied: today(), job_url: '', email_reference: '', phone_number: '' })
 const blankFilters = (): ApplicationFilters => ({ q: '', status: '', outcome: '', company: '', title: '', location: '', contract_type: '', source: '', remote_policy: '', date_from: '', date_to: '', document_filename: '' })
 const filters = reactive<ApplicationFilters>(blankFilters())
 const hasFilters = computed(() => Object.values(filters).some(Boolean))
@@ -60,12 +60,12 @@ async function submit() {
   try {
     const application = await createApplication({
       job_title: form.job_title.trim(), company: form.company.trim(), date_applied: form.date_applied,
-      job_url: form.job_url.trim() || null, email_reference: form.email_reference.trim() || null,
+      job_url: form.job_url.trim() || null, email_reference: form.email_reference.trim() || null, phone_number: form.phone_number.trim() || null,
     })
     duplicateWarnings.value = application.duplicate_warnings
     await refresh()
     success.value = `Saved ${application.job_title} at ${application.company}.`
-    Object.assign(form, { job_title: '', company: '', date_applied: today(), job_url: '', email_reference: '' })
+    Object.assign(form, { job_title: '', company: '', date_applied: today(), job_url: '', email_reference: '', phone_number: '' })
     showForm.value = false
   } catch (error) {
     formError.value = error instanceof TypeError || (error instanceof Error && error.name === 'AbortError')
@@ -117,6 +117,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', navigate); window.r
         <div class="form-grid">
           <label>Job URL<input v-model="form.job_url" name="job_url" type="url" placeholder="https://…" maxlength="2048" aria-describedby="source-help" /></label>
           <label>Email reference<input v-model="form.email_reference" name="email_reference" placeholder="Message link, ID, or subject" maxlength="2048" aria-describedby="source-help" /></label>
+          <label>Phone number (optional)<input v-model="form.phone_number" name="phone_number" type="tel" autocomplete="tel" placeholder="+33 6 12 34 56 78" aria-describedby="phone-help" /><small id="phone-help">French number or +country code for other countries. Used for phone follow-ups.</small></label>
         </div>
       </fieldset>
       <p v-if="formError" class="error" role="alert">{{ formError }}</p>

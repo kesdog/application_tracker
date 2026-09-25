@@ -45,7 +45,7 @@ def list_applications(session: Session, filters: ApplicationFilters | None = Non
         searchable = (
             Application.job_title, Application.company, Application.location, Application.remote_policy,
             Application.contract_type, Application.source, Application.description, Application.requirements,
-            Application.job_url, Application.email_reference,
+            Application.job_url, Application.email_reference, Application.phone_number,
         )
         query = query.where(or_(*(func.lower(func.coalesce(column, "")).contains(term, autoescape=True) for column in searchable)))
     if filters.status:

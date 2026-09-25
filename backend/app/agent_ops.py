@@ -1,7 +1,7 @@
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
-from app import activity, applications, dashboard, interviews, invalidation, work
+from app import activity, applications, dashboard, integrations, interviews, invalidation, work
 from app.config import Settings
 from app.models import ActorType
 from app.schemas import ApplicationCreate, ApplicationFilters, ApplicationRead, ApplicationUpdate
@@ -16,12 +16,13 @@ PERMISSION_FOR = {
     "find_possible_duplicates": "read", "get_application_timeline": "read", "get_upcoming_items": "read",
     "get_interview_context": "read", "create_application": "create", "update_application": "edit",
     "create_note": "draft", "create_followup": "draft", "mark_followup_sent": "draft",
+    "draft_followup": "draft",
     "create_task": "tasks", "complete_task": "tasks", "create_interview": "interviews",
     "update_interview": "interviews",
 }
 
 
-def invoke(session: Session, settings: Settings, operation: str, args: dict) -> dict | list:
+def invoke(session: Session, settings: Settings, operation: str, args: dict, *, mail_provider: integrations.MailProvider | None = None) -> dict | list:
     if operation not in PERMISSION_FOR:
         raise KeyError(operation)
     application_id = args.get("application_id")
@@ -61,6 +62,9 @@ def invoke(session: Session, settings: Settings, operation: str, args: dict) -> 
     elif operation == "mark_followup_sent":
         item = work.update_followup(session, application_id, args["followup_id"], FollowUpUpdate(status="SENT"), **actor)
         result = FollowUpRead.model_validate(item).model_dump(mode="json")
+        topic = "followup.updated"
+    elif operation == "draft_followup":
+        result = integrations.draft_followup(session, application_id, args["followup_id"], integrations.DraftRequest.model_validate({"content": args["content"]}), mail_provider or integrations.DisconnectedMailProvider(), **actor).model_dump(mode="json")
         topic = "followup.updated"
     elif operation == "create_task":
         item = work.create_task(session, application_id, TaskCreate.model_validate(args["task"]), **actor)

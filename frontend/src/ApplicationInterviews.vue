@@ -99,6 +99,7 @@ onMounted(load)
       <p v-if="item.interviewer || item.location" class="meta"><template v-if="item.interviewer">With {{ item.interviewer }}</template><template v-if="item.interviewer && item.location"> · </template>{{ item.location }}</p>
       <p v-if="item.notes" class="content">{{ item.notes }}</p><p v-if="item.result" class="result"><strong>Result:</strong> {{ item.result }}</p>
       <p><a v-if="item.meeting_url" :href="item.meeting_url" target="_blank" rel="noopener noreferrer">Open meeting link ↗</a><span v-if="item.meeting_url && item.email_reference"> · </span><span v-if="item.email_reference">Email: {{ item.email_reference }}</span></p>
+      <p><a :href="`/api/interviews/${encodeURIComponent(item.id)}/calendar.ics`" :download="`interview-${item.id}.ics`">Download calendar event</a></p>
     </article>
   </section>
 </template>

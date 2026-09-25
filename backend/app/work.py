@@ -3,10 +3,10 @@ from datetime import timedelta
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from app.applications import ApplicationNotFound, get_application
+from app.applications import ApplicationNotFound, InvalidApplication, get_application
 from app.activity import record_audit, record_event
 from app.config import Settings
-from app.models import ActorType, FollowUp, FollowUpStatus, Note, Task, TaskStatus, utc_now
+from app.models import ActorType, FollowUp, FollowUpChannel, FollowUpStatus, Note, Task, TaskStatus, utc_now
 from app.work_schemas import FollowUpCreate, FollowUpUpdate, NoteCreate, NoteUpdate, TaskCreate, TaskUpdate
 
 
@@ -108,13 +108,15 @@ def create_followup(
     # supply a fresh session; simultaneous creates serialize within busy_timeout.
     session.execute(text("BEGIN IMMEDIATE"))
     application = get_application(session, application_id)
+    if data.channel in (FollowUpChannel.PHONE, FollowUpChannel.BOTH) and not application.phone_number:
+        raise InvalidApplication("Add a phone number to the application before choosing a phone follow-up")
     sequence = (session.scalar(select(func.max(FollowUp.sequence_number)).where(FollowUp.application_id == application_id)) or 0) + 1
     due_at = data.due_at or utc_now() + timedelta(days=effective_settings(application, settings)["followup_delay_days"])
     # The suggestion cap is not a limit on manual creation. No email is sent here.
-    item = FollowUp(application_id=application_id, sequence_number=sequence, due_at=due_at, template_reference=data.template_reference)
+    item = FollowUp(application_id=application_id, sequence_number=sequence, due_at=due_at, template_reference=data.template_reference, channel=data.channel)
     session.add(item); session.flush()
     record_event(session, application_id, "FOLLOWUP_CREATED", f"Follow-up #{sequence} created", actor_type=actor_type, actor_reference=actor_reference, metadata={"followup_id": item.id})
-    record_audit(session, application_id, "FOLLOWUP", item.id, "CREATE", new={"sequence_number": sequence, "due_at": due_at, "template_reference": data.template_reference}, actor_type=actor_type, actor_reference=actor_reference)
+    record_audit(session, application_id, "FOLLOWUP", item.id, "CREATE", new={"sequence_number": sequence, "due_at": due_at, "template_reference": data.template_reference, "channel": data.channel}, actor_type=actor_type, actor_reference=actor_reference)
     return finish(session, item)
 
 
@@ -124,6 +126,8 @@ def update_followup(
 ) -> FollowUp:
     item = child(session, FollowUp, application_id, item_id)
     changes = data.model_dump(exclude_unset=True)
+    if "channel" in changes and changes["channel"] in (FollowUpChannel.PHONE, FollowUpChannel.BOTH) and not get_application(session, application_id).phone_number:
+        raise InvalidApplication("Add a phone number to the application before choosing a phone follow-up")
     if "status" in changes and changes["status"] != item.status:
         changes["sent_at"] = utc_now() if changes["status"] == FollowUpStatus.SENT else None
     changes = {name: value for name, value in changes.items() if value != getattr(item, name)}
@@ -133,7 +137,11 @@ def update_followup(
     if changes:
         status = changes.get("status")
         event_type = "FOLLOWUP_SENT" if status == FollowUpStatus.SENT else "FOLLOWUP_DRAFTED" if status == FollowUpStatus.DRAFTED else "FOLLOWUP_CHANGED"
-        summary = f"Follow-up #{item.sequence_number} {status.value.lower()}" if status else f"Follow-up #{item.sequence_number} updated"
+        if status == FollowUpStatus.SENT:
+            method = "email and phone" if item.channel == FollowUpChannel.BOTH else "phone" if item.channel == FollowUpChannel.PHONE else "email"
+            summary = f"Follow-up #{item.sequence_number} completed by {method}"
+        else:
+            summary = f"Follow-up #{item.sequence_number} {status.value.lower()}" if status else f"Follow-up #{item.sequence_number} updated"
         record_event(session, application_id, event_type, summary, actor_type=actor_type, actor_reference=actor_reference, metadata={"followup_id": item.id})
         record_audit(session, application_id, "FOLLOWUP", item.id, "UPDATE", previous=previous, new=changes, actor_type=actor_type, actor_reference=actor_reference, reversible=True)
     return finish(session, item)

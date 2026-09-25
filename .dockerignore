@@ -1,0 +1,13 @@
+.git
+.venv
+.run
+.env
+data
+build
+frontend/node_modules
+frontend/dist
+**/tests
+**/*test*.py
+**/*.test.ts
+**/*.spec.ts
+__pycache__

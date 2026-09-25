@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { getAgentSettings, regenerateAgentToken, saveAgentPermissions, type AgentPermissions, type AgentSettings } from './api'
+import { getAgentSettings, getIntegrationStatus, regenerateAgentToken, saveAgentPermissions, type AgentPermissions, type AgentSettings, type IntegrationStatus } from './api'
 
 const settings = ref<AgentSettings | null>(null)
+const integrations = ref<IntegrationStatus | null>(null)
 const token = ref('')
 const loading = ref(true)
 const saving = ref(false)
@@ -20,7 +21,7 @@ const labels: { key: keyof AgentPermissions; label: string; help: string }[] = [
 
 async function load() {
   loading.value = true; error.value = ''
-  try { settings.value = await getAgentSettings(); permissions.value = { ...settings.value.permissions } }
+  try { settings.value = await getAgentSettings(); permissions.value = { ...settings.value.permissions }; integrations.value = await getIntegrationStatus() }
   catch (reason) { error.value = reason instanceof Error ? reason.message : 'Unable to load agent settings.' }
   finally { loading.value = false }
 }
@@ -61,6 +62,7 @@ onMounted(load)
         <button class="primary" type="submit" :disabled="saving || !settings.configured">Save permissions</button>
       </form>
     </template>
+    <section class="panel"><h3>Integrations</h3><p>Mail: {{ integrations?.mail.connected ? 'Connected' : 'Not connected' }}. Calendar: {{ integrations?.calendar.connected ? 'Connected' : 'Not connected' }}.</p><p>Without a mail provider, email drafts are saved as local notes. Interview calendar files can be downloaded and imported manually. Nothing is sent or added to an external calendar automatically.</p></section>
     <p v-if="message" class="success" role="status">{{ message }}</p>
   </section>
 </template>

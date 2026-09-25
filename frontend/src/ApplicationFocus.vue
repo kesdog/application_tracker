@@ -26,7 +26,7 @@ const optionalFields = [
   { key: 'location', label: 'Location' }, { key: 'remote_policy', label: 'Remote policy' },
   { key: 'contract_type', label: 'Contract type' }, { key: 'source', label: 'Source' },
 ] as const
-const editableFields = ['job_title', 'company', 'date_applied', 'job_url', 'email_reference', 'location', 'remote_policy', 'contract_type', 'source', 'description', 'requirements', 'status', 'outcome', 'posting_status', 'followup_delay_days', 'max_followup_suggestions'] as const
+const editableFields = ['job_title', 'company', 'date_applied', 'job_url', 'email_reference', 'phone_number', 'location', 'remote_policy', 'contract_type', 'source', 'description', 'requirements', 'status', 'outcome', 'posting_status', 'followup_delay_days', 'max_followup_suggestions'] as const
 const needsOutcomeClear = computed(() => application.value?.status === 'CLOSED' && application.value.outcome !== null && draft.value !== null && draft.value.status !== 'CLOSED')
 
 function localDateTime(value: string | null) {
@@ -136,6 +136,7 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
           <div class="grid">
             <label>Job URL<input v-model="draft.job_url" type="url" maxlength="2048" /></label>
             <label>Email reference<input v-model="draft.email_reference" maxlength="2048" /></label>
+            <label>Phone number (optional)<input v-model="draft.phone_number" type="tel" autocomplete="tel" placeholder="+33 6 12 34 56 78" /><small>French number or +country code for other countries.</small></label>
           </div>
           <label class="long-field">Description<textarea v-model="draft.description" rows="4"></textarea></label>
           <label class="long-field">Requirements<textarea v-model="draft.requirements" rows="4"></textarea></label>
@@ -180,6 +181,7 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
             <div><dt>Outcome</dt><dd>{{ application.outcome ?? 'No outcome' }}</dd></div>
             <div><dt>Job URL</dt><dd><a v-if="application.job_url" :href="application.job_url" target="_blank" rel="noopener noreferrer">{{ application.job_url }} ↗</a><span v-else>Not provided</span></dd></div>
             <div><dt>Email reference</dt><dd>{{ application.email_reference ?? 'Not provided' }}</dd></div>
+            <div><dt>Phone number</dt><dd><a v-if="application.phone_number" :href="`tel:${application.phone_number}`">{{ application.phone_number }}</a><span v-else>Not provided</span></dd></div>
             <div v-for="field in optionalFields" :key="field.key"><dt>{{ field.label }}</dt><dd>{{ application[field.key] ?? 'Not provided' }}</dd></div>
           </dl>
         </section>
@@ -187,7 +189,7 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
         <section class="panel"><h3>Job posting</h3><dl class="details"><div><dt>Posting status</dt><dd>{{ application.posting_status }}</dd></div><div><dt>Last checked</dt><dd>{{ application.posting_last_checked_at ? new Date(application.posting_last_checked_at).toLocaleString() + ' (local time)' : 'Not checked' }}</dd></div></dl></section>
         <ApplicationDocuments :key="`documents-${contentVersion}`" :application-id="application.id" @changed="timelineVersion++" />
         <ApplicationInterviews :key="`interviews-${contentVersion}`" :application-id="application.id" @changed="timelineVersion++" />
-        <ApplicationWork :key="`work-${contentVersion}`" :application-id="application.id" @changed="timelineVersion++" />
+        <ApplicationWork :key="`work-${contentVersion}`" :application-id="application.id" :phone-number="application.phone_number" @changed="timelineVersion++" />
         <ApplicationTimeline :key="timelineVersion" :application-id="application.id" @undone="handleUndo" />
       </template>
     </template>

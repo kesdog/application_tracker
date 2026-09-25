@@ -10,6 +10,7 @@ export interface ApplicationCreate {
   date_applied: string
   job_url: string | null
   email_reference: string | null
+  phone_number: string | null
 }
 
 export interface Application extends ApplicationCreate {
@@ -41,7 +42,8 @@ export interface NoteInput { content: string; type: NoteType }
 export interface Note extends NoteInput { id: string; application_id: string; created_by: string; created_at: string; updated_at: string }
 export interface TaskInput { title: string; description: string | null; due_at: string | null }
 export interface Task extends TaskInput { id: string; application_id: string; status: 'PENDING' | 'COMPLETED' | 'CANCELLED'; completed_at: string | null }
-export interface FollowUpInput { due_at: string | null; template_reference: string | null }
+export type FollowUpChannel = 'EMAIL' | 'PHONE' | 'BOTH'
+export interface FollowUpInput { due_at: string | null; template_reference: string | null; channel: FollowUpChannel }
 export interface FollowUp extends FollowUpInput { id: string; application_id: string; sequence_number: number; status: 'PENDING' | 'DRAFTED' | 'SENT' | 'CANCELLED'; sent_at: string | null }
 export interface ApplicationWork { notes: Note[]; tasks: Task[]; followups: FollowUp[]; followup_delay_days: number; max_followup_suggestions: number }
 
@@ -100,11 +102,19 @@ export interface ApplicationDocument {
 export interface AgentPermissions { read: boolean; create: boolean; edit: boolean; draft: boolean; tasks: boolean; interviews: boolean }
 export interface AgentSettings { configured: boolean; permissions: AgentPermissions }
 export interface AgentTokenCreated extends AgentSettings { token: string }
+export interface IntegrationStatus { mail: { connected: boolean }; calendar: { connected: boolean } }
+export interface DraftResult { location: 'LOCAL_NOTE' | 'MAILBOX'; note_id: string | null; message_reference: string | null; message: string }
 
 export function getAgentSettings(): Promise<AgentSettings> { return request('/api/settings/agent') }
 export function regenerateAgentToken(): Promise<AgentTokenCreated> { return request('/api/settings/agent/token', { method: 'POST' }) }
 export function saveAgentPermissions(permissions: AgentPermissions): Promise<AgentSettings> {
   return request('/api/settings/agent/permissions', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(permissions) })
+}
+export function getIntegrationStatus(): Promise<IntegrationStatus> { return request('/api/integrations') }
+export function draftEmailFollowup(applicationId: string, followupId: string, content: string): Promise<DraftResult> {
+  return request(`/api/applications/${encodeURIComponent(applicationId)}/followups/${encodeURIComponent(followupId)}/draft`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content }),
+  })
 }
 
 export function getWork(id: string): Promise<ApplicationWork> {

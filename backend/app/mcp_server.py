@@ -80,6 +80,11 @@ def create_mcp_server(settings: Settings | None = None, token: str | None = None
         return call("mark_followup_sent", {"application_id": application_id, "followup_id": followup_id})
 
     @server.tool()
+    def draft_followup(application_id: str, followup_id: str, content: str) -> dict:
+        """Save an email draft in a connected mailbox or as a local note. Nothing is sent."""
+        return call("draft_followup", {"application_id": application_id, "followup_id": followup_id, "content": content})
+
+    @server.tool()
     def create_task(application_id: str, task: TaskCreate) -> dict:
         """Create a task for an application."""
         return call("create_task", {"application_id": application_id, "task": task.model_dump(mode="json")})

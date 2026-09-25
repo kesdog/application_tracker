@@ -2,6 +2,7 @@ from datetime import date, datetime, timezone
 from typing import Annotated, Self
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, HttpUrl, TypeAdapter, field_validator, model_validator
+import phonenumbers
 
 from app.models import ApplicationOutcome, ApplicationStatus, PostingStatus
 
@@ -17,6 +18,7 @@ class ApplicationCreate(BaseModel):
     date_applied: date
     job_url: Reference | None = None
     email_reference: Reference | None = None
+    phone_number: str | None = Field(default=None, max_length=30)
     location: ShortText | None = None
     remote_policy: ShortText | None = None
     contract_type: ShortText | None = None
@@ -42,6 +44,21 @@ class ApplicationCreate(BaseModel):
         if value is not None:
             TypeAdapter(HttpUrl).validate_python(value)
         return value
+
+    @field_validator("phone_number", mode="before")
+    @classmethod
+    def validate_phone_number(cls, value: str | None) -> str | None:
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None
+        if not isinstance(value, str):
+            raise ValueError("Enter a valid phone number")
+        try:
+            parsed = phonenumbers.parse(value.strip(), "FR")
+        except phonenumbers.NumberParseException as exc:
+            raise ValueError("Enter a valid phone number, with +country code outside France") from exc
+        if not phonenumbers.is_valid_number(parsed) or parsed.extension:
+            raise ValueError("Enter a valid phone number, with +country code outside France")
+        return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
 
     @model_validator(mode="after")
     def require_source(self) -> Self:

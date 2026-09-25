@@ -61,7 +61,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', route); events?.clo
       </section>
       </details>
     </main>
-    <footer>Application Tracker <span>0.9.0</span></footer>
+    <footer>Application Tracker <span>0.10.0</span></footer>
   </div>
 </template>
 
