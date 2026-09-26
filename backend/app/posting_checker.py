@@ -4,6 +4,7 @@ from datetime import date, datetime, timezone
 from html import unescape
 import re
 from typing import Awaitable, Callable
+from urllib.parse import parse_qs, urlparse
 
 import extruct
 import httpx
@@ -19,6 +20,8 @@ STRONG_CLOSED_PHRASES = (
     "position is no longer available",
 )
 LIVE_SIGNALS = ("apply now", "apply for this job", "submit application", "job description")
+LINKEDIN_GUEST_PAGE_MARKERS = ("d_jobs_guest_details", "jobs-guest-frontend")
+INDEED_JOB_PAGE_MARKERS = ("jobsearch-jobinfoheader", "jobsearch-jobcomponent", "indeedapply")
 
 
 @dataclass(frozen=True)
@@ -33,6 +36,63 @@ class PostingCheckResult:
 
 def normalized_text(html: str) -> str:
     return re.sub(r"\s+", " ", unescape(BeautifulSoup(html, "html.parser").get_text(" "))).casefold()
+
+
+def _linkedin_job_id(url: str) -> str | None:
+    """Return the job id from both direct and slugged LinkedIn guest URLs."""
+    parsed = urlparse(url)
+    if not (parsed.hostname or "").casefold().endswith("linkedin.com"):
+        return None
+    match = re.search(r"/jobs/view/(?:[^/?#]*-)?(\d+)(?:[/?#]|$)", parsed.path, re.IGNORECASE)
+    return match.group(1) if match else None
+
+
+def _linkedin_live_signal(html: str, final_url: str) -> str | None:
+    """Check LinkedIn's guest-job DOM without treating a generic Apply word as proof."""
+    job_id = _linkedin_job_id(final_url)
+    source = html.casefold()
+    if not job_id or job_id not in source or not any(marker in source for marker in LINKEDIN_GUEST_PAGE_MARKERS):
+        return None
+
+    soup = BeautifulSoup(html, "html.parser")
+    for element in soup.find_all(("a", "button")):
+        attributes = " ".join(
+            " ".join(value) if isinstance(value, list) else str(value)
+            for value in element.attrs.values()
+        ).casefold()
+        if "apply-button" in attributes or "public_jobs_apply" in attributes:
+            return f"LinkedIn guest job page matched job ID {job_id} and exposes an Apply control"
+    return None
+
+
+def _indeed_job_key(url: str) -> str | None:
+    """Return the immutable ``jk`` key from an Indeed direct job URL."""
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").casefold()
+    if not any(host == domain or host.endswith(f".{domain}") for domain in ("indeed.com", "indeed.fr", "indeed.co.uk", "indeed.de")):
+        return None
+    if not parsed.path.rstrip("/").endswith("/viewjob"):
+        return None
+    job_key = (parse_qs(parsed.query).get("jk") or [None])[0]
+    return job_key.casefold() if isinstance(job_key, str) and re.fullmatch(r"[a-zA-Z0-9]+", job_key) else None
+
+
+def _indeed_live_signal(html: str, final_url: str) -> str | None:
+    """Verify an Indeed job page from its job key and native application control."""
+    job_key = _indeed_job_key(final_url)
+    source = html.casefold()
+    if not job_key or job_key not in source or not any(marker in source for marker in INDEED_JOB_PAGE_MARKERS):
+        return None
+
+    soup = BeautifulSoup(html, "html.parser")
+    for element in soup.find_all(("a", "button")):
+        attributes = " ".join(
+            " ".join(value) if isinstance(value, list) else str(value)
+            for value in element.attrs.values()
+        ).casefold()
+        if "indeedapply" in attributes or "indeed-apply" in attributes:
+            return f"Indeed job page matched job key {job_key} and exposes an Apply control"
+    return None
 
 
 def _date(value) -> date | None:
@@ -81,6 +141,12 @@ def inspect_html(html: str, final_url: str, checked_at: datetime | None = None) 
     phrase = next((item for item in STRONG_CLOSED_PHRASES if item in text), None)
     if phrase:
         return PostingCheckResult(PostingStatus.CLOSED, checked_at, 200, final_url, "HTML", f"Page contains closed-posting phrase: {phrase}")
+    linkedin_signal = _linkedin_live_signal(html, final_url)
+    if linkedin_signal:
+        return PostingCheckResult(PostingStatus.LIVE, checked_at, 200, final_url, "LINKEDIN_HTML", linkedin_signal)
+    indeed_signal = _indeed_live_signal(html, final_url)
+    if indeed_signal:
+        return PostingCheckResult(PostingStatus.LIVE, checked_at, 200, final_url, "INDEED_HTML", indeed_signal)
     signal = next((item for item in LIVE_SIGNALS if item in text), None)
     if signal:
         return PostingCheckResult(PostingStatus.LIVE, checked_at, 200, final_url, "HTML", f"Page contains live-posting signal: {signal}")
@@ -91,6 +157,22 @@ class PostingChecker:
     def __init__(self, timeout_seconds: float = 12, browser_fallback: Callable[[str], Awaitable[tuple[str, str]]] | None = None):
         self.timeout_seconds = timeout_seconds
         self.browser_fallback = browser_fallback
+
+    async def _browser_result(self, url: str, checked_at: datetime, http_status: int, final_url: str) -> PostingCheckResult:
+        """Use the ordinary browser fallback when direct HTTP was blocked or inconclusive."""
+        try:
+            rendered_html, rendered_url = await self.browser_fallback(url)  # type: ignore[misc]
+        except (ImportError, ModuleNotFoundError):
+            return PostingCheckResult(PostingStatus.UNKNOWN, checked_at, http_status, final_url, "ERROR", "Playwright fallback unavailable")
+        except Exception as exc:
+            return PostingCheckResult(PostingStatus.UNKNOWN, checked_at, http_status, final_url, "ERROR", f"Playwright fallback failed: {exc.__class__.__name__}")
+        rendered = inspect_html(rendered_html, rendered_url, checked_at)
+        if rendered.status == PostingStatus.UNKNOWN and http_status in (401, 403):
+            return PostingCheckResult(
+                PostingStatus.UNKNOWN, checked_at, http_status, rendered_url, "PLAYWRIGHT",
+                f"HTTP {http_status} blocked the direct request and the browser fallback did not receive a verifiable job page",
+            )
+        return PostingCheckResult(rendered.status, checked_at, http_status, rendered_url, "PLAYWRIGHT", rendered.reason)
 
     async def check(self, job_url: str) -> PostingCheckResult:
         checked_at = utc_now()
@@ -106,21 +188,18 @@ class PostingChecker:
         final_url = str(response.url)
         if status in (404, 410):
             return PostingCheckResult(PostingStatus.CLOSED, checked_at, status, final_url, "HTTP", f"HTTP {status} confirms the posting is unavailable")
-        if status in (401, 403, 429) or status >= 500:
+        if status in (401, 403):
+            if self.browser_fallback is not None:
+                return await self._browser_result(job_url, checked_at, status, final_url)
+            return PostingCheckResult(PostingStatus.UNKNOWN, checked_at, status, final_url, "HTTP", f"HTTP {status} prevented a reliable posting check")
+        if status == 429 or status >= 500:
             return PostingCheckResult(PostingStatus.UNKNOWN, checked_at, status, final_url, "HTTP", f"HTTP {status} prevented a reliable posting check")
         if not 200 <= status < 300:
             return PostingCheckResult(PostingStatus.UNKNOWN, checked_at, status, final_url, "HTTP", f"HTTP {status} is inconclusive")
         result = inspect_html(response.text, final_url, checked_at)
-        if result.status != PostingStatus.UNKNOWN or self.browser_fallback is None or len(normalized_text(response.text)) > 300:
+        if result.status != PostingStatus.UNKNOWN or self.browser_fallback is None:
             return result
-        try:
-            rendered_html, rendered_url = await self.browser_fallback(final_url)
-        except (ImportError, ModuleNotFoundError):
-            return PostingCheckResult(PostingStatus.UNKNOWN, checked_at, status, final_url, "ERROR", "Playwright fallback unavailable")
-        except Exception as exc:
-            return PostingCheckResult(PostingStatus.UNKNOWN, checked_at, status, final_url, "ERROR", f"Playwright fallback failed: {exc.__class__.__name__}")
-        rendered = inspect_html(rendered_html, rendered_url, checked_at)
-        return PostingCheckResult(rendered.status, checked_at, status, rendered_url, "PLAYWRIGHT", rendered.reason)
+        return await self._browser_result(final_url, checked_at, status, final_url)
 
 
 async def render_with_playwright(url: str) -> tuple[str, str]:

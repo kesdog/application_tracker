@@ -19,13 +19,14 @@ dependencies = [
     "phonenumberslite>=9.0.40,<10",
     "httpx>=0.28,<1",
     "extruct>=0.18,<1",
+    "playwright>=1.50,<2",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10", "httpx>=0.28,<1"]
 desktop = ["pystray>=0.19,<1", "Pillow>=11,<13"]
 build-desktop = ["pyinstaller>=6,<7"]
-posting-browser = ["playwright>=1.50,<2"]
+posting-browser = []
 
 [project.scripts]
 application-tracker = "app.main:run"

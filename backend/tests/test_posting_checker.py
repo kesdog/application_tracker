@@ -1,3 +1,4 @@
+import asyncio
 from datetime import timedelta
 
 from fastapi.testclient import TestClient
@@ -6,7 +7,7 @@ import pytest
 from app.config import Settings
 from app.main import create_app
 from app.models import PostingStatus, utc_now
-from app.posting_checker import inspect_html
+from app.posting_checker import PostingChecker, inspect_html
 from app.posting_service import apply_result
 
 
@@ -22,6 +23,79 @@ def test_deterministic_html_hierarchy():
     assert inspect_html('<button>Apply now</button>', 'https://example.test/job', now).status == PostingStatus.LIVE
     linkedin = inspect_html('<p>This role is no longer accepting applications.</p>', 'https://www.linkedin.com/jobs/view/4390679517/', now)
     assert linkedin.status == PostingStatus.CLOSED and linkedin.method == "HTML"
+
+
+def test_linkedin_guest_job_is_live_when_it_has_a_matched_apply_control():
+    result = inspect_html(
+        '''<html><head><meta name="pageKey" content="d_jobs_guest_details" />
+        <link rel="canonical" href="https://fr.linkedin.com/jobs/view/full-stack-engineer-4463232717" /></head>
+        <body><a id="topbar-apply" class="apply-button" data-tracking-control-name="public_jobs_apply-link-onsite">Apply</a></body></html>''',
+        "https://www.linkedin.com/jobs/view/4463232717/",
+    )
+    assert result.status == PostingStatus.LIVE
+    assert result.method == "LINKEDIN_HTML"
+    assert "4463232717" in result.reason
+
+
+def test_linkedin_apply_control_without_a_matched_job_page_is_inconclusive():
+    result = inspect_html(
+        '<button class="apply-button">Apply</button>',
+        "https://www.linkedin.com/jobs/view/4463232717/",
+    )
+    assert result.status == PostingStatus.UNKNOWN
+
+
+def test_indeed_job_is_live_when_it_has_a_matched_apply_control():
+    result = inspect_html(
+        '''<html><head><meta name="pageKey" content="jobsearch-JobInfoHeader" /></head>
+        <body data-jk="529293da834e1ec8"><button data-testid="indeedApplyButton">Apply now</button></body></html>''',
+        "https://fr.indeed.com/viewjob?jk=529293da834e1ec8",
+    )
+    assert result.status == PostingStatus.LIVE
+    assert result.method == "INDEED_HTML"
+    assert "529293da834e1ec8" in result.reason
+
+
+def test_indeed_apply_control_without_a_matched_job_page_is_inconclusive():
+    result = inspect_html(
+        '<button data-testid="indeedApplyButton">Start</button>',
+        "https://fr.indeed.com/viewjob?jk=529293da834e1ec8",
+    )
+    assert result.status == PostingStatus.UNKNOWN
+
+
+def test_browser_fallback_handles_an_http_403_with_a_verified_page():
+    async def browser(_url: str) -> tuple[str, str]:
+        return (
+            '''<meta name="pageKey" content="d_jobs_guest_details" />
+            <body data-job-id="4463232717"><button class="apply-button">Apply</button></body>''',
+            "https://www.linkedin.com/jobs/view/4463232717/",
+        )
+
+    result = asyncio.run(
+        PostingChecker(browser_fallback=browser)._browser_result(
+            "https://www.linkedin.com/jobs/view/4463232717/", utc_now(), 403,
+            "https://www.linkedin.com/jobs/view/4463232717/",
+        )
+    )
+    assert result.status == PostingStatus.LIVE
+    assert result.http_status == 403
+    assert result.method == "PLAYWRIGHT"
+
+
+def test_browser_fallback_reports_a_blocked_403_clearly():
+    async def browser(_url: str) -> tuple[str, str]:
+        return "<title>Blocked</title><p>Access denied</p>", "https://fr.indeed.com/viewjob?jk=529293da834e1ec8"
+
+    result = asyncio.run(
+        PostingChecker(browser_fallback=browser)._browser_result(
+            "https://fr.indeed.com/viewjob?jk=529293da834e1ec8", utc_now(), 403,
+            "https://fr.indeed.com/viewjob?jk=529293da834e1ec8",
+        )
+    )
+    assert result.status == PostingStatus.UNKNOWN
+    assert result.method == "PLAYWRIGHT"
+    assert "blocked the direct request" in result.reason
 
 
 def test_unknown_check_preserves_live_status_and_tracks_failures(tmp_path):

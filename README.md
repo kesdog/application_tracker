@@ -30,6 +30,7 @@ Use Python 3.11+ (tested with 3.12), Node.js 22.12+ (tested with 24), and pnpm 1
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.lock
 .\.venv\Scripts\python.exe -m pip install --no-deps -e '.[dev]'
+.\.venv\Scripts\python.exe -m playwright install chromium
 pnpm --dir frontend install --frozen-lockfile
 Copy-Item .env.example .env
 ```
@@ -193,11 +194,11 @@ Application filters are combined with AND logic. Text filters are case-insensiti
 
 ## Automatic posting checks
 
-`POST /api/applications/{id}/check-posting` runs a deterministic, local check of the saved job URL. It uses HTTPX first, then Schema.org JobPosting metadata through `extruct`, then carefully selected visible-page phrases. HTTP 404/410, expired `validThrough`, and strong unavailability phrases can confirm a posting is closed. 401, 403, 429, 5xx, timeouts, malformed metadata, and inconclusive pages return **UNKNOWN**; UNKNOWN does not mean closed and never overwrites a previously confirmed LIVE or CLOSED posting.
+`POST /api/applications/{id}/check-posting` runs a deterministic, local check of the saved job URL. It uses HTTPX first, then Schema.org JobPosting metadata through `extruct`, LinkedIn and Indeed job-page identity plus their native Apply controls, and carefully selected visible-page phrases. HTTP 404/410, expired `validThrough`, and strong unavailability phrases can confirm a posting is closed. For an HTTP 401 or 403, or for an otherwise inconclusive successful page, it uses a normal local Chromium session when `POSTING_PLAYWRIGHT_FALLBACK=true`. It does not log in, bypass access restrictions, or solve CAPTCHAs. 429, 5xx, timeouts, malformed metadata, and pages that remain inconclusive return **UNKNOWN**; UNKNOWN does not mean closed and never overwrites a previously confirmed LIVE or CLOSED posting.
 
 Checks store the final URL, HTTP response, method, reason, timestamp, and consecutive inconclusive count. A confirmed state change is added to the timeline, but repeated checks are not. Posting status never changes an application's lifecycle, outcome, or ghosted state. The background scheduler checks eligible non-closed URLs no more often than `POSTING_CHECK_INTERVAL_HOURS=24`, with `POSTING_CHECK_CONCURRENCY=5` by default. It uses a polite local user agent and does not retry aggressively, bypass access restrictions, automate logins, or solve CAPTCHAs.
 
-Playwright is optional and never required by the tracker, Windows build, or Docker image. Install `application-tracker[posting-browser]` only when rendered-page fallback is desired; unavailable browser support leaves the result UNKNOWN rather than failing the scheduler.
+The normal-browser fallback is enabled by default. Run `python -m playwright install chromium` after installing the project, as shown above. If Chromium is unavailable, the check stays UNKNOWN and records that the browser fallback was unavailable rather than failing the scheduler.
 
 `GET /api/interviews/{interview_id}/calendar.ics` downloads an importable event for an explicit user action. It does not create or update an external calendar event. The code defines `MailProvider` and `CalendarProvider` interfaces for future connected implementations; this release ships disconnected defaults.
 
