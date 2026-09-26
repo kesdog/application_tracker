@@ -2,17 +2,23 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { listInterviews, type InterviewListItem } from './api'
 import { dateTimeText, interviewTypeText, relativeDateText } from './dateText'
+import Pagination from './Pagination.vue'
 
 const interviews = ref<InterviewListItem[]>([])
 const loading = ref(false)
 const error = ref('')
+const upcomingPage = ref(1)
+const previousPage = ref(1)
+const pageSize = 9
 const upcoming = computed(() => interviews.value.filter(item => new Date(item.scheduled_at).getTime() >= Date.now()))
 const previous = computed(() => interviews.value.filter(item => new Date(item.scheduled_at).getTime() < Date.now()).reverse())
+const visibleUpcoming = computed(() => upcoming.value.slice((upcomingPage.value - 1) * pageSize, upcomingPage.value * pageSize))
+const visiblePrevious = computed(() => previous.value.slice((previousPage.value - 1) * pageSize, previousPage.value * pageSize))
 
 async function load() {
   loading.value = true
   error.value = ''
-  try { interviews.value = await listInterviews() }
+  try { interviews.value = await listInterviews(); upcomingPage.value = 1; previousPage.value = 1 }
   catch (reason) { error.value = reason instanceof Error ? reason.message : 'Unable to load interviews.' }
   finally { loading.value = false }
 }
@@ -32,15 +38,15 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
     <template v-else>
       <h3 class="group-title">Upcoming <span>{{ upcoming.length }}</span></h3>
       <div class="cards">
-        <article v-for="item in upcoming" :key="item.id" class="work-card upcoming">
+        <article v-for="item in visibleUpcoming" :key="item.id" class="work-card upcoming">
           <p class="due">{{ interviewTypeText(item.type) }} interview — {{ relativeDateText(item.scheduled_at) }}</p>
           <h3><a :href="`#/applications/${item.application.id}`">{{ item.application.job_title }}</a></h3>
           <p class="company">{{ item.application.company }}</p>
           <dl><div><dt>When</dt><dd>{{ dateTimeText(item.scheduled_at) }}</dd></div><div v-if="item.duration"><dt>Duration</dt><dd>{{ item.duration }} minutes</dd></div><div v-if="item.interviewer"><dt>Interviewer</dt><dd>{{ item.interviewer }}</dd></div><div v-if="item.location"><dt>Location</dt><dd>{{ item.location }}</dd></div></dl>
           <a v-if="item.meeting_url" :href="item.meeting_url" target="_blank" rel="noopener noreferrer">Open meeting link ↗</a>
         </article>
-      </div>
-      <template v-if="previous.length"><h3 class="group-title previous-title">Previous <span>{{ previous.length }}</span></h3><div class="cards"><article v-for="item in previous" :key="item.id" class="work-card"><p class="due past">{{ interviewTypeText(item.type) }} interview — {{ relativeDateText(item.scheduled_at) }}</p><h3><a :href="`#/applications/${item.application.id}`">{{ item.application.job_title }}</a></h3><p class="company">{{ item.application.company }} · {{ dateTimeText(item.scheduled_at) }}</p><p v-if="item.result">{{ item.result }}</p></article></div></template>
+      </div><Pagination v-model:page="upcomingPage" :total="upcoming.length" :page-size="pageSize" label="upcoming interviews" />
+      <template v-if="previous.length"><h3 class="group-title previous-title">Previous <span>{{ previous.length }}</span></h3><div class="cards"><article v-for="item in visiblePrevious" :key="item.id" class="work-card"><p class="due past">{{ interviewTypeText(item.type) }} interview — {{ relativeDateText(item.scheduled_at) }}</p><h3><a :href="`#/applications/${item.application.id}`">{{ item.application.job_title }}</a></h3><p class="company">{{ item.application.company }} · {{ dateTimeText(item.scheduled_at) }}</p><p v-if="item.result">{{ item.result }}</p></article></div><Pagination v-model:page="previousPage" :total="previous.length" :page-size="pageSize" label="previous interviews" /></template>
     </template>
   </section>
 </template>
@@ -49,7 +55,7 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
 .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .group-title { margin: 28px 0 12px; } .group-title span { color: #627084; font-size: 13px; font-weight: 400; }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
-.work-card { background: #fff; border: 1px solid #dce2e9; border-radius: 8px; padding: 20px; }
+.work-card { background: #fff; border: 1px solid #dce2e9; border-radius: 8px; padding: 15px; }
 .work-card.upcoming { border-top: 4px solid #5d4b8a; }
 .work-card h3 { margin: 10px 0 4px; } .due { color: #5d3d82; font-weight: 700; margin: 0; } .due.past, .company { color: #576678; }
 dl { margin: 16px 0; } dl div { border-top: 1px solid #e5e9ee; padding-top: 10px; margin-top: 10px; }

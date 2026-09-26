@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { createFollowUp, createNote, createTask, draftEmailFollowup, getWork, updateFollowUp, updateNote, updateTask, type ApplicationWork, type FollowUp, type FollowUpChannel, type Note, type NoteType, type Task } from './api'
+import Pagination from './Pagination.vue'
 
 const props = defineProps<{ applicationId: string; phoneNumber: string | null }>()
 const emit = defineEmits<{ changed: [] }>()
@@ -17,13 +18,16 @@ const taskOpen = ref(false)
 const followupOpen = ref(false)
 const draftingId = ref<string | null>(null)
 const draftContent = ref('')
+const followupPage = ref(1)
+const followupPageSize = 5
+const visibleFollowups = computed(() => (work.value?.followups ?? []).slice((followupPage.value - 1) * followupPageSize, followupPage.value * followupPageSize))
 const dateText = (value: string | null) => value ? new Date(value).toLocaleString() : 'No date set'
 const isoDate = (value: string) => value ? new Date(value).toISOString() : null
 
 async function load() {
   busy.value = true
   error.value = ''
-  try { work.value = await getWork(props.applicationId) }
+  try { work.value = await getWork(props.applicationId); followupPage.value = 1 }
   catch { error.value = 'Unable to load notes, tasks, and follow-ups. Check the backend and try again.' }
   finally { busy.value = false }
 }
@@ -78,6 +82,7 @@ function saveFollowup() {
   return perform(async () => {
     const item = await createFollowUp(props.applicationId, { due_at: isoDate(followupForm.due_at), template_reference: followupForm.template_reference || null, channel: followupForm.channel })
     work.value!.followups.push(item)
+    followupPage.value = Math.ceil(work.value!.followups.length / followupPageSize)
     Object.assign(followupForm, { due_at: '', template_reference: '', channel: 'EMAIL' })
     followupOpen.value = false
   }, 'Follow-up added.')
@@ -164,7 +169,7 @@ onMounted(load)
           </fieldset>
         </form>
         <p v-if="!work.followups.length" class="muted">No follow-ups yet.</p>
-        <article v-for="item in work.followups" :key="item.id" class="item" :aria-label="`Follow-up ${item.sequence_number}`">
+        <article v-for="item in visibleFollowups" :key="item.id" class="item" :aria-label="`Follow-up ${item.sequence_number}`">
           <div class="section-heading"><strong>{{ item.is_automatic ? 'Automatic ' : '' }}Follow-up #{{ item.sequence_number }} · {{ item.channel === 'BOTH' ? 'Email + phone' : item.channel === 'PHONE' ? 'Phone call' : 'Email' }}</strong><span class="badge" :class="item.status.toLowerCase()">{{ item.status === 'SENT' && item.channel !== 'EMAIL' ? 'COMPLETED' : item.status }}</span></div>
           <p class="meta">Due: {{ dateText(item.due_at) }}<template v-if="item.sent_at"> · {{ item.channel === 'EMAIL' ? 'Sent' : 'Completed' }} {{ dateText(item.sent_at) }}</template></p>
           <p v-if="item.template_reference" class="content">Template: {{ item.template_reference }}</p>
@@ -173,6 +178,7 @@ onMounted(load)
           <div class="actions"><button v-if="item.status === 'PENDING' && item.channel !== 'PHONE'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'DRAFTED')">Mark drafted</button><button v-if="item.status === 'PENDING' || item.status === 'DRAFTED'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'SENT')">Mark followed up</button><button v-if="item.status === 'PENDING' || item.status === 'DRAFTED'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'CANCELLED')">Cancel follow-up</button><button v-if="item.status === 'CANCELLED' || item.status === 'SENT'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'PENDING')">Reopen follow-up</button></div>
           <div v-if="item.channel !== 'PHONE' && (item.status === 'PENDING' || item.status === 'DRAFTED')" class="actions"><button type="button" :disabled="busy" @click="draftingId = item.id; draftContent = ''">Write email draft</button></div>
         </article>
+        <Pagination v-model:page="followupPage" :total="work.followups.length" :page-size="followupPageSize" label="follow-ups" />
       </section>
     </template>
   </div>
@@ -182,8 +188,8 @@ onMounted(load)
 .work { margin-top: 32px; }
 .work-heading, .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 h3 span { color: #627084; font-size: 13px; font-weight: 400; }
-.panel { background: #fff; border: 1px solid #dce2e9; border-radius: 8px; padding: 24px; margin: 20px 0; }
-.item { border-top: 1px solid #e5e9ee; margin-top: 18px; padding-top: 18px; }
+.panel { background: #fff; border: 1px solid #dce2e9; border-radius: 8px; padding: 18px; margin: 16px 0; }
+.item { border-top: 1px solid #e5e9ee; margin-top: 12px; padding-top: 12px; }
 .content { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.6; }
 strong { overflow-wrap: anywhere; }
 .meta, .muted { color: #576678; font-size: 13px; line-height: 1.6; }

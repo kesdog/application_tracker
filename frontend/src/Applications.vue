@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { applicationExportUrl, listApplications, type Application, type ApplicationFilters } from './api'
 import ApplicationFocus from './ApplicationFocus.vue'
+import Pagination from './Pagination.vue'
 import { jobSourceLabel, jobSources, remotePolicies } from './applicationOptions'
 
 function selectedId() {
@@ -23,7 +24,10 @@ const outcomes = ['', 'SUCCESSFUL', 'UNSUCCESSFUL', 'WITHDRAWN', 'JOB_CANCELLED'
 const blankFilters = (): ApplicationFilters => ({ q: '', status: '', outcome: '', company: '', title: '', location: '', contract_type: '', source: '', remote_policy: '', date_from: '', date_to: '', document_filename: '' })
 const filters = reactive<ApplicationFilters>(blankFilters())
 const filtersOpen = ref(false)
+const page = ref(1)
+const pageSize = 10
 const hasFilters = computed(() => Object.values(filters).some(Boolean))
+const visibleApplications = computed(() => applications.value.slice((page.value - 1) * pageSize, page.value * pageSize))
 const exportAllUrl = computed(() => applicationExportUrl(exportFormat.value))
 const exportCurrentUrl = computed(() => applicationExportUrl(exportFormat.value, filters))
 
@@ -32,6 +36,7 @@ async function refresh() {
   loadError.value = ''
   try {
     applications.value = await listApplications(filters)
+    page.value = 1
   } catch {
     loadError.value = 'Unable to load applications. Check that the backend is running, then refresh the list.'
   } finally {
@@ -41,6 +46,7 @@ async function refresh() {
 
 function clearFilters() {
   Object.assign(filters, blankFilters())
+  page.value = 1
   void refresh()
 }
 
@@ -96,7 +102,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', navigate); window.r
         <table>
           <caption class="sr-only">Submitted applications, newest applied date first</caption>
           <thead><tr><th scope="col">Date applied</th><th scope="col">Company</th><th scope="col">Position</th><th scope="col">Status</th><th scope="col">Outcome</th><th scope="col">Source</th></tr></thead>
-          <tbody><tr v-for="application in applications" :key="application.id">
+          <tbody><tr v-for="application in visibleApplications" :key="application.id">
             <td class="date-cell">{{ application.date_applied }}</td><td>{{ application.company }}</td><td><a :href="`#/applications/${application.id}`">{{ application.job_title }}</a></td>
             <td><span class="status-badge" :class="application.status.toLowerCase()">{{ application.status }}</span></td>
             <td><span v-if="application.outcome" class="status-badge" :class="application.outcome.toLowerCase()">{{ application.outcome }}</span><span v-else>—</span></td>
@@ -104,6 +110,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', navigate); window.r
           </tr></tbody>
         </table>
       </div>
+      <Pagination v-model:page="page" :total="applications.length" label="applications" />
     </div>
   </section>
 </template>
@@ -124,9 +131,9 @@ input:focus-visible, select:focus-visible, .table-scroll:focus-visible { outline
 .list-heading { margin: 24px 0 12px; font-size: 14px; color: #576678; }
 .table-panel { background: #fff; border: 1px solid #dce2e9; border-radius: 8px; overflow: hidden; }
 .table-scroll { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
+table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
 th { background: #edf1f5; font-size: 12px; color: #526174; font-weight: 650; white-space: nowrap; }
-th, td { padding: 14px 16px; border-bottom: 1px solid #e5e9ee; vertical-align: top; }
+th, td { padding: 10px 12px; border-bottom: 1px solid #e5e9ee; vertical-align: top; }
 td { overflow-wrap: anywhere; min-width: 140px; max-width: 300px; }
 tr:last-child td { border-bottom: 0; }
 .date-cell { white-space: nowrap; }
