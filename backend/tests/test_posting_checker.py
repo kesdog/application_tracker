@@ -23,6 +23,13 @@ def test_deterministic_html_hierarchy():
     assert inspect_html('<button>Apply now</button>', 'https://example.test/job', now).status == PostingStatus.LIVE
     linkedin = inspect_html('<p>This role is no longer accepting applications.</p>', 'https://www.linkedin.com/jobs/view/4390679517/', now)
     assert linkedin.status == PostingStatus.CLOSED and linkedin.method == "HTML"
+    metadata_closed = inspect_html(
+        '<script>window.__STATE__ = {"notice": "The job you are looking for is no longer available"}</script>',
+        'https://fr.indeed.com/viewjob?jk=529293da834e1ec8', now,
+    )
+    assert metadata_closed.status == PostingStatus.CLOSED
+    french_closed = inspect_html("<p>Cette offre d'emploi n'est plus disponible.</p>", 'https://example.test/job', now)
+    assert french_closed.status == PostingStatus.CLOSED
 
 
 def test_linkedin_guest_job_is_live_when_it_has_a_matched_apply_control():

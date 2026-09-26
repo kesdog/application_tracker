@@ -15,9 +15,14 @@ from app.models import PostingStatus, utc_now
 
 
 STRONG_CLOSED_PHRASES = (
-    "this job is no longer available", "this position has been filled", "applications are closed",
-    "this job has expired", "we are no longer accepting applications", "no longer accepting applications", "job not found",
-    "position is no longer available",
+    "this job is no longer available", "the job you are looking for is no longer available",
+    "job posting is no longer available", "this position has been filled", "applications are closed",
+    "this job has expired", "job posting has expired", "we are no longer accepting applications",
+    "no longer accepting applications", "job not found", "job has been removed",
+    "this job has been removed", "position is no longer available", "position has been removed",
+    "cette offre d'emploi n'est plus disponible", "cette offre n'est plus disponible",
+    "les candidatures ne sont plus acceptées", "les candidatures sont closes", "poste pourvu",
+    "l'offre d'emploi a expiré",
 )
 LIVE_SIGNALS = ("apply now", "apply for this job", "submit application", "job description")
 LINKEDIN_GUEST_PAGE_MARKERS = ("d_jobs_guest_details", "jobs-guest-frontend")
@@ -138,7 +143,12 @@ def inspect_html(html: str, final_url: str, checked_at: datetime | None = None) 
             return PostingCheckResult(PostingStatus.CLOSED, checked_at, 200, final_url, "JSON_LD", "Structured JobPosting metadata has an expired validThrough date")
         return PostingCheckResult(PostingStatus.LIVE, checked_at, 200, final_url, "JSON_LD", "Structured JobPosting metadata found without an expired validThrough date")
     text = normalized_text(html)
-    phrase = next((item for item in STRONG_CLOSED_PHRASES if item in text), None)
+    # Some job boards place their standardized unavailable message in metadata or
+    # a client-rendered template, so inspect the raw response too. The phrases
+    # above are deliberately strong enough to avoid treating a generic mention
+    # of a filled role as a closed posting.
+    closure_text = f"{text} {html.casefold()}"
+    phrase = next((item for item in STRONG_CLOSED_PHRASES if item in closure_text), None)
     if phrase:
         return PostingCheckResult(PostingStatus.CLOSED, checked_at, 200, final_url, "HTML", f"Page contains closed-posting phrase: {phrase}")
     linkedin_signal = _linkedin_live_signal(html, final_url)
