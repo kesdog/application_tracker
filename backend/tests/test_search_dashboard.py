@@ -100,10 +100,12 @@ def test_dashboard_counts_and_orders_operational_work(client):
     assert response.status_code == 200
     dashboard = response.json()
     assert dashboard["counts"] == {
-        "active_applications": 1, "followups_due": 1, "followups_overdue": 1,
+        "active_applications": 1, "followups_due": 2, "followups_overdue": 1,
         "tasks_due": 1, "tasks_overdue": 1, "upcoming_interviews": 1,
     }
-    assert [item["id"] for item in dashboard["upcoming"]] == [overdue_task["id"], overdue_followup["id"], interview["id"], due_task["id"], due_followup["id"]]
+    expected = [overdue_task["id"], overdue_followup["id"], interview["id"], due_task["id"], due_followup["id"]]
+    assert [item["id"] for item in dashboard["upcoming"]][:5] == expected
+    assert len(dashboard["upcoming"]) == 6
     assert dashboard["recent_activity"]
     assert all(item["application"]["id"] in {active["id"], closed["id"]} for item in dashboard["recent_activity"])
 

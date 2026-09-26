@@ -169,7 +169,9 @@ def test_agent_application_context_contains_related_records_and_requires_read_ac
     context = agent_call(client, token, "get_application_context", {"application_id": application_id})
     assert context.status_code == 200
     assert context.json()["application"]["id"] == application_id
-    assert len(context.json()["notes"]) == len(context.json()["tasks"]) == len(context.json()["followups"]) == len(context.json()["interviews"]) == len(context.json()["documents"]) == 1
+    assert len(context.json()["notes"]) == len(context.json()["tasks"]) == len(context.json()["interviews"]) == len(context.json()["documents"]) == 1
+    assert len(context.json()["followups"]) == 2
+    assert sum(item["is_automatic"] for item in context.json()["followups"]) == 1
     assert context.json()["recent_timeline"]
     assert agent_call(client, token, "get_application_context", {"application_id": "missing"}).status_code == 404
     client.put("/api/settings/agent/permissions", json={**permissions, "read": False})

@@ -57,6 +57,9 @@ def create_app(
         posting_task = None
         try:
             migrate_database(engine)
+            with Session(engine) as session:
+                applications.ensure_submission_events(session)
+                work.ensure_initial_followups(session, settings)
             reminders = scheduler.ReminderScheduler(engine)
             await reminders.refresh()
             application.state.reminders = reminders
@@ -172,7 +175,7 @@ def create_app(
 
     @application.post("/api/applications", response_model=ApplicationRead, status_code=201)
     def create_application(data: ApplicationCreate, session: Session = Depends(get_session)):
-        return applications.create_application(session, data)
+        return applications.create_application(session, data, settings=settings)
 
     @application.get("/api/applications", response_model=list[ApplicationRead])
     def list_applications(filters: ApplicationFilters = Depends(), session: Session = Depends(get_session)):
@@ -184,7 +187,7 @@ def create_app(
 
     @application.patch("/api/applications/{application_id}", response_model=ApplicationRead)
     def update_application(application_id: str, data: ApplicationUpdate, session: Session = Depends(get_session)):
-        return applications.update_application(session, application_id, data)
+        return applications.update_application(session, application_id, data, settings=settings)
 
     @application.post("/api/applications/{application_id}/check-posting", response_model=PostingCheckRead)
     def check_posting(application_id: str, session: Session = Depends(get_session)):
@@ -269,7 +272,7 @@ def create_app(
 
     @application.patch("/api/applications/{application_id}/followups/{item_id}", response_model=FollowUpRead)
     def update_followup(application_id: str, item_id: str, data: FollowUpUpdate, session: Session = Depends(get_session)):
-        return work.update_followup(session, application_id, item_id, data)
+        return work.update_followup(session, application_id, item_id, data, settings=settings)
 
     @application.post("/api/applications/{application_id}/followups/{item_id}/draft", response_model=integrations.DraftResult)
     def draft_followup(application_id: str, item_id: str, data: integrations.DraftRequest, session: Session = Depends(get_session)):

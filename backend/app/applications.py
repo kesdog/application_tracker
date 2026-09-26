@@ -1,12 +1,13 @@
-from datetime import timezone
+from datetime import datetime, time, timezone
 
 from pydantic import ValidationError
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.activity import InvalidActor, record_audit, record_event
+from app.config import Settings
 from app.job_sources import infer_job_source
-from app.models import ActorType, Application, ApplicationDocument, ApplicationStatus, utc_now
+from app.models import ActorType, Application, ApplicationDocument, ApplicationStatus, TimelineEvent, utc_now
 from app.schemas import ApplicationCreate, ApplicationFilters, ApplicationUpdate
 
 
@@ -25,6 +26,7 @@ def value_text(value) -> str:
 def create_application(
     session: Session, data: ApplicationCreate, *,
     actor_type: ActorType = ActorType.HUMAN, actor_reference: str | None = None,
+    settings: Settings | None = None,
 ) -> Application:
     if data.source is None:
         data = data.model_copy(update={"source": infer_job_source(data.job_url)})
@@ -41,9 +43,18 @@ def create_application(
     application = Application(**data.model_dump())
     session.add(application)
     session.flush()
-    record_event(session, application.id, "APPLICATION_CREATED", "Application created", actor_type=actor_type, actor_reference=actor_reference)
+    record_event(session, application.id, "APPLICATION_CREATED", "Application record added to tracker", actor_type=actor_type, actor_reference=actor_reference)
+    record_event(
+        session, application.id, "APPLICATION_SUBMITTED", f"Application submitted on {application.date_applied.isoformat()}",
+        actor_type=actor_type, actor_reference=actor_reference,
+        metadata={"date_applied": application.date_applied.isoformat(), "date_only": True},
+        occurred_at=datetime.combine(application.date_applied, time(12)),
+    )
     record_audit(session, application.id, "APPLICATION", application.id, "CREATE", new=data.model_dump(), actor_type=actor_type, actor_reference=actor_reference)
     session.commit()
+    from app.work import schedule_automatic_followup
+    if schedule_automatic_followup(session, application, settings or Settings(), actor_type=actor_type, actor_reference=actor_reference):
+        session.commit()
     session.refresh(application)
     application.duplicate_warnings = duplicates
     return application
@@ -124,6 +135,7 @@ def get_application(session: Session, application_id: str) -> Application:
 def update_application(
     session: Session, application_id: str, data: ApplicationUpdate, *,
     actor_type: ActorType = ActorType.HUMAN, actor_reference: str | None = None,
+    settings: Settings | None = None,
 ) -> Application:
     application = get_application(session, application_id)
     changes = data.model_dump(exclude_unset=True)
@@ -165,9 +177,38 @@ def update_application(
         other = set(changes) - {"status", "outcome", "posting_status"}
         if other:
             record_event(session, application_id, "APPLICATION_UPDATED", "Application details updated", actor_type=actor_type, actor_reference=actor_reference, metadata={"fields": sorted(other)})
+        if "followup_delay_days" in changes:
+            from app.work import reschedule_pending_automatic_followups
+            reschedule_pending_automatic_followups(session, application, settings or Settings())
     session.commit()
     session.refresh(application)
     return application
+
+
+def ensure_submission_events(session: Session) -> int:
+    """Give imported records an accurate submitted-on timeline event without inventing a time of day."""
+    changed = 0
+    for application in session.scalars(select(Application).where(Application.deleted_at.is_(None))):
+        created = session.scalar(select(TimelineEvent).where(
+            TimelineEvent.application_id == application.id, TimelineEvent.event_type == "APPLICATION_CREATED",
+        ))
+        if created and created.summary == "Application created":
+            created.summary = "Application record added to tracker"
+            changed += 1
+        submitted = session.scalar(select(TimelineEvent.id).where(
+            TimelineEvent.application_id == application.id, TimelineEvent.event_type == "APPLICATION_SUBMITTED",
+        ))
+        if submitted is None:
+            record_event(
+                session, application.id, "APPLICATION_SUBMITTED", f"Application submitted on {application.date_applied.isoformat()}",
+                actor_type=ActorType.SYSTEM,
+                metadata={"date_applied": application.date_applied.isoformat(), "date_only": True},
+                occurred_at=datetime.combine(application.date_applied, time(12)),
+            )
+            changed += 1
+    if changed:
+        session.commit()
+    return changed
 
 
 def delete_application(

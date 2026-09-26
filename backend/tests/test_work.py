@@ -70,15 +70,18 @@ def test_task_completion_timestamp_is_stable_and_cleared_on_reopen(client, path)
 
 def test_followup_defaults_sequences_and_unlimited_manual_creation(client, path):
     before = datetime.now(timezone.utc)
+    automatic = client.get(path + '/work').json()['followups']
+    assert len(automatic) == 1 and automatic[0]['is_automatic'] is True
+    assert automatic[0]['due_at'].startswith('2026-10-01T09:00:00')
     records = [client.post(path + '/followups', json={}).json() for _ in range(4)]
-    assert [item['sequence_number'] for item in records] == [1, 2, 3, 4]
+    assert [item['sequence_number'] for item in records] == [2, 3, 4, 5]
     assert all(item['status'] == 'PENDING' and item['sent_at'] is None for item in records)
     assert all(item['channel'] == 'EMAIL' for item in records)
     due = datetime.fromisoformat(records[0]['due_at'])
     assert before + timedelta(days=7) <= due <= datetime.now(timezone.utc) + timedelta(days=7)
     other = create_application(client)
-    assert client.post(other + '/followups', json={}).json()['sequence_number'] == 1
-    assert client.get(path + '/work').json()['followups'] == records
+    assert client.post(other + '/followups', json={}).json()['sequence_number'] == 2
+    assert client.get(path + '/work').json()['followups'] == automatic + records
 
 
 def test_phone_and_both_followups_require_application_phone(client, path):
@@ -115,8 +118,13 @@ def test_children_are_scoped_and_require_parent(client, path, kind, payload):
     other = create_application(client)
     assert client.patch(other + '/' + kind + '/' + created['id'], json={}).status_code == 404
     assert client.patch(path + '/' + kind + '/missing', json={}).status_code == 404
-    assert client.get(other + '/work').json()[kind] == []
-    assert len(client.get(path + '/work').json()[kind]) == 1
+    other_items = client.get(other + '/work').json()[kind]
+    if kind == 'followups':
+        assert len(other_items) == 1 and other_items[0]['is_automatic'] is True
+        assert len(client.get(path + '/work').json()[kind]) == 2
+    else:
+        assert other_items == []
+        assert len(client.get(path + '/work').json()[kind]) == 1
 
 
 def test_missing_parent_work_returns_404(client):
@@ -144,7 +152,11 @@ def test_database_foreign_keys_reject_orphans(client, item):
 ])
 def test_invalid_children_are_not_inserted(client, path, kind, payload):
     assert client.post(path + '/' + kind, json=payload).status_code == 422
-    assert client.get(path + '/work').json()[kind] == []
+    items = client.get(path + '/work').json()[kind]
+    if kind == 'followups':
+        assert len(items) == 1 and items[0]['is_automatic'] is True
+    else:
+        assert items == []
 
 
 @pytest.mark.parametrize('kind,create,patch', [
@@ -159,7 +171,11 @@ def test_invalid_children_are_not_inserted(client, path, kind, payload):
 def test_invalid_patch_does_not_modify_child(client, path, kind, create, patch):
     original = client.post(path + '/' + kind, json=create).json()
     assert client.patch(path + '/' + kind + '/' + original['id'], json=patch).status_code == 422
-    assert client.get(path + '/work').json()[kind] == [original]
+    items = client.get(path + '/work').json()[kind]
+    if kind == 'followups':
+        assert len(items) == 2 and items[0]['is_automatic'] is True and items[1] == original
+    else:
+        assert items == [original]
 
 
 def test_overrides_and_global_settings(client, path, monkeypatch):
@@ -181,13 +197,26 @@ def test_overrides_and_global_settings(client, path, monkeypatch):
     assert config.followup_delay_days == 3 and config.max_followup_suggestions == 0
 
 
+def test_automatic_followups_reschedule_and_repeat_until_the_limit(client, path):
+    initial = client.get(path + '/work').json()['followups'][0]
+    assert initial['is_automatic'] is True and initial['sequence_number'] == 1
+    assert client.patch(path, json={'followup_delay_days': 3}).status_code == 200
+    rescheduled = client.get(path + '/work').json()['followups'][0]
+    assert rescheduled['due_at'].startswith('2026-09-27T09:00:00')
+    sent = client.patch(path + '/followups/' + initial['id'], json={'status': 'SENT'}).json()
+    assert sent['status'] == 'SENT'
+    automatic = [item for item in client.get(path + '/work').json()['followups'] if item['is_automatic']]
+    assert [item['sequence_number'] for item in automatic] == [1, 2]
+    assert automatic[1]['status'] == 'PENDING'
+
+
 def test_simultaneous_followups_get_unique_sequences(client, path):
     def create_one(_):
         with Session(client.app.state.engine) as session:
             return create_followup(session, path.rsplit('/', 1)[1], FollowUpCreate(), client.app.state.settings).sequence_number
     with ThreadPoolExecutor(max_workers=4) as executor:
         sequences = list(executor.map(create_one, range(6)))
-    assert sorted(sequences) == [1, 2, 3, 4, 5, 6]
+    assert sorted(sequences) == [2, 3, 4, 5, 6, 7]
 
 
 def test_upgrade_from_030_and_work_persists_after_restart(tmp_path):

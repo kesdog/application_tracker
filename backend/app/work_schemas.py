@@ -101,6 +101,7 @@ class FollowUpRead(Read):
     due_at: datetime
     sent_at: datetime | None
     status: FollowUpStatus
+    is_automatic: bool
     channel: FollowUpChannel
     template_reference: str | None
 

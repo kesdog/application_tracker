@@ -177,6 +177,7 @@ class FollowUp(Base):
     due_at: Mapped[datetime]
     sent_at: Mapped[datetime | None]
     status: Mapped[FollowUpStatus] = mapped_column(SqlEnum(FollowUpStatus, native_enum=False, create_constraint=True, name="followup_status"), default=FollowUpStatus.PENDING)
+    is_automatic: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     channel: Mapped[FollowUpChannel] = mapped_column(SqlEnum(FollowUpChannel, native_enum=False, create_constraint=False, name="followup_channel"), default=FollowUpChannel.EMAIL, server_default="EMAIL")
     template_reference: Mapped[str | None] = mapped_column(String(2048))
 

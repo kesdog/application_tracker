@@ -18,6 +18,8 @@ export interface ApplicationCreate {
   source?: string | null
   description?: string | null
   requirements?: string | null
+  followup_delay_days?: number | null
+  max_followup_suggestions?: number | null
 }
 
 export interface Application extends ApplicationCreate {
@@ -57,7 +59,7 @@ export interface TaskInput { title: string; description: string | null; due_at: 
 export interface Task extends TaskInput { id: string; application_id: string; status: 'PENDING' | 'COMPLETED' | 'CANCELLED'; completed_at: string | null }
 export type FollowUpChannel = 'EMAIL' | 'PHONE' | 'BOTH'
 export interface FollowUpInput { due_at: string | null; template_reference: string | null; channel: FollowUpChannel }
-export interface FollowUp extends FollowUpInput { id: string; application_id: string; sequence_number: number; status: 'PENDING' | 'DRAFTED' | 'SENT' | 'CANCELLED'; sent_at: string | null }
+export interface FollowUp extends FollowUpInput { id: string; application_id: string; sequence_number: number; status: 'PENDING' | 'DRAFTED' | 'SENT' | 'CANCELLED'; is_automatic: boolean; sent_at: string | null }
 export interface ApplicationWork { notes: Note[]; tasks: Task[]; followups: FollowUp[]; followup_delay_days: number; max_followup_suggestions: number }
 
 export type InterviewType = 'PHONE' | 'HR' | 'TECHNICAL' | 'ONSITE' | 'FINAL' | 'OTHER'

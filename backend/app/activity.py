@@ -27,6 +27,7 @@ def record_event(
     actor_type: ActorType = ActorType.HUMAN,
     actor_reference: str | None = None,
     metadata: dict[str, Any] | None = None,
+    occurred_at: datetime | None = None,
 ) -> TimelineEvent:
     event = TimelineEvent(
         application_id=application_id,
@@ -35,6 +36,7 @@ def record_event(
         actor_reference=actor_reference,
         summary=summary,
         event_metadata=jsonable_encoder(metadata or {}),
+        created_at=occurred_at or utc_now(),
     )
     session.add(event)
     return event

@@ -40,8 +40,10 @@ def test_application_created_and_status_change_appear_in_timeline(client):
     application = make_application(client)
     initial = client.get(path(application) + "/timeline").json()
     assert initial["undo_available"] is False
-    assert initial["events"][0]["event_type"] == "APPLICATION_CREATED"
-    assert initial["events"][0]["actor_type"] == "HUMAN"
+    created = next(event for event in initial["events"] if event["event_type"] == "APPLICATION_CREATED")
+    submitted = next(event for event in initial["events"] if event["event_type"] == "APPLICATION_SUBMITTED")
+    assert created["actor_type"] == "HUMAN"
+    assert submitted["metadata"] == {"date_applied": "2026-09-25", "date_only": True}
 
     assert client.patch(path(application), json={"status": "INTERVIEW"}).status_code == 200
     timeline = client.get(path(application) + "/timeline").json()
@@ -81,7 +83,7 @@ def test_dashboard_lists_due_and_overdue_followups_separately(client):
     assert overdue.status_code == 201 and due.status_code == 201
     dashboard = client.get("/api/dashboard").json()
     assert [item["id"] for item in dashboard["overdue_followups"]] == [overdue.json()["id"]]
-    assert [item["id"] for item in dashboard["due_followups"]] == [due.json()["id"]]
+    assert due.json()["id"] in [item["id"] for item in dashboard["due_followups"]]
 
 
 def test_actor_identity_is_preserved_for_service_mutations(client):
@@ -185,6 +187,8 @@ def test_upgrade_from_050_preserves_records_and_adds_activity(tmp_path):
     with TestClient(create_app(Settings(app_data_dir=tmp_path, _env_file=None))) as client:
         application = client.get("/api/applications/existing")
         assert application.status_code == 200 and application.json()["deleted_at"] is None
-        assert client.get("/api/applications/existing/timeline").json() == {"events": [], "undo_available": False}
+        initial_timeline = client.get("/api/applications/existing/timeline").json()
+        assert initial_timeline["undo_available"] is False
+        assert {event["event_type"] for event in initial_timeline["events"]} == {"APPLICATION_SUBMITTED", "FOLLOWUP_CREATED"}
         assert client.patch("/api/applications/existing", json={"status": "INTERVIEW"}).status_code == 200
         assert client.get("/api/applications/existing/timeline").json()["events"][0]["event_type"] == "STATUS_CHANGED"

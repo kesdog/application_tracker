@@ -98,12 +98,12 @@ def _invoke(
                 data["job_url"] = extracted.job_url
                 if not data.get("source") or data["source"] == "OTHER":
                     data["source"] = extracted.source
-        item = applications.create_application(session, ApplicationCreate.model_validate(data), **actor)
+        item = applications.create_application(session, ApplicationCreate.model_validate(data), settings=settings, **actor)
         application_id = item.id
         result = ApplicationRead.model_validate(item).model_dump(mode="json")
         topic = "application.created"
     elif operation == "update_application":
-        item = applications.update_application(session, application_id, ApplicationUpdate.model_validate(args["changes"]), **actor)
+        item = applications.update_application(session, application_id, ApplicationUpdate.model_validate(args["changes"]), settings=settings, **actor)
         result = ApplicationRead.model_validate(item).model_dump(mode="json")
         topic = "application.updated"
     elif operation == "create_timeline_entry":
@@ -126,7 +126,7 @@ def _invoke(
         result = FollowUpRead.model_validate(item).model_dump(mode="json")
         topic = "followup.updated"
     elif operation == "mark_followup_sent":
-        item = work.update_followup(session, application_id, args["followup_id"], FollowUpUpdate(status="SENT"), **actor)
+        item = work.update_followup(session, application_id, args["followup_id"], FollowUpUpdate(status="SENT"), settings=settings, **actor)
         result = FollowUpRead.model_validate(item).model_dump(mode="json")
         topic = "followup.updated"
     elif operation == "draft_followup":

@@ -13,7 +13,7 @@ function blankForm() {
     job_title: '', company: '', date_applied: today(), job_url: '', email_reference: '',
     contact_type: 'EMAIL' as ContactType, phone_number: '', location: '',
     remote_policy: '' as RemotePolicy | '', contract_type: '', source: 'OTHER' as JobSource,
-    description: '', requirements: '',
+    description: '', requirements: '', followup_delay_days: '' as number | '', max_followup_suggestions: '' as number | '',
   }
 }
 
@@ -70,6 +70,8 @@ async function submit() {
       location: form.location.trim() || null, remote_policy: form.remote_policy || null,
       contract_type: form.contract_type.trim() || null, source: form.source,
       description: form.description.trim() || null, requirements: form.requirements.trim() || null,
+      followup_delay_days: form.followup_delay_days === '' ? null : form.followup_delay_days,
+      max_followup_suggestions: form.max_followup_suggestions === '' ? null : form.max_followup_suggestions,
     })
     saved.value = application
     duplicateWarnings.value = application.duplicate_warnings
@@ -120,6 +122,13 @@ async function submit() {
         <div class="form-grid">
           <label>Contact type<select v-model="form.contact_type" name="contact_type"><option v-for="option in contactTypes" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
           <label>Phone number <span>{{ form.contact_type === 'PHONE' ? '(required for phone contact)' : '(optional)' }}</span><input v-model="form.phone_number" name="phone_number" type="tel" autocomplete="tel" placeholder="+33 6 12 34 56 78" :required="form.contact_type === 'PHONE'" /><small>French number or +country code for other countries.</small></label>
+        </div>
+      </fieldset>
+      <fieldset :disabled="saving"><legend>Follow-up plan</legend>
+        <p class="hint">A reminder is scheduled seven days after applying unless you set a different delay. The date can be adjusted later.</p>
+        <div class="form-grid">
+          <label>Follow-up delay (days)<input v-model.number="form.followup_delay_days" type="number" min="0" max="3650" step="1" placeholder="Global default: 7" /></label>
+          <label>Automatic reminder limit<input v-model.number="form.max_followup_suggestions" type="number" min="0" max="100" step="1" placeholder="Global default: 2" /></label>
         </div>
       </fieldset>
       <fieldset :disabled="saving"><legend>Notes about the role</legend>

@@ -206,6 +206,7 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
             <div><dt>Contact type</dt><dd>{{ application.contact_type === 'PHONE' ? 'Phone' : 'Email' }}</dd></div>
             <div><dt>Remote policy</dt><dd>{{ remotePolicyLabel(application.remote_policy) }}</dd></div>
             <div><dt>Source</dt><dd>{{ jobSourceLabel(application.source) }}</dd></div>
+            <div><dt>Follow-up delay</dt><dd>{{ application.followup_delay_days === null ? 'Global default (7 days)' : `${application.followup_delay_days} days` }}</dd></div>
             <div v-for="field in optionalFields" :key="field.key"><dt>{{ field.label }}</dt><dd>{{ application[field.key] ?? 'Not provided' }}</dd></div>
           </dl>
         </section>

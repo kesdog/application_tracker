@@ -151,7 +151,7 @@ onMounted(load)
 
       <section class="panel" aria-labelledby="followups-title">
         <div class="section-heading"><h3 id="followups-title">Follow-ups <span>{{ work.followups.length }}</span></h3><button v-if="!followupOpen" type="button" :disabled="busy" @click="followupOpen = true">Add follow-up</button></div>
-        <p class="muted">Default delay: {{ work.followup_delay_days }} days. Automatic suggestion limit: {{ work.max_followup_suggestions }}. You can add as many manual follow-ups as needed.</p>
+        <p class="muted">Automatic follow-up: {{ work.followup_delay_days }} days after applying. Up to {{ work.max_followup_suggestions }} automatic reminders are scheduled; you can add as many manual follow-ups as needed.</p>
         <p class="muted">These are tracking records. The tracker does not place calls or send email.</p>
         <form v-if="followupOpen" @submit.prevent="saveFollowup">
           <fieldset :disabled="busy"><legend>New follow-up</legend>
@@ -165,7 +165,7 @@ onMounted(load)
         </form>
         <p v-if="!work.followups.length" class="muted">No follow-ups yet.</p>
         <article v-for="item in work.followups" :key="item.id" class="item" :aria-label="`Follow-up ${item.sequence_number}`">
-          <div class="section-heading"><strong>Follow-up #{{ item.sequence_number }} · {{ item.channel === 'BOTH' ? 'Email + phone' : item.channel === 'PHONE' ? 'Phone call' : 'Email' }}</strong><span class="badge" :class="item.status.toLowerCase()">{{ item.status === 'SENT' && item.channel !== 'EMAIL' ? 'COMPLETED' : item.status }}</span></div>
+          <div class="section-heading"><strong>{{ item.is_automatic ? 'Automatic ' : '' }}Follow-up #{{ item.sequence_number }} · {{ item.channel === 'BOTH' ? 'Email + phone' : item.channel === 'PHONE' ? 'Phone call' : 'Email' }}</strong><span class="badge" :class="item.status.toLowerCase()">{{ item.status === 'SENT' && item.channel !== 'EMAIL' ? 'COMPLETED' : item.status }}</span></div>
           <p class="meta">Due: {{ dateText(item.due_at) }}<template v-if="item.sent_at"> · {{ item.channel === 'EMAIL' ? 'Sent' : 'Completed' }} {{ dateText(item.sent_at) }}</template></p>
           <p v-if="item.template_reference" class="content">Template: {{ item.template_reference }}</p>
           <p v-if="item.channel !== 'EMAIL' && phoneNumber" class="meta">Call: <a :href="`tel:${phoneNumber}`">{{ phoneNumber }}</a></p>

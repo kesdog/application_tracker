@@ -23,7 +23,8 @@ def dashboard(session: Session) -> dict:
     ).all()
     followup_rows = session.execute(
         select(FollowUp, Application).join(Application).where(
-            Application.deleted_at.is_(None), FollowUp.status.in_((FollowUpStatus.PENDING, FollowUpStatus.DRAFTED)),
+            Application.deleted_at.is_(None), Application.status != ApplicationStatus.CLOSED,
+            FollowUp.status.in_((FollowUpStatus.PENDING, FollowUpStatus.DRAFTED)),
             FollowUp.due_at <= horizon,
         )
     ).all()

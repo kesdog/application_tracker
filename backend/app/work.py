@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.applications import ApplicationNotFound, InvalidApplication, get_application
 from app.activity import record_audit, record_event
 from app.config import Settings
-from app.models import ActorType, FollowUp, FollowUpChannel, FollowUpStatus, Note, Task, TaskStatus, utc_now
+from app.models import ActorType, Application, ApplicationStatus, ContactType, FollowUp, FollowUpChannel, FollowUpStatus, Note, Task, TaskStatus, utc_now
 from app.work_schemas import FollowUpCreate, FollowUpUpdate, NoteCreate, NoteUpdate, TaskCreate, TaskUpdate
 
 
@@ -15,6 +15,88 @@ def effective_settings(application, settings: Settings) -> dict:
         name: getattr(application, name) if getattr(application, name) is not None else getattr(settings, name)
         for name in ("followup_delay_days", "max_followup_suggestions")
     }
+
+
+def automatic_due_at(application: Application, settings: Settings, *, after: datetime | None = None) -> datetime:
+    delay = effective_settings(application, settings)["followup_delay_days"]
+    baseline = after or datetime.combine(application.date_applied, time(9))
+    return baseline + timedelta(days=delay)
+
+
+def automatic_channel(application: Application) -> FollowUpChannel:
+    return FollowUpChannel.PHONE if application.contact_type == ContactType.PHONE else FollowUpChannel.EMAIL
+
+
+def can_schedule_automatic_followup(application: Application, settings: Settings) -> bool:
+    return (
+        application.deleted_at is None
+        and application.status != ApplicationStatus.CLOSED
+        and application.outcome is None
+        and effective_settings(application, settings)["max_followup_suggestions"] > 0
+    )
+
+
+def schedule_automatic_followup(
+    session: Session, application: Application, settings: Settings, *, after: datetime | None = None,
+    actor_type: ActorType = ActorType.SYSTEM, actor_reference: str | None = None,
+) -> FollowUp | None:
+    if not can_schedule_automatic_followup(application, settings):
+        return None
+    automatic_count = session.scalar(
+        select(func.count()).select_from(FollowUp).where(
+            FollowUp.application_id == application.id, FollowUp.is_automatic.is_(True),
+        )
+    ) or 0
+    if automatic_count >= effective_settings(application, settings)["max_followup_suggestions"]:
+        return None
+    sequence = (session.scalar(select(func.max(FollowUp.sequence_number)).where(FollowUp.application_id == application.id)) or 0) + 1
+    item = FollowUp(
+        application_id=application.id, sequence_number=sequence,
+        due_at=automatic_due_at(application, settings, after=after),
+        is_automatic=True, channel=automatic_channel(application), template_reference="Automatic follow-up reminder",
+    )
+    session.add(item)
+    session.flush()
+    record_event(
+        session, application.id, "FOLLOWUP_CREATED", f"Automatic follow-up #{sequence} scheduled for {item.due_at.date().isoformat()}",
+        actor_type=actor_type, actor_reference=actor_reference,
+        metadata={"followup_id": item.id, "automatic": True, "due_at": item.due_at},
+    )
+    return item
+
+
+def ensure_initial_followups(session: Session, settings: Settings) -> int:
+    """Backfill the first reminder for active applications exactly once."""
+    created = 0
+    applications = session.scalars(select(Application).where(Application.deleted_at.is_(None))).all()
+    for application in applications:
+        existing = session.scalar(select(FollowUp.id).where(
+            FollowUp.application_id == application.id, FollowUp.is_automatic.is_(True),
+        ))
+        if existing is None and schedule_automatic_followup(session, application, settings) is not None:
+            created += 1
+    if created:
+        session.commit()
+    return created
+
+
+def reschedule_pending_automatic_followups(session: Session, application: Application, settings: Settings) -> int:
+    changed = 0
+    for item in session.scalars(select(FollowUp).where(
+        FollowUp.application_id == application.id,
+        FollowUp.is_automatic.is_(True),
+        FollowUp.status == FollowUpStatus.PENDING,
+    )):
+        due_at = automatic_due_at(application, settings)
+        if item.due_at != due_at:
+            item.due_at = due_at
+            changed += 1
+    if changed:
+        record_event(
+            session, application.id, "FOLLOWUP_CHANGED", "Automatic follow-up schedule updated",
+            actor_type=ActorType.HUMAN, metadata={"automatic": True, "count": changed},
+        )
+    return changed
 
 
 def get_work(session: Session, application_id: str, settings: Settings) -> dict:
@@ -122,7 +204,7 @@ def create_followup(
 
 def update_followup(
     session: Session, application_id: str, item_id: str, data: FollowUpUpdate, *,
-    actor_type: ActorType = ActorType.HUMAN, actor_reference: str | None = None,
+    actor_type: ActorType = ActorType.HUMAN, actor_reference: str | None = None, settings: Settings | None = None,
 ) -> FollowUp:
     item = child(session, FollowUp, application_id, item_id)
     changes = data.model_dump(exclude_unset=True)
@@ -144,4 +226,6 @@ def update_followup(
             summary = f"Follow-up #{item.sequence_number} {status.value.lower()}" if status else f"Follow-up #{item.sequence_number} updated"
         record_event(session, application_id, event_type, summary, actor_type=actor_type, actor_reference=actor_reference, metadata={"followup_id": item.id})
         record_audit(session, application_id, "FOLLOWUP", item.id, "UPDATE", previous=previous, new=changes, actor_type=actor_type, actor_reference=actor_reference, reversible=True)
+        if changes.get("status") == FollowUpStatus.SENT and item.is_automatic:
+            schedule_automatic_followup(session, get_application(session, application_id), settings=settings or Settings(), after=item.sent_at, actor_type=actor_type, actor_reference=actor_reference)
     return finish(session, item)
