@@ -5,10 +5,11 @@ from sqlalchemy.orm import Session
 from app import __version__, activity, agent_auth, agent_context, applications, confirmation_links, confirmation_details, dashboard, integrations, interviews, invalidation, posting_service, posting_review, work
 from app.posting_checker import PostingChecker, render_with_playwright
 from app import agent_idempotency
-from app.agent_schemas import AgentListRequest
+from app.agent_schemas import AgentApplicationCreate, AgentApplicationUpdate, AgentListRequest
+from app.contract_types import CONTRACT_OPTIONS
 from app.config import Settings
 from app.models import ActorType
-from app.schemas import ApplicationCreate, ApplicationFilters, ApplicationRead, ApplicationUpdate
+from app.schemas import ApplicationRead
 from app.interview_schemas import InterviewContext, InterviewCreate, InterviewRead, InterviewUpdate
 from app.work_schemas import FollowUpCreate, FollowUpRead, FollowUpUpdate, NoteCreate, NoteRead, TaskCreate, TaskRead, TaskUpdate
 from app.activity_schemas import TimelineEntryCreate, TimelineEntryUpdate, TimelineEventRead, TimelineRead
@@ -74,6 +75,14 @@ def _invoke(
             "mail_integration_connected": bool(mail_provider and mail_provider.is_connected()),
             "calendar_integration_connected": bool(calendar_provider and calendar_provider.is_connected()),
             "database_ready": True,
+            "application_constraints": {
+                "contract_types": [{"value": value, "label": label} for value, label in CONTRACT_OPTIONS.items()],
+                "unknown_contract_type": None,
+                "date_format": "YYYY-MM-DD",
+                "application_date_source": "Use the verified applied date, otherwise the original confirmation email date.",
+                "missing_job_url_requires_email_reference": True,
+                "closed_attention_takes_precedence": True,
+            },
         }
     elif operation in {"list_applications", "search_applications"}:
         result = agent_context.compact_applications(session, AgentListRequest.model_validate(args)).model_dump(mode="json")
@@ -82,7 +91,7 @@ def _invoke(
     elif operation == "get_application_context":
         result = agent_context.application_context(session, application_id, settings).model_dump(mode="json")
     elif operation == "find_possible_duplicates":
-        result = jsonable_encoder(applications.find_possible_duplicates(session, ApplicationCreate.model_validate(args["application"])))
+        result = jsonable_encoder(applications.find_possible_duplicates(session, AgentApplicationCreate.model_validate(args["application"])))
     elif operation == "extract_confirmation_posting_link":
         result = confirmation_links.extract_confirmation_link(args["confirmation_email"]).model_dump()
     elif operation == "extract_confirmation_details":
@@ -114,12 +123,12 @@ def _invoke(
                 data["job_url"] = extracted.job_url
                 if not data.get("source") or data["source"] == "OTHER":
                     data["source"] = extracted.source
-        item = applications.create_application(session, ApplicationCreate.model_validate(data), settings=settings, **actor)
+        item = applications.create_application(session, AgentApplicationCreate.model_validate(data), settings=settings, **actor)
         application_id = item.id
         result = ApplicationRead.model_validate(item).model_dump(mode="json")
         topic = "application.created"
     elif operation == "update_application":
-        item = applications.update_application(session, application_id, ApplicationUpdate.model_validate(args["changes"]), settings=settings, **actor)
+        item = applications.update_application(session, application_id, AgentApplicationUpdate.model_validate(args["changes"]), settings=settings, **actor)
         result = ApplicationRead.model_validate(item).model_dump(mode="json")
         topic = "application.updated"
     elif operation == "create_timeline_entry":

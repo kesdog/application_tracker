@@ -1,6 +1,4 @@
 from datetime import datetime, time, timezone
-import re
-import unicodedata
 
 from pydantic import ValidationError
 from sqlalchemy import func, or_, select
@@ -8,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.activity import InvalidActor, record_audit, record_event
 from app.config import Settings
+from app.contract_types import CONTRACT_CATEGORIES, matches_contract_category
 from app.job_sources import infer_job_source
 from app.models import ActorType, Application, ApplicationDocument, ApplicationStatus, TimelineEvent, utc_now
 from app.schemas import ApplicationCreate, ApplicationFilters, ApplicationUpdate
@@ -19,21 +18,6 @@ class ApplicationNotFound(Exception):
 
 class InvalidApplication(ValueError):
     pass
-
-
-CONTRACT_CATEGORIES = {
-    "CDI": ("cdi", "permanent", "full time", "temps plein", "contrat a duree indeterminee"),
-    "CDD": ("cdd", "fixed", "contrat a duree determinee"),
-    "PART_TIME": ("part time", "temps partiel"),
-    "APPRENTICESHIP_INTERNSHIP": ("alternance", "apprenticeship", "apprentice", "internship", "intern", "stage", "stagiaire", "apprentissage"),
-}
-
-
-def matches_contract_category(value: str | None, category: str) -> bool:
-    text = unicodedata.normalize("NFKD", (value or "").casefold())
-    text = "".join(char for char in text if not unicodedata.combining(char))
-    text = " ".join(re.sub(r"[^a-z0-9]+", " ", text).split())
-    return any(f" {term} " in f" {text} " for term in CONTRACT_CATEGORIES[category])
 
 
 def value_text(value) -> str:

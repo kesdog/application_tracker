@@ -1,5 +1,7 @@
 import asyncio
 import hashlib
+from datetime import datetime, timedelta, timezone
+import json
 
 from fastapi.testclient import TestClient
 from mcp.server.fastmcp.exceptions import ToolError
@@ -278,3 +280,119 @@ def test_settings_expose_only_configured_agent_connection_details(setup):
     remote_settings = settings.model_copy(update={"mcp_transport": "streamable-http", "mcp_host": "127.0.0.1", "mcp_port": 8123})
     with TestClient(create_app(remote_settings)) as remote_client:
         assert remote_client.get("/api/settings/agent/connection").json()["remote_mcp_endpoint"] == "http://127.0.0.1:8123/mcp"
+
+
+@pytest.mark.parametrize("wording, category", [
+    ("Full time (CDI)", "CDI"), ("Contrat à durée déterminée", "CDD"),
+    ("Temps partiel", "PART_TIME"), ("Alternance / Stage", "APPRENTICESHIP_INTERNSHIP"),
+])
+def test_rest_and_mcp_normalize_contracts_and_use_the_same_filters(setup, wording, category):
+    client, _, settings = setup
+    token = client.post("/api/settings/agent/token").json()["token"]
+    client.put("/api/settings/agent/permissions", json={"read": True, "create": True, "edit": True, "draft": False, "tasks": False, "interviews": False})
+    body = {**draft("REST Contract"), "job_url": None, "email_reference": "https://mail.google.com/mail/u/0/#all/contract", "contract_type": wording}
+    response = agent_call(client, token, "create_application", {"application": body})
+    assert response.status_code == 200
+    saved = response.json()
+    assert saved["contract_type"] == category
+    assert saved["job_url"] is None and saved["date_applied"] == body["date_applied"]
+    server = create_mcp_server(settings, token)
+    asyncio.run(server.call_tool("create_application", {"application": {**body, "company": "MCP Contract"}}))
+    records = client.get("/api/applications").json()
+    assert {record["contract_type"] for record in records} == {category}
+    filters = {"contract_type": category, "date_from": body["date_applied"], "date_to": body["date_applied"]}
+    human_ids = {record["id"] for record in client.get("/api/applications", params=filters).json()}
+    agent_ids = {record["id"] for record in agent_call(client, token, "search_applications", {"filters": filters}).json()["items"]}
+    assert agent_ids == human_ids == {record["id"] for record in records}
+    mcp_result = asyncio.run(server.call_tool("search_applications", {"filters": {**filters, "contract_type": wording}, "limit": 1}))
+    mcp_page = json.loads(mcp_result[0].text)
+    assert len(mcp_page["items"]) == 1 and mcp_page["next_cursor"]
+    mcp_result = asyncio.run(server.call_tool("search_applications", {"filters": filters, "limit": 1, "cursor": mcp_page["next_cursor"]}))
+    mcp_next = json.loads(mcp_result[0].text)
+    assert {record["id"] for record in mcp_page["items"] + mcp_next["items"]} == human_ids
+    asyncio.run(server.call_tool("update_application", {"application_id": saved["id"], "changes": {"contract_type": "Stage"}}))
+    updated = client.get(f"/api/applications/{saved['id']}").json()
+    assert updated["contract_type"] == "APPRENTICESHIP_INTERNSHIP"
+    assert updated["date_applied"] == saved["date_applied"]
+
+
+@pytest.mark.parametrize("changes", [
+    {"contract_type": "Mystery contract"}, {"contract_type": "CDI / Stage"},
+    {"date_applied": "07/10/2026"}, {"date_applied": 1791331200},
+])
+def test_agent_rejects_invalid_create_and_update_without_mutation(setup, changes):
+    client, _, settings = setup
+    token = client.post("/api/settings/agent/token").json()["token"]
+    client.put("/api/settings/agent/permissions", json={"read": True, "create": True, "edit": True, "draft": False, "tasks": False, "interviews": False})
+    saved = agent_call(client, token, "create_application", {"application": draft()}).json()
+    for operation, payload in [
+        ("create_application", {"application": {**draft(), **changes}}),
+        ("update_application", {"application_id": saved["id"], "changes": changes}),
+    ]:
+        response = agent_call(client, token, operation, payload)
+        assert response.status_code == 422
+        assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+        with pytest.raises(ToolError):
+            asyncio.run(create_mcp_server(settings, token).call_tool(operation, payload))
+    assert client.get(f"/api/applications/{saved['id']}").json() == saved
+    assert len(client.get("/api/applications").json()) == 1
+
+
+@pytest.mark.parametrize("filters", [
+    {"contract_type": "Freelance"}, {"date_from": "2026-10-07", "date_to": "2026-09-01"},
+    {"date_from": "yesterday"}, {"contract_typo": "CDI"},
+])
+def test_agent_filter_constraints_are_enforced_in_both_transports(setup, filters):
+    client, _, settings = setup
+    token = client.post("/api/settings/agent/token").json()["token"]
+    response = agent_call(client, token, "search_applications", {"filters": filters})
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+    with pytest.raises(ToolError):
+        asyncio.run(create_mcp_server(settings, token).call_tool("search_applications", {"filters": filters}))
+
+
+def test_agent_can_edit_legacy_contract_without_overwriting_missing_fields(setup):
+    client, _, _ = setup
+    legacy = client.post("/api/applications", json={**draft(), "contract_type": "Legacy custom wording", "job_url": None, "email_reference": "Original email"}).json()
+    token = client.post("/api/settings/agent/token").json()["token"]
+    client.put("/api/settings/agent/permissions", json={"read": True, "create": False, "edit": True, "draft": False, "tasks": False, "interviews": False})
+    response = agent_call(client, token, "update_application", {"application_id": legacy["id"], "changes": {"status": "INTERVIEW"}})
+    assert response.status_code == 200
+    assert response.json()["contract_type"] == legacy["contract_type"]
+    assert response.json()["job_url"] is None
+    assert response.json()["date_applied"] == legacy["date_applied"]
+    cleared = agent_call(client, token, "update_application", {"application_id": legacy["id"], "changes": {"contract_type": None}})
+    assert cleared.status_code == 200 and cleared.json()["contract_type"] is None
+
+
+def test_agent_attention_state_matches_dashboard_and_closed_takes_precedence(setup):
+    client, _, _ = setup
+    now = datetime.now(timezone.utc)
+    applications = [client.post("/api/applications", json={**draft(name), "max_followup_suggestions": 0}).json() for name in ["Overdue", "Closed", "Sent", "Cancelled", "Future"]]
+    for index, application in enumerate(applications):
+        root = f"/api/applications/{application['id']}"
+        due = now + timedelta(days=1) if index == 4 else now - timedelta(days=1)
+        followup = client.post(root + "/followups", json={"due_at": due.isoformat()}).json()
+        if index in [2, 3]:
+            client.patch(root + f"/followups/{followup['id']}", json={"status": "SENT" if index == 2 else "CANCELLED"})
+        if index == 1:
+            client.patch(root, json={"status": "CLOSED"})
+    token = client.post("/api/settings/agent/token").json()["token"]
+    items = agent_call(client, token, "list_applications").json()["items"]
+    overdue_ids = {item["application"]["id"] for item in client.get("/api/dashboard").json()["overdue_followups"]}
+    assert {item["id"] for item in items if item["has_overdue_followup"]} == overdue_ids == {applications[0]["id"]}
+    assert {item["company"]: item["attention_state"] for item in items} == {"Overdue": "OVERDUE", "Closed": "CLOSED", "Sent": "NORMAL", "Cancelled": "NORMAL", "Future": "NORMAL"}
+
+
+def test_agent_discovery_and_mcp_schemas_advertise_contract_constraints(setup):
+    client, _, settings = setup
+    token = client.post("/api/settings/agent/token").json()["token"]
+    info = agent_call(client, token, "get_tracker_info").json()["application_constraints"]
+    values = {option["value"] for option in info["contract_types"]}
+    assert values == {"CDI", "CDD", "PART_TIME", "APPRENTICESHIP_INTERNSHIP"}
+    assert info["missing_job_url_requires_email_reference"] is True
+    tools = {tool.name: tool for tool in asyncio.run(create_mcp_server(settings, token).list_tools())}
+    for name in ["create_application", "update_application", "find_possible_duplicates", "search_applications"]:
+        schema = json.dumps(tools[name].inputSchema)
+        assert '"enum"' in schema and all(value in schema for value in values)

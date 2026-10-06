@@ -19,7 +19,7 @@ from app import agent_auth, agent_errors, agent_ops
 from app.activity_schemas import TimelineEntryCreate, TimelineEntryUpdate
 from app.config import Settings
 from app.database import create_database, migrate_database
-from app.schemas import ApplicationCreate, ApplicationFilters, ApplicationUpdate
+from app.agent_schemas import AgentApplicationCreate, AgentApplicationFilters, AgentApplicationUpdate
 from app.posting_review import PostingReviewCreate
 from app.interview_schemas import InterviewCreate, InterviewUpdate
 from app.work_schemas import FollowUpCreate, NoteCreate, TaskCreate
@@ -81,12 +81,12 @@ def create_mcp_server(settings: Settings | None = None, token: str | None = None
 
     @server.tool()
     def list_applications(limit: int = 25, cursor: str | None = None) -> dict:
-        """Return a compact, paginated application page. Use next_cursor for another page without loading long descriptions."""
+        """Return compact pages with contract, posting/email references and overdue follow-up state. CLOSED takes precedence over OVERDUE. Use next_cursor for another page."""
         return call("list_applications", {"limit": limit, "cursor": cursor})
 
     @server.tool()
-    def search_applications(filters: ApplicationFilters, limit: int = 25, cursor: str | None = None) -> dict:
-        """Search compact application summaries with combined filters and cursor pagination."""
+    def search_applications(filters: AgentApplicationFilters, limit: int = 25, cursor: str | None = None) -> dict:
+        """Search with contract categories CDI/CDD/PART_TIME/APPRENTICESHIP_INTERNSHIP and inclusive YYYY-MM-DD bounds (from <= to). Compact results include overdue follow-up state; closed takes precedence."""
         return call("search_applications", {"filters": filters.model_dump(exclude_none=True), "limit": limit, "cursor": cursor})
 
     @server.tool()
@@ -100,7 +100,7 @@ def create_mcp_server(settings: Settings | None = None, token: str | None = None
         return call("get_application_context", {"application_id": application_id})
 
     @server.tool()
-    def find_possible_duplicates(application: ApplicationCreate) -> list:
+    def find_possible_duplicates(application: AgentApplicationCreate) -> list:
         """Check an application draft for likely duplicate records."""
         return call("find_possible_duplicates", {"application": application.model_dump(mode="json")})
 
@@ -110,8 +110,8 @@ def create_mcp_server(settings: Settings | None = None, token: str | None = None
         return call("extract_confirmation_posting_link", {"confirmation_email": confirmation_email})
 
     @server.tool()
-    def create_application(application: ApplicationCreate, confirmation_email: str | None = None, idempotency_key: str | None = None) -> dict:
-        """Create an application. Always supply the confirmation email text/HTML when available: a direct LinkedIn or Indeed posting link is recovered before save. An idempotency key makes a retry return the original record instead of creating another."""
+    def create_application(application: AgentApplicationCreate, confirmation_email: str | None = None, idempotency_key: str | None = None) -> dict:
+        """Create using CDI/CDD/PART_TIME/APPRENTICESHIP_INTERNSHIP or null if unknown. Use the original email's YYYY-MM-DD date and supply confirmation text/HTML to recover employer and posting links. A missing job URL is allowed with email evidence. An idempotency key makes retries safe."""
         return call("create_application", {"application": application.model_dump(mode="json"), "confirmation_email": confirmation_email, "idempotency_key": idempotency_key})
 
     @server.tool()
@@ -130,8 +130,8 @@ def create_mcp_server(settings: Settings | None = None, token: str | None = None
         return call("record_posting_review", {"application_id": application_id, "review": review.model_dump(mode="json")})
 
     @server.tool()
-    def update_application(application_id: str, changes: ApplicationUpdate) -> dict:
-        """Update an application without deleting it; the change is recorded as agent activity."""
+    def update_application(application_id: str, changes: AgentApplicationUpdate) -> dict:
+        """Update provided fields only. Contracts use CDI/CDD/PART_TIME/APPRENTICESHIP_INTERNSHIP or null if unknown; dates use verified YYYY-MM-DD email evidence. Do not fill missing facts with placeholders. The change is recorded as agent activity."""
         return call("update_application", {"application_id": application_id, "changes": changes.model_dump(mode="json", exclude_unset=True)})
 
     @server.tool()
