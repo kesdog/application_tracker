@@ -72,7 +72,7 @@ def test_migrates_010_database_and_preserves_records_after_restart(tmp_path):
     with TestClient(application) as client:
         assert client.get("/api/applications").json() == [created]
         with application.state.engine.connect() as connection:
-            assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar_one() == "0013_automatic_followups"
+            assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar_one() == "0014_application_intermediary"
             assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
 
 
@@ -103,10 +103,11 @@ def test_source_is_inferred_from_trusted_job_board_hostname(client, url, expecte
 
 
 @pytest.mark.parametrize("source", ["LINKEDIN", "INDEED"])
-def test_linkedin_and_indeed_require_an_exact_posting_url(client, source):
+def test_confirmation_only_records_preserve_board_source_until_url_is_found(client, source):
     response = client.post("/api/applications", json=payload(job_url=None, email_reference="Application confirmation", source=source))
-    assert response.status_code == 422
-    assert "exact job URL" in response.json()["detail"]
+    assert response.status_code == 201
+    assert response.json()["source"] == source
+    assert response.json()["job_url"] is None
 
 
 def test_linkedin_and_indeed_require_a_url_on_the_selected_job_board(client):

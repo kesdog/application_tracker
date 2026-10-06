@@ -1,0 +1,96 @@
+<script setup lang="ts">
+import { computed, ref, watch } from 'vue'
+import { checkPosting, getPostingReview, recordPostingReview, type Application, type PostingReviewPlan } from './api'
+
+const props = defineProps<{ application: Application }>()
+const emit = defineEmits<{ changed: [] }>()
+const plan = ref<PostingReviewPlan | null>(null)
+const busy = ref(false)
+const error = ref('')
+const status = ref<Application['posting_status']>('UNKNOWN')
+const evidenceUrl = ref('')
+const notes = ref('')
+const samePosition = ref(false)
+const replaceUrl = ref(false)
+function localNow() {
+  const date = new Date()
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+}
+const checkedAt = ref(localNow())
+const label = computed(() => !props.application.posting_last_checked_at ? 'Not checked'
+  : props.application.posting_status === 'UNKNOWN' || props.application.posting_check_failures > 0 ? 'Unable to verify'
+  : props.application.posting_status === 'LIVE' ? 'Live' : 'Closed')
+
+watch(() => [props.application.id, props.application.job_title, props.application.company, props.application.job_url], async () => {
+  try { plan.value = await getPostingReview(props.application.id) }
+  catch (cause) { error.value = cause instanceof Error ? cause.message : 'Unable to load search links.' }
+}, { immediate: true })
+watch([status, samePosition], () => { if (status.value !== 'LIVE' || !samePosition.value) replaceUrl.value = false })
+
+async function check() {
+  busy.value = true; error.value = ''
+  try { await checkPosting(props.application.id); emit('changed') }
+  catch (cause) { error.value = cause instanceof Error ? cause.message : 'Unable to check the posting.' }
+  finally { busy.value = false }
+}
+
+async function saveReview() {
+  busy.value = true; error.value = ''
+  try {
+    await recordPostingReview(props.application.id, { status: status.value, evidence_url: evidenceUrl.value,
+      notes: notes.value, checked_at: new Date(checkedAt.value).toISOString(), same_position: samePosition.value, replace_job_url: replaceUrl.value })
+    emit('changed')
+  } catch (cause) { error.value = cause instanceof Error ? cause.message : 'Unable to save the review.' }
+  finally { busy.value = false }
+}
+</script>
+
+<template>
+  <section class="posting-panel" aria-labelledby="posting-title">
+    <h3 id="posting-title">Job posting</h3>
+    <p><strong>{{ label }}</strong><span v-if="application.posting_last_checked_at"> · {{ new Date(application.posting_last_checked_at).toLocaleString() }} (local time)</span></p>
+    <p v-if="application.posting_check_failures > 0 && application.posting_status !== 'UNKNOWN'" class="hint">Last confirmed status: {{ application.posting_status }}. The latest check was inconclusive.</p>
+    <div class="step">
+      <h4>1. Check the saved posting</h4>
+      <p class="hint">Checks the URL, then opens the page in a browser if needed.</p>
+      <button type="button" :disabled="busy || !application.job_url" @click="check">{{ busy ? 'Working…' : 'Check now' }}</button>
+      <a v-if="application.job_url" :href="application.job_url" target="_blank" rel="noopener noreferrer">Open saved posting ↗</a>
+      <p v-else class="hint">No posting URL saved. Use the search below to find it.</p>
+    </div>
+    <div class="step">
+      <h4>2. Search for the position</h4>
+      <p class="hint">Compare the role, employer, location and job ID. Open the posting itself; search snippets and missing results do not prove whether it is still active.</p>
+      <div class="searches"><a v-for="search in plan?.searches ?? []" :key="search.label" :href="search.url" target="_blank" rel="noopener noreferrer">{{ search.label }} ↗</a></div>
+    </div>
+    <details class="step">
+      <summary>3. Record a browser review or update the link</summary>
+      <form @submit.prevent="saveReview">
+        <fieldset :disabled="busy">
+          <label>Conclusion<select v-model="status"><option value="UNKNOWN">Unable to verify</option><option value="LIVE">Live — accepting applications</option><option value="CLOSED">Closed — explicit closure evidence</option></select></label>
+          <label>Page checked<input v-model="evidenceUrl" type="url" required maxlength="2048" placeholder="https://…" /></label>
+          <label>Checked at (local time)<input v-model="checkedAt" type="datetime-local" required /></label>
+          <label>What did you find?<textarea v-model="notes" required minlength="10" maxlength="500" rows="3" placeholder="Describe the matching role and the evidence for your conclusion." /></label>
+          <label class="checkbox"><input v-model="samePosition" type="checkbox" />I verified this is the same position and employer.</label>
+          <label class="checkbox"><input v-model="replaceUrl" type="checkbox" :disabled="status !== 'LIVE' || !samePosition" />Use this verified live page as the job posting link.</label>
+          <button type="submit" :disabled="status !== 'UNKNOWN' && !samePosition">Save review</button>
+        </fieldset>
+      </form>
+    </details>
+    <p v-if="error" class="error" role="alert">{{ error }}</p>
+    <details v-if="application.posting_check_reason" class="step"><summary>Last check details</summary>
+      <p>{{ application.posting_check_reason }}</p><p class="hint">Method: {{ application.posting_check_method }} · HTTP: {{ application.posting_http_status ?? 'Not recorded' }}</p>
+      <a v-if="application.posting_final_url" :href="application.posting_final_url" target="_blank" rel="noopener noreferrer">Last page checked ↗</a>
+    </details>
+    <p class="hint">Posting availability does not change the status or outcome of your application.</p>
+  </section>
+</template>
+
+<style scoped>
+.posting-panel { padding:24px; border:1px solid #dce2e9; border-radius:10px; background:white; }
+h3 { margin:0 0 14px; } h4 { margin:0 0 8px; } .hint { color:#627084; font-size:13px; line-height:1.5; }
+.step { border-top:1px solid #e5e9ee; padding:16px 0; } .searches { display:flex; flex-wrap:wrap; gap:12px; }
+a { color:#24568b; overflow-wrap:anywhere; } button + a { margin-left:12px; } summary { cursor:pointer; font-weight:600; }
+fieldset { border:0; padding:16px 0 0; display:grid; gap:14px; } label { font-size:14px; font-weight:600; }
+input, select, textarea { display:block; width:100%; margin-top:6px; padding:9px; border:1px solid #b9c4d2; border-radius:6px; font:inherit; }
+.checkbox { display:flex; align-items:center; gap:8px; font-weight:400; } .checkbox input { width:auto; margin:0; } button { justify-self:start; }
+</style>

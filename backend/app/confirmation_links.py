@@ -4,6 +4,8 @@ from html import unescape
 import re
 from urllib.parse import parse_qs, urlsplit
 
+from bs4 import BeautifulSoup
+
 from app.job_sources import infer_job_source
 
 @dataclass(frozen=True)
@@ -51,7 +53,7 @@ def extract_confirmation_link(content: str) -> ConfirmationLink:
         path = parsed.path.rstrip("/")
         source = infer_job_source(value)
         if source == "LINKEDIN":
-            match = re.search(r"/(?:comm/)?jobs/view/(\d+)(?:/|$)", path, re.IGNORECASE)
+            match = re.search(r"/(?:comm/)?jobs/view/(?:[^/]*-)?(\d+)(?:/|$)", path, re.IGNORECASE)
             if match:
                 return ConfirmationLink(
                     job_url=f"https://www.linkedin.com/jobs/view/{match.group(1)}/",
@@ -78,6 +80,23 @@ def extract_confirmation_link(content: str) -> ConfirmationLink:
                 )
             if "/cmp/" in path and company_confirmation is None:
                 company_confirmation = value
+
+    # ISCOD publishes partner vacancies; its home page is not a job posting.
+    for raw in re.findall(r'https?://(?:www\.)?iscod\.fr/offres-emploi-en-alternance/[^\s"\'<>]+', _decoded(content), re.I):
+        return ConfirmationLink(raw.rstrip(".,;:!?)]}"), "OTHER", raw, "Found an ISCOD partner job posting in the confirmation email")
+
+    # ATS/employer messages often label the specific vacancy link explicitly.
+    soup = BeautifulSoup(_decoded(content), "html.parser") if "<" in content else None
+    if soup is None:
+        anchors = []
+    else:
+        anchors = soup.find_all("a", href=True)
+    for anchor in anchors:
+        value = str(anchor["href"])
+        parsed = urlsplit(value)
+        label = anchor.get_text(" ", strip=True).casefold()
+        if parsed.scheme in {"http", "https"} and parsed.hostname and re.search(r"/(?:jobs?|positions?|offres?)(?:/|[-_])[^/]+", parsed.path, re.I) and re.search(r"view (?:the )?(?:job|posting)|voir (?:l['’]offre|le poste)|job description|descriptif", label):
+            return ConfirmationLink(value, infer_job_source(value), value, "Found a specifically labeled vacancy link in the confirmation email")
 
     if company_confirmation:
         return ConfirmationLink(

@@ -15,6 +15,7 @@ class ApplicationCreate(BaseModel):
 
     job_title: ShortText
     company: ShortText
+    intermediary: ShortText | None = None
     date_applied: date
     job_url: Reference | None = None
     email_reference: Reference | None = None
@@ -34,7 +35,7 @@ class ApplicationCreate(BaseModel):
     def blank_override(cls, value):
         return None if value == "" else value
 
-    @field_validator("job_url", "email_reference", "location", "remote_policy", "contract_type", "source", "description", "requirements", mode="before")
+    @field_validator("intermediary", "job_url", "email_reference", "location", "remote_policy", "contract_type", "source", "description", "requirements", mode="before")
     @classmethod
     def empty_to_none(cls, value):
         return (value.strip() or None) if isinstance(value, str) else value

@@ -112,11 +112,11 @@ def test_xlsx_formatting_dates_colors_and_filtered_rows(client_and_data):
     workbook = load_workbook(BytesIO(response.content))
     sheet = workbook["Applications"]
     assert sheet.freeze_panes == "A2"
-    assert sheet.auto_filter.ref == "A1:O2"
+    assert sheet.auto_filter.ref == "A1:P2"
     assert [cell.value for cell in sheet[1]] == [
         "Date Applied", "Company", "Job Title", "Status", "Outcome", "Location",
         "Remote Policy", "Contract Type", "Source", "Job URL", "Email Reference",
-        "Phone Number", "Contact Type", "Posting Status", "Documents",
+        "Phone Number", "Contact Type", "Posting Status", "Documents", "Intermediary",
     ]
     assert sheet.max_row == 2
     assert sheet["A2"].value.date() == date(2026, 9, 20)

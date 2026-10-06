@@ -76,8 +76,8 @@ def test_recent_date_alone_is_not_a_duplicate(client):
 
 def test_dashboard_counts_and_orders_operational_work(client):
     now = datetime.now(timezone.utc)
-    active = create_application(client, title="Engineer", company="Active", day=date.today().isoformat())
-    closed = create_application(client, title="Designer", company="Closed", day=date.today().isoformat())
+    active = create_application(client, title="Engineer", company="Active", day=date.today().isoformat(), max_followup_suggestions=0)
+    closed = create_application(client, title="Designer", company="Closed", day=date.today().isoformat(), max_followup_suggestions=0)
     client.patch(f"/api/applications/{closed['id']}", json={"outcome": "UNSUCCESSFUL"})
     root = f"/api/applications/{active['id']}"
 
@@ -100,12 +100,12 @@ def test_dashboard_counts_and_orders_operational_work(client):
     assert response.status_code == 200
     dashboard = response.json()
     assert dashboard["counts"] == {
-        "active_applications": 1, "followups_due": 2, "followups_overdue": 1,
+        "active_applications": 1, "followups_due": 1, "followups_overdue": 1,
         "tasks_due": 1, "tasks_overdue": 1, "upcoming_interviews": 1,
     }
     expected = [overdue_task["id"], overdue_followup["id"], interview["id"], due_task["id"], due_followup["id"]]
     assert [item["id"] for item in dashboard["upcoming"]][:5] == expected
-    assert len(dashboard["upcoming"]) == 6
+    assert len(dashboard["upcoming"]) == 5
     assert dashboard["recent_activity"]
     assert all(item["application"]["id"] in {active["id"], closed["id"]} for item in dashboard["recent_activity"])
 

@@ -24,7 +24,7 @@ STRONG_CLOSED_PHRASES = (
     "les candidatures ne sont plus acceptées", "les candidatures sont closes", "poste pourvu",
     "l'offre d'emploi a expiré",
 )
-LIVE_SIGNALS = ("apply now", "apply for this job", "submit application", "job description")
+LIVE_SIGNALS = ("apply now", "apply for this job", "submit application")
 LINKEDIN_GUEST_PAGE_MARKERS = ("d_jobs_guest_details", "jobs-guest-frontend")
 INDEED_JOB_PAGE_MARKERS = ("jobsearch-jobinfoheader", "jobsearch-jobcomponent", "indeedapply")
 
@@ -46,9 +46,10 @@ def normalized_text(html: str) -> str:
 def _linkedin_job_id(url: str) -> str | None:
     """Return the job id from both direct and slugged LinkedIn guest URLs."""
     parsed = urlparse(url)
-    if not (parsed.hostname or "").casefold().endswith("linkedin.com"):
+    host = (parsed.hostname or "").casefold()
+    if host != "linkedin.com" and not host.endswith(".linkedin.com"):
         return None
-    match = re.search(r"/jobs/view/(?:[^/?#]*-)?(\d+)(?:[/?#]|$)", parsed.path, re.IGNORECASE)
+    match = re.search(r"/(?:comm/)?jobs/view/(?:[^/?#]*-)?(\d+)(?:[/?#]|$)", parsed.path, re.IGNORECASE)
     return match.group(1) if match else None
 
 
@@ -168,7 +169,7 @@ class PostingChecker:
         self.timeout_seconds = timeout_seconds
         self.browser_fallback = browser_fallback
 
-    async def _browser_result(self, url: str, checked_at: datetime, http_status: int, final_url: str) -> PostingCheckResult:
+    async def _browser_result(self, url: str, checked_at: datetime, http_status: int | None, final_url: str) -> PostingCheckResult:
         """Use the ordinary browser fallback when direct HTTP was blocked or inconclusive."""
         try:
             rendered_html, rendered_url = await self.browser_fallback(url)  # type: ignore[misc]
@@ -176,6 +177,10 @@ class PostingChecker:
             return PostingCheckResult(PostingStatus.UNKNOWN, checked_at, http_status, final_url, "ERROR", "Playwright fallback unavailable")
         except Exception as exc:
             return PostingCheckResult(PostingStatus.UNKNOWN, checked_at, http_status, final_url, "ERROR", f"Playwright fallback failed: {exc.__class__.__name__}")
+        expected_id = _linkedin_job_id(url) or _indeed_job_key(url)
+        rendered_id = _linkedin_job_id(rendered_url) or _indeed_job_key(rendered_url)
+        if expected_id and expected_id != rendered_id:
+            return PostingCheckResult(PostingStatus.UNKNOWN, checked_at, http_status, rendered_url, "PLAYWRIGHT", "The browser redirected away from the original job ID; search for the same vacancy before updating its link")
         rendered = inspect_html(rendered_html, rendered_url, checked_at)
         if rendered.status == PostingStatus.UNKNOWN and http_status in (401, 403):
             return PostingCheckResult(
@@ -191,21 +196,29 @@ class PostingChecker:
             async with httpx.AsyncClient(follow_redirects=True, timeout=self.timeout_seconds, headers=headers) as client:
                 response = await client.get(job_url)
         except httpx.TimeoutException:
+            if self.browser_fallback is not None:
+                return await self._browser_result(job_url, checked_at, None, job_url)
             return PostingCheckResult(PostingStatus.UNKNOWN, checked_at, None, None, "ERROR", "Request timed out")
         except httpx.HTTPError as exc:
+            if self.browser_fallback is not None:
+                return await self._browser_result(job_url, checked_at, None, job_url)
             return PostingCheckResult(PostingStatus.UNKNOWN, checked_at, None, None, "ERROR", f"Network request failed: {exc.__class__.__name__}")
         status = response.status_code
         final_url = str(response.url)
         if status in (404, 410):
             return PostingCheckResult(PostingStatus.CLOSED, checked_at, status, final_url, "HTTP", f"HTTP {status} confirms the posting is unavailable")
-        if status in (401, 403):
+        if status in (401, 403, 429):
             if self.browser_fallback is not None:
                 return await self._browser_result(job_url, checked_at, status, final_url)
             return PostingCheckResult(PostingStatus.UNKNOWN, checked_at, status, final_url, "HTTP", f"HTTP {status} prevented a reliable posting check")
-        if status == 429 or status >= 500:
+        if status >= 500:
             return PostingCheckResult(PostingStatus.UNKNOWN, checked_at, status, final_url, "HTTP", f"HTTP {status} prevented a reliable posting check")
         if not 200 <= status < 300:
             return PostingCheckResult(PostingStatus.UNKNOWN, checked_at, status, final_url, "HTTP", f"HTTP {status} is inconclusive")
+        expected_id = _linkedin_job_id(job_url) or _indeed_job_key(job_url)
+        final_id = _linkedin_job_id(final_url) or _indeed_job_key(final_url)
+        if expected_id and expected_id != final_id:
+            return PostingCheckResult(PostingStatus.UNKNOWN, checked_at, status, final_url, "HTTP", "The URL redirected away from the original job ID; search for the same vacancy before updating its link")
         result = inspect_html(response.text, final_url, checked_at)
         if result.status != PostingStatus.UNKNOWN or self.browser_fallback is None:
             return result

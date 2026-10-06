@@ -15,7 +15,7 @@ from app.schemas import ApplicationFilters
 HEADERS = [
     "Date Applied", "Company", "Job Title", "Status", "Outcome", "Location",
     "Remote Policy", "Contract Type", "Source", "Job URL", "Email Reference",
-    "Phone Number", "Contact Type", "Posting Status", "Documents",
+    "Phone Number", "Contact Type", "Posting Status", "Documents", "Intermediary",
 ]
 
 
@@ -30,7 +30,7 @@ def _rows(session: Session, filters: ApplicationFilters) -> list[list]:
         record.outcome.value if record.outcome else "", record.location or "",
         record.remote_policy or "", record.contract_type or "", record.source or "",
         record.job_url or "", record.email_reference or "", record.phone_number or "", record.contact_type.value, record.posting_status.value,
-        "; ".join(sorted(documents.get(record.id, []), key=str.casefold)),
+        "; ".join(sorted(documents.get(record.id, []), key=str.casefold)), record.intermediary or "",
     ] for record in records]
 
 

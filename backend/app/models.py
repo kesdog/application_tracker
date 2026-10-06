@@ -52,6 +52,7 @@ class Application(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     job_title: Mapped[str] = mapped_column(String(300))
     company: Mapped[str] = mapped_column(String(300))
+    intermediary: Mapped[str | None] = mapped_column(String(300))
     date_applied: Mapped[date]
     job_url: Mapped[str | None] = mapped_column(String(2048))
     email_reference: Mapped[str | None] = mapped_column(String(2048))

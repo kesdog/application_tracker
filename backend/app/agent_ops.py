@@ -2,7 +2,8 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app import __version__, activity, agent_auth, agent_context, applications, confirmation_links, dashboard, integrations, interviews, invalidation, posting_service, work
+from app import __version__, activity, agent_auth, agent_context, applications, confirmation_links, confirmation_details, dashboard, integrations, interviews, invalidation, posting_service, posting_review, work
+from app.posting_checker import PostingChecker, render_with_playwright
 from app import agent_idempotency
 from app.agent_schemas import AgentListRequest
 from app.config import Settings
@@ -15,6 +16,7 @@ from app.dashboard_schemas import DashboardRead
 
 
 PERMISSION_FOR = {
+    "extract_confirmation_details": "read", "get_posting_review": "read", "record_posting_review": "edit",
     "list_applications": "read", "search_applications": "read", "get_application": "read", "get_application_context": "read", "get_tracker_info": "read",
     "find_possible_duplicates": "read", "extract_confirmation_posting_link": "read", "get_application_timeline": "read", "get_upcoming_items": "read",
     "get_interview_context": "read", "create_application": "create", "update_application": "edit",
@@ -83,6 +85,13 @@ def _invoke(
         result = jsonable_encoder(applications.find_possible_duplicates(session, ApplicationCreate.model_validate(args["application"])))
     elif operation == "extract_confirmation_posting_link":
         result = confirmation_links.extract_confirmation_link(args["confirmation_email"]).model_dump()
+    elif operation == "extract_confirmation_details":
+        result = confirmation_details.extract_confirmation_details(args["confirmation_email"]).model_dump()
+    elif operation == "get_posting_review":
+        result = posting_review.review_plan(session, application_id)
+    elif operation == "record_posting_review":
+        result = posting_review.record_review(session, application_id, posting_review.PostingReviewCreate.model_validate(args["review"]), actor_type=ActorType.AGENT).model_dump(mode="json")
+        topic = "application.updated"
     elif operation == "get_application_timeline":
         applications.get_application(session, application_id)
         result = TimelineRead.model_validate(activity.timeline(session, application_id)).model_dump(mode="json")
@@ -92,6 +101,13 @@ def _invoke(
         result = InterviewContext.model_validate(interviews.interview_context(session, args["interview_id"])).model_dump(mode="json")
     elif operation == "create_application":
         data = dict(args["application"])
+        if args.get("confirmation_email"):
+            details = confirmation_details.extract_confirmation_details(args["confirmation_email"])
+            for field in ("job_title", "company", "date_applied", "intermediary"):
+                if not data.get(field) and getattr(details, field):
+                    data[field] = getattr(details, field)
+            if details.intermediary == "ISCOD" and (data.get("company", "").casefold() == "iscod" or not data.get("company")):
+                data["company"] = details.company or confirmation_details.UNDISCLOSED_EMPLOYER
         if not data.get("job_url") and args.get("confirmation_email"):
             extracted = confirmation_links.extract_confirmation_link(args["confirmation_email"])
             if extracted.job_url:
@@ -115,7 +131,8 @@ def _invoke(
         result = TimelineEventRead.model_validate(item).model_dump(mode="json")
         topic = "application.updated"
     elif operation == "check_posting_status":
-        result = posting_service.check_application_posting(session, application_id, actor_type=ActorType.AGENT).model_dump(mode="json")
+        checker = PostingChecker(browser_fallback=render_with_playwright if settings.posting_playwright_fallback else None)
+        result = posting_service.check_application_posting(session, application_id, checker, actor_type=ActorType.AGENT).model_dump(mode="json")
         topic = "application.updated"
     elif operation == "create_note":
         item = work.create_note(session, application_id, NoteCreate.model_validate(args["note"]), **actor)

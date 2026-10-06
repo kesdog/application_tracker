@@ -31,11 +31,7 @@ def create_application(
     if data.source is None:
         data = data.model_copy(update={"source": infer_job_source(data.job_url)})
     if data.source in {"LINKEDIN", "INDEED"}:
-        if not data.job_url:
-            raise InvalidApplication(
-                "An exact job URL is required for LinkedIn or Indeed applications so the posting can be checked"
-            )
-        if infer_job_source(data.job_url) != data.source:
+        if data.job_url and infer_job_source(data.job_url) != data.source:
             raise InvalidApplication(
                 "The job URL must be a direct posting URL on the selected LinkedIn or Indeed job board"
             )
@@ -66,7 +62,7 @@ def list_applications(session: Session, filters: ApplicationFilters | None = Non
     if filters.q:
         term = filters.q.casefold()
         searchable = (
-            Application.job_title, Application.company, Application.location, Application.remote_policy,
+            Application.job_title, Application.company, Application.intermediary, Application.location, Application.remote_policy,
             Application.contract_type, Application.source, Application.description, Application.requirements,
             Application.job_url, Application.email_reference, Application.phone_number,
         )

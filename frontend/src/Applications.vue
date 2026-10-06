@@ -103,7 +103,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', navigate); window.r
           <caption class="sr-only">Submitted applications, newest applied date first</caption>
           <thead><tr><th scope="col">Date applied</th><th scope="col">Company</th><th scope="col">Position</th><th scope="col">Status</th><th scope="col">Outcome</th><th scope="col">Source</th></tr></thead>
           <tbody><tr v-for="application in visibleApplications" :key="application.id">
-            <td class="date-cell">{{ application.date_applied }}</td><td>{{ application.company }}</td><td><a :href="`#/applications/${application.id}`">{{ application.job_title }}</a></td>
+            <td class="date-cell">{{ application.date_applied }}</td><td>{{ application.company }}<small v-if="application.intermediary" class="via">Via {{ application.intermediary }}</small></td><td><a :href="`#/applications/${application.id}`">{{ application.job_title }}</a></td>
             <td><span class="status-badge" :class="application.status.toLowerCase()">{{ application.status }}</span></td>
             <td><span v-if="application.outcome" class="status-badge" :class="application.outcome.toLowerCase()">{{ application.outcome }}</span><span v-else>—</span></td>
             <td class="source-cell"><span>{{ jobSourceLabel(application.source) }}</span><a v-if="application.job_url" :href="application.job_url" target="_blank" rel="noopener noreferrer">Job posting ↗</a><span v-if="application.email_reference" class="email-reference">{{ application.email_reference }}</span></td>
@@ -116,6 +116,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', navigate); window.r
 </template>
 
 <style scoped>
+.via { display:block; color:#627084; margin-top:4px; }
 .page-heading, .list-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .primary { background: #263e5c; border-color: #263e5c; color: #fff; }
 .primary:hover:enabled { background: #192d45; }

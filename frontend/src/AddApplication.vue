@@ -10,7 +10,7 @@ function today() {
 
 function blankForm() {
   return {
-    job_title: '', company: '', date_applied: today(), job_url: '', email_reference: '',
+    job_title: '', company: '', intermediary: '', date_applied: today(), job_url: '', email_reference: '',
     contact_type: 'EMAIL' as ContactType, phone_number: '', location: '',
     remote_policy: '' as RemotePolicy | '', contract_type: '', source: 'OTHER' as JobSource,
     description: '', requirements: '', followup_delay_days: '' as number | '', max_followup_suggestions: '' as number | '',
@@ -49,11 +49,7 @@ async function submit() {
     error.value = 'Provide a job URL or an email reference.'
     return
   }
-  if (requiresPostingUrl.value && !form.job_url.trim()) {
-    error.value = 'An exact job URL is required for LinkedIn or Indeed applications so the posting can be checked.'
-    return
-  }
-  if (requiresPostingUrl.value && detectJobSource(form.job_url) !== form.source) {
+  if (requiresPostingUrl.value && form.job_url.trim() && detectJobSource(form.job_url) !== form.source) {
     error.value = 'Use a direct posting URL on the selected LinkedIn or Indeed job board.'
     return
   }
@@ -65,6 +61,7 @@ async function submit() {
   try {
     const application = await createApplication({
       job_title: form.job_title.trim(), company: form.company.trim(), date_applied: form.date_applied,
+      intermediary: form.intermediary.trim() || null,
       job_url: form.job_url.trim() || null, email_reference: form.email_reference.trim() || null,
       contact_type: form.contact_type, phone_number: form.phone_number.trim() || null,
       location: form.location.trim() || null, remote_policy: form.remote_policy || null,
@@ -104,6 +101,7 @@ async function submit() {
         <div class="form-grid">
           <label>Job title <span>(required)</span><input v-model="form.job_title" name="job_title" required maxlength="300" autocomplete="off" /></label>
           <label>Company <span>(required)</span><input v-model="form.company" name="company" required maxlength="300" autocomplete="organization" /></label>
+          <label>Via / intermediary<input v-model="form.intermediary" name="intermediary" maxlength="300" placeholder="School, recruiter or agency" /><small>Keep the actual employer in Company. If undisclosed, enter “Employer not disclosed”.</small></label>
           <label>Date applied <span>(required)</span><input v-model="form.date_applied" name="date_applied" type="date" required /></label>
           <label>Location<input v-model="form.location" name="location" maxlength="300" /></label>
           <label>Remote policy<select v-model="form.remote_policy" name="remote_policy"><option value="">Select policy</option><option v-for="option in remotePolicies" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
@@ -111,9 +109,9 @@ async function submit() {
         </div>
       </fieldset>
       <fieldset :disabled="saving"><legend>Posting and source</legend>
-        <p class="hint">Provide a job URL or an email reference. LinkedIn and Indeed records require their exact job URL so the tracker can check the posting later.</p>
+        <p class="hint">Provide a job URL or an email reference. If the confirmation has no exact posting URL, keep its source and find the link later from the application’s posting review.</p>
         <div class="form-grid">
-          <label>Job URL<input v-model="form.job_url" name="job_url" type="url" placeholder="https://…" maxlength="2048" :required="requiresPostingUrl" /></label>
+          <label>Job URL<input v-model="form.job_url" name="job_url" type="url" placeholder="https://…" maxlength="2048" /></label>
           <label>Email reference<input v-model="form.email_reference" name="email_reference" placeholder="Message link, ID, or subject" maxlength="2048" /></label>
           <label>Source<select v-model="form.source" name="source" @change="sourceIsAutomatic = false"><option v-for="option in jobSources" :key="option.value" :value="option.value">{{ option.label }}</option></select><small>{{ sourceIsAutomatic ? 'Detected from the job URL when possible.' : 'Selected manually.' }} <button v-if="!sourceIsAutomatic" class="inline-action" type="button" @click="useDetectedSource">Use detected source</button></small></label>
         </div>

@@ -20,7 +20,7 @@ from app import documents
 from app import exports
 from app import interviews
 from app import work
-from app import agent_auth, agent_errors, agent_ops, integrations, invalidation, posting_service, scheduler
+from app import agent_auth, agent_errors, agent_ops, integrations, invalidation, posting_service, posting_review, scheduler
 from app.posting_checker import PostingChecker, render_with_playwright
 from app.interview_schemas import InterviewContext, InterviewCreate, InterviewListItem, InterviewRead, InterviewUpdate, TaskListItem
 from app.activity_schemas import TimelineEntryCreate, TimelineEntryUpdate, TimelineEventRead, TimelineRead, UndoRead
@@ -193,6 +193,16 @@ def create_app(
     def check_posting(application_id: str, session: Session = Depends(get_session)):
         checker = PostingChecker(browser_fallback=render_with_playwright if settings.posting_playwright_fallback else None)
         result = posting_service.check_application_posting(session, application_id, checker)
+        invalidation.publish(session, "application.updated", application_id)
+        return result
+
+    @application.get("/api/applications/{application_id}/posting-review")
+    def get_posting_review(application_id: str, session: Session = Depends(get_session)):
+        return posting_review.review_plan(session, application_id)
+
+    @application.post("/api/applications/{application_id}/posting-review", response_model=PostingCheckRead)
+    def record_posting_review(application_id: str, data: posting_review.PostingReviewCreate, session: Session = Depends(get_session)):
+        result = posting_review.record_review(session, application_id, data)
         invalidation.publish(session, "application.updated", application_id)
         return result
 

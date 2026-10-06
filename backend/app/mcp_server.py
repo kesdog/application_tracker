@@ -20,6 +20,7 @@ from app.activity_schemas import TimelineEntryCreate, TimelineEntryUpdate
 from app.config import Settings
 from app.database import create_database, migrate_database
 from app.schemas import ApplicationCreate, ApplicationFilters, ApplicationUpdate
+from app.posting_review import PostingReviewCreate
 from app.interview_schemas import InterviewCreate, InterviewUpdate
 from app.work_schemas import FollowUpCreate, NoteCreate, TaskCreate
 
@@ -112,6 +113,21 @@ def create_mcp_server(settings: Settings | None = None, token: str | None = None
     def create_application(application: ApplicationCreate, confirmation_email: str | None = None, idempotency_key: str | None = None) -> dict:
         """Create an application. Always supply the confirmation email text/HTML when available: a direct LinkedIn or Indeed posting link is recovered before save. An idempotency key makes a retry return the original record instead of creating another."""
         return call("create_application", {"application": application.model_dump(mode="json"), "confirmation_email": confirmation_email, "idempotency_key": idempotency_key})
+
+    @server.tool()
+    def extract_confirmation_details(confirmation_email: str) -> dict:
+        """Extract role, employer, intermediary, explicit applied date and posting link from the body. Do not infer employer from sender or classify CV forwarding as an offer. Use the email's original date if no explicit application date is returned."""
+        return call("extract_confirmation_details", {"confirmation_email": confirmation_email})
+
+    @server.tool()
+    def get_posting_review(application_id: str) -> dict:
+        """Get browser-search links when a posting URL is missing or its automated check is inconclusive. Search results are candidates, not proof of posting status."""
+        return call("get_posting_review", {"application_id": application_id})
+
+    @server.tool()
+    def record_posting_review(application_id: str, review: PostingReviewCreate) -> dict:
+        """Record a browser review with page URL, notes and check date. Match the same role/employer/location and job ID before concluding LIVE/CLOSED or replacing a URL. No search results alone means UNKNOWN. Never changes application lifecycle."""
+        return call("record_posting_review", {"application_id": application_id, "review": review.model_dump(mode="json")})
 
     @server.tool()
     def update_application(application_id: str, changes: ApplicationUpdate) -> dict:

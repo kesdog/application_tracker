@@ -23,10 +23,10 @@ def client(tmp_path):
         yield client
 
 
-def make_application(client, company="Example"):
+def make_application(client, company="Example", **extra):
     response = client.post("/api/applications", json={
         "job_title": "Engineer", "company": company, "date_applied": "2026-09-25",
-        "email_reference": f"{company} message",
+        "email_reference": f"{company} message", **extra,
     })
     assert response.status_code == 201
     return response.json()
@@ -75,7 +75,7 @@ def test_manual_timeline_entries_keep_the_email_time_and_can_be_edited(client):
 
 
 def test_dashboard_lists_due_and_overdue_followups_separately(client):
-    application = make_application(client)
+    application = make_application(client, max_followup_suggestions=0)
     now = datetime.now(timezone.utc)
     root = path(application)
     overdue = client.post(root + "/followups", json={"due_at": (now - timedelta(days=1)).isoformat()})

@@ -38,6 +38,7 @@ class CompactApplicationRead(BaseModel):
     id: str
     job_title: str
     company: str
+    intermediary: str | None = None
     date_applied: date
     status: str
     outcome: str | None

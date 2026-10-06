@@ -51,7 +51,7 @@ def test_phone_only_cannot_create_email_draft(tmp_path):
 
 def test_scheduler_classifies_work_without_mutation(tmp_path):
     with make_client(tmp_path) as client:
-        application_id = application(client, phone_number="+33612345678")
+        application_id = application(client, phone_number="+33612345678", max_followup_suggestions=0)
         past = (utc_now() - timedelta(days=1)).replace(tzinfo=timezone.utc).isoformat()
         future = (utc_now() + timedelta(days=1)).replace(tzinfo=timezone.utc).isoformat()
         client.post(f"/api/applications/{application_id}/followups", json={"channel": "PHONE", "due_at": past})
