@@ -48,22 +48,21 @@ async function saveReview() {
 <template>
   <section class="posting-panel" aria-labelledby="posting-title">
     <h3 id="posting-title">Job posting</h3>
-    <p><strong>{{ label }}</strong><span v-if="application.posting_last_checked_at"> · {{ new Date(application.posting_last_checked_at).toLocaleString() }} (local time)</span></p>
+    <p v-if="application.job_url || application.posting_last_checked_at"><strong>{{ label }}</strong><span v-if="application.posting_last_checked_at"> · {{ new Date(application.posting_last_checked_at).toLocaleString() }} (local time)</span></p>
     <p v-if="application.posting_check_failures > 0 && application.posting_status !== 'UNKNOWN'" class="hint">Last confirmed status: {{ application.posting_status }}. The latest check was inconclusive.</p>
-    <div class="step">
-      <h4>1. Check the saved posting</h4>
+    <div v-if="application.job_url" class="step">
+      <h4>Check the saved posting</h4>
       <p class="hint">Checks the URL, then opens the page in a browser if needed.</p>
-      <button type="button" :disabled="busy || !application.job_url" @click="check">{{ busy ? 'Working…' : 'Check now' }}</button>
-      <a v-if="application.job_url" :href="application.job_url" target="_blank" rel="noopener noreferrer">Open saved posting ↗</a>
-      <p v-else class="hint">No posting URL saved. Use the search below to find it.</p>
+      <button type="button" :disabled="busy" @click="check">{{ busy ? 'Working…' : 'Check now' }}</button>
+      <a :href="application.job_url" target="_blank" rel="noopener noreferrer">Open saved posting ↗</a>
     </div>
     <div class="step">
-      <h4>2. Search for the position</h4>
+      <h4>{{ application.job_url ? 'Search for the position' : 'Find the missing job URL' }}</h4>
       <p class="hint">Compare the role, employer, location and job ID. Open the posting itself; search snippets and missing results do not prove whether it is still active.</p>
       <div class="searches"><a v-for="search in plan?.searches ?? []" :key="search.label" :href="search.url" target="_blank" rel="noopener noreferrer">{{ search.label }} ↗</a></div>
     </div>
     <details class="step">
-      <summary>3. Record a browser review or update the link</summary>
+      <summary>Record a browser review or update the link</summary>
       <form @submit.prevent="saveReview">
         <fieldset :disabled="busy">
           <label>Conclusion<select v-model="status"><option value="UNKNOWN">Unable to verify</option><option value="LIVE">Live — accepting applications</option><option value="CLOSED">Closed — explicit closure evidence</option></select></label>
@@ -78,7 +77,7 @@ async function saveReview() {
     </details>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <details v-if="application.posting_check_reason" class="step"><summary>Last check details</summary>
-      <p>{{ application.posting_check_reason }}</p><p class="hint">Method: {{ application.posting_check_method }} · HTTP: {{ application.posting_http_status ?? 'Not recorded' }}</p>
+      <p>{{ application.posting_check_reason }}</p><p v-if="application.posting_check_method || application.posting_http_status !== null" class="hint"><template v-if="application.posting_check_method">Method: {{ application.posting_check_method }}</template><template v-if="application.posting_check_method && application.posting_http_status !== null"> · </template><template v-if="application.posting_http_status !== null">HTTP: {{ application.posting_http_status }}</template></p>
       <a v-if="application.posting_final_url" :href="application.posting_final_url" target="_blank" rel="noopener noreferrer">Last page checked ↗</a>
     </details>
     <p class="hint">Posting availability does not change the status or outcome of your application.</p>

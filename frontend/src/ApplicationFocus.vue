@@ -29,6 +29,11 @@ const editableFields = ['job_title', 'company', 'intermediary', 'date_applied', 
 const needsOutcomeClear = computed(() => application.value?.status === 'CLOSED' && application.value.outcome !== null && draft.value !== null && draft.value.status !== 'CLOSED')
 const isKnownRemotePolicy = (value: string | null) => remotePolicies.some(option => option.value === value)
 const isKnownJobSource = (value: string | null) => jobSources.some(option => option.value === value)
+const hasText = (value: string | null | undefined) => Boolean(value?.trim())
+const visibleOptionalFields = computed(() => optionalFields.filter(field => hasText(application.value?.[field.key])))
+const visibleDescription = computed(() => (application.value?.description ?? '').replace(
+  'Imported from INDEED application confirmation email. The email contains no extractable direct job posting URL. Original source and dated email evidence are preserved in the timeline. The original Indeed source is recorded; the posting URL still needs verification.', '',
+).trim())
 
 async function load() {
   loading.value = true
@@ -176,18 +181,17 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
           <dl class="details">
             <div><dt>Date applied</dt><dd>{{ application.date_applied }}</dd></div>
             <div v-if="application.intermediary"><dt>Via / intermediary</dt><dd>{{ application.intermediary }}</dd></div>
-            <div><dt>Outcome</dt><dd>{{ application.outcome ?? 'No outcome' }}</dd></div>
-            <div><dt>Job URL</dt><dd><a v-if="application.job_url" :href="application.job_url" target="_blank" rel="noopener noreferrer">{{ application.job_url }} ↗</a><span v-else>Not provided</span></dd></div>
-            <div><dt>Email reference</dt><dd>{{ application.email_reference ?? 'Not provided' }}</dd></div>
-            <div><dt>Phone number</dt><dd><a v-if="application.phone_number" :href="`tel:${application.phone_number}`">{{ application.phone_number }}</a><span v-else>Not provided</span></dd></div>
-            <div><dt>Contact type</dt><dd>{{ application.contact_type === 'PHONE' ? 'Phone' : 'Email' }}</dd></div>
-            <div><dt>Remote policy</dt><dd>{{ remotePolicyLabel(application.remote_policy) }}</dd></div>
-            <div><dt>Source</dt><dd>{{ jobSourceLabel(application.source) }}</dd></div>
-            <div><dt>Follow-up delay</dt><dd>{{ application.followup_delay_days === null ? 'Global default (7 days)' : `${application.followup_delay_days} days` }}</dd></div>
-            <div v-for="field in optionalFields" :key="field.key"><dt>{{ field.label }}</dt><dd>{{ application[field.key] ?? 'Not provided' }}</dd></div>
+            <div><dt>Job URL</dt><dd><a v-if="application.job_url" :href="application.job_url" target="_blank" rel="noopener noreferrer">{{ application.job_url }} ↗</a><span v-else class="missing-value">Missing — use the posting search below.</span></dd></div>
+            <div v-if="hasText(application.email_reference)"><dt>Email reference</dt><dd>{{ application.email_reference }}</dd></div>
+            <div v-if="hasText(application.phone_number)"><dt>Phone number</dt><dd><a :href="`tel:${application.phone_number}`">{{ application.phone_number }}</a></dd></div>
+            <div v-if="application.contact_type === 'PHONE'"><dt>Contact type</dt><dd>Phone</dd></div>
+            <div v-if="hasText(application.remote_policy)"><dt>Remote policy</dt><dd>{{ remotePolicyLabel(application.remote_policy) }}</dd></div>
+            <div v-if="hasText(application.source) && application.source !== 'OTHER'"><dt>Source</dt><dd>{{ jobSourceLabel(application.source) }}</dd></div>
+            <div v-if="application.followup_delay_days !== null && application.followup_delay_days !== 7"><dt>Follow-up delay</dt><dd>{{ application.followup_delay_days }} days</dd></div>
+            <div v-for="field in visibleOptionalFields" :key="field.key"><dt>{{ field.label }}</dt><dd>{{ application[field.key] }}</dd></div>
           </dl>
         </section>
-        <section class="panel"><h3>Description</h3><p class="text-block">{{ application.description ?? 'No description added.' }}</p><h3>Requirements</h3><p class="text-block">{{ application.requirements ?? 'No requirements added.' }}</p></section>
+        <section v-if="visibleDescription || hasText(application.requirements)" class="panel"><template v-if="visibleDescription"><h3>Description</h3><p class="text-block">{{ visibleDescription }}</p></template><template v-if="hasText(application.requirements)"><h3>Requirements</h3><p class="text-block">{{ application.requirements }}</p></template></section>
         <PostingReview :application="application" @changed="postingChanged" />
         <ApplicationDocuments :key="`documents-${contentVersion}`" :application-id="application.id" @changed="timelineVersion++" />
         <ApplicationInterviews :key="`interviews-${contentVersion}`" :application-id="application.id" @changed="timelineVersion++" />
@@ -211,6 +215,7 @@ a { color: #24568b; text-underline-offset: 3px; overflow-wrap: anywhere; }
 .details { margin-top: 16px; }
 .details > div { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 20px; }
 .details dd { text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; }
+.missing-value { color: #844d15; }
 .text-block { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.6; }
 .text-block:last-child { margin-bottom: 0; }
 fieldset { border: 0; padding: 0; margin: 24px 0; min-width: 0; }

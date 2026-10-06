@@ -85,20 +85,20 @@ onMounted(load)
 </script>
 
 <template>
-  <section class="panel interview-panel" aria-labelledby="application-interviews-title">
-    <div class="section-heading"><h3 id="application-interviews-title">Interviews <span>{{ interviews.length }}</span></h3><button v-if="!open" type="button" :disabled="busy" @click="add">Add interview</button></div>
+  <section class="panel interview-panel" aria-label="Interviews">
+    <div class="section-heading"><h3 v-if="interviews.length" id="application-interviews-title">Interviews <span>{{ interviews.length }}</span></h3><button v-if="!open" type="button" :disabled="busy" @click="add">Add interview</button></div>
     <p v-if="error" class="error" role="alert">{{ error }}</p><p v-if="notice" class="notice" role="status">{{ notice }}</p>
     <form v-if="open" @submit.prevent="save"><fieldset :disabled="busy"><legend>{{ editingId ? 'Edit interview' : 'New interview' }}</legend>
       <div class="grid"><label>Type<select v-model="form.type"><option v-for="type in types" :key="type" :value="type">{{ interviewTypeText(type) }}</option></select></label><label>Scheduled (local time)<input v-model="form.scheduled_at" type="datetime-local" required /></label><label>Duration (minutes)<input v-model.number="form.duration" type="number" min="1" max="1440" /></label><label>Interviewer<input v-model="form.interviewer" maxlength="300" /></label><label>Location<input v-model="form.location" maxlength="300" /></label><label>Meeting URL<input v-model="form.meeting_url" type="url" maxlength="2048" /></label><label>Email reference<input v-model="form.email_reference" maxlength="2048" /></label></div>
       <label>Preparation notes<textarea v-model="form.notes" rows="3"></textarea></label><label>Result<textarea v-model="form.result" rows="3"></textarea></label>
       <div class="actions"><button class="primary" type="submit">{{ busy ? 'Saving…' : 'Save interview' }}</button><button type="button" @click="open = false">Cancel</button></div>
     </fieldset></form>
-    <p v-if="busy && !interviews.length && !open" role="status">Loading interviews…</p><p v-else-if="!interviews.length && !open" class="muted">No interviews scheduled.</p>
+    <p v-if="busy && !interviews.length && !open" role="status">Loading interviews…</p>
     <article v-for="item in interviews" :key="item.id" class="interview-item">
       <div class="section-heading"><div><strong>{{ interviewTypeText(item.type) }} interview — {{ relativeDateText(item.scheduled_at) }}</strong><p class="meta">{{ dateTimeText(item.scheduled_at) }}<template v-if="item.duration"> · {{ item.duration }} minutes</template></p></div><div class="actions"><button type="button" :disabled="busy" @click="edit(item)">Edit</button><button type="button" :disabled="busy" :class="{ danger: deletingId === item.id }" @click="remove(item)">{{ deletingId === item.id ? 'Confirm delete' : 'Delete' }}</button></div></div>
       <p v-if="item.interviewer || item.location" class="meta"><template v-if="item.interviewer">With {{ item.interviewer }}</template><template v-if="item.interviewer && item.location"> · </template>{{ item.location }}</p>
       <p v-if="item.notes" class="content">{{ item.notes }}</p><p v-if="item.result" class="result"><strong>Result:</strong> {{ item.result }}</p>
-      <p><a v-if="item.meeting_url" :href="item.meeting_url" target="_blank" rel="noopener noreferrer">Open meeting link ↗</a><span v-if="item.meeting_url && item.email_reference"> · </span><span v-if="item.email_reference">Email: {{ item.email_reference }}</span></p>
+      <p v-if="item.meeting_url || item.email_reference"><a v-if="item.meeting_url" :href="item.meeting_url" target="_blank" rel="noopener noreferrer">Open meeting link ↗</a><span v-if="item.meeting_url && item.email_reference"> · </span><span v-if="item.email_reference">Email: {{ item.email_reference }}</span></p>
       <p><a :href="`/api/interviews/${encodeURIComponent(item.id)}/calendar.ics`" :download="`interview-${item.id}.ics`">Download calendar event</a></p>
     </article>
   </section>
