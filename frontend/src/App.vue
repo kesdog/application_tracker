@@ -6,10 +6,12 @@ import Interviews from './Interviews.vue'
 import Tasks from './Tasks.vue'
 import Dashboard from './Dashboard.vue'
 import AgentSettings from './AgentSettings.vue'
+import Exports from './Exports.vue'
 
 const hash = ref(window.location.hash || '#/dashboard')
 const page = computed(() => {
   if (hash.value === '#/applications/new') return 'add-application'
+  if (hash.value.startsWith('#/export')) return 'export'
   if (hash.value.startsWith('#/settings')) return 'settings'
   if (hash.value.startsWith('#/interviews')) return 'interviews'
   if (hash.value.startsWith('#/tasks')) return 'tasks'
@@ -18,7 +20,7 @@ const page = computed(() => {
 })
 const sectionTitle = computed(() => ({
   dashboard: 'Dashboard', applications: 'Applications', 'add-application': 'Add application',
-  interviews: 'Interviews', tasks: 'Tasks', settings: 'Settings',
+  interviews: 'Interviews', tasks: 'Tasks', export: 'Export', settings: 'Settings',
 })[page.value])
 let events: EventSource | null = null
 
@@ -50,7 +52,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', route); events?.clo
         <a href="#/interviews" :class="{ active: page === 'interviews' }" :aria-current="page === 'interviews' ? 'page' : undefined">Interviews</a>
         <a href="#/tasks" :class="{ active: page === 'tasks' }" :aria-current="page === 'tasks' ? 'page' : undefined">Tasks</a>
       </nav>
-      <nav class="settings-nav" aria-label="Settings"><a href="#/settings" :class="{ active: page === 'settings' }" :aria-current="page === 'settings' ? 'page' : undefined">Settings</a></nav>
+      <nav class="settings-nav" aria-label="Export and settings"><a href="#/export" :class="{ active: page === 'export' }" :aria-current="page === 'export' ? 'page' : undefined">Export</a><a href="#/settings" :class="{ active: page === 'settings' }" :aria-current="page === 'settings' ? 'page' : undefined">Settings</a></nav>
     </aside>
     <div class="workspace">
       <header class="topbar"><span>Workspace</span><strong>{{ sectionTitle }}</strong></header>
@@ -59,10 +61,11 @@ onUnmounted(() => { window.removeEventListener('hashchange', route); events?.clo
         <AddApplication v-else-if="page === 'add-application'" />
         <Interviews v-else-if="page === 'interviews'" />
         <Tasks v-else-if="page === 'tasks'" />
+        <Exports v-else-if="page === 'export'" />
         <AgentSettings v-else-if="page === 'settings'" />
         <Applications v-else />
       </main>
-      <footer>Application Tracker <span>0.10.0</span></footer>
+      <footer>Application Tracker <span>0.10.1</span></footer>
     </div>
   </div>
 </template>

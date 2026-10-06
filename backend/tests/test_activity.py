@@ -94,7 +94,9 @@ def test_actor_identity_is_preserved_for_service_mutations(client):
             actor_type=ActorType.AGENT, actor_reference="agent-7",
         )
         assert created.created_by == "agent-7"
-    event = client.get(path(application) + "/timeline").json()["events"][0]
+    events = client.get(path(application) + "/timeline").json()["events"]
+    # Events can share a timestamp; this test checks identity, not tie ordering.
+    event = next(event for event in events if event["metadata"].get("note_id") == created.id)
     assert event["event_type"] == "NOTE_ADDED"
     assert event["actor_type"] == "AGENT"
     assert event["actor_reference"] == "agent-7"

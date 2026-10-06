@@ -57,6 +57,29 @@ def test_document_filter_contract_returns_no_matches_until_documents_exist(clien
     assert client.get("/api/applications", params={"document_filename": "resume.pdf"}).json() == []
 
 
+@pytest.mark.parametrize("category, matching, other", [
+    ("CDI", ["CDI", "Permanent", "Full-time", "Contrat à durée indéterminée"], ["CDD", "Stage", "Temps partiel"]),
+    ("CDD", ["CDD", "Fixed term", "Contrat à durée déterminée"], ["CDI", "Stage"]),
+    ("PART_TIME", ["Temps partiel", "Part-time"], ["Full time", "Stage"]),
+    ("APPRENTICESHIP_INTERNSHIP", ["Alternance", "Stage", "Internship", "Apprenticeship", "Apprentissage"], ["CDI", "Backstage", None]),
+])
+def test_contract_dropdown_categories_match_existing_wording_and_exports(client, category, matching, other):
+    import csv
+    from io import StringIO
+
+    expected = []
+    for index, value in enumerate(matching + other):
+        record = create_application(client, company=f"Company {index}", contract_type=value)
+        if value in matching:
+            expected.append(record["id"])
+    params = {"contract_type": category}
+    records = client.get("/api/applications", params=params).json()
+    assert {record["id"] for record in records} == set(expected)
+    exported = list(csv.DictReader(StringIO(client.get("/api/exports/applications.csv", params=params).text)))
+    assert len(exported) == len(expected)
+    assert {row["Company"] for row in exported} == {record["company"] for record in records}
+
+
 def test_duplicate_warning_never_blocks_creation(client):
     original = create_application(client, title="Platform Engineer", company="Acme", day="2026-09-01", url="https://example.com/jobs/42/")
     duplicate = create_application(client, title=" platform   engineer ", company="ACME", day="2026-09-20", url="https://example.com/jobs/42")

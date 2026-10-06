@@ -1,4 +1,6 @@
 from datetime import datetime, time, timezone
+import re
+import unicodedata
 
 from pydantic import ValidationError
 from sqlalchemy import func, or_, select
@@ -17,6 +19,21 @@ class ApplicationNotFound(Exception):
 
 class InvalidApplication(ValueError):
     pass
+
+
+CONTRACT_CATEGORIES = {
+    "CDI": ("cdi", "permanent", "full time", "temps plein", "contrat a duree indeterminee"),
+    "CDD": ("cdd", "fixed", "contrat a duree determinee"),
+    "PART_TIME": ("part time", "temps partiel"),
+    "APPRENTICESHIP_INTERNSHIP": ("alternance", "apprenticeship", "apprentice", "internship", "intern", "stage", "stagiaire", "apprentissage"),
+}
+
+
+def matches_contract_category(value: str | None, category: str) -> bool:
+    text = unicodedata.normalize("NFKD", (value or "").casefold())
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    text = " ".join(re.sub(r"[^a-z0-9]+", " ", text).split())
+    return any(f" {term} " in f" {text} " for term in CONTRACT_CATEGORIES[category])
 
 
 def value_text(value) -> str:
@@ -58,6 +75,8 @@ def create_application(
 
 def list_applications(session: Session, filters: ApplicationFilters | None = None) -> list[Application]:
     filters = filters or ApplicationFilters()
+    contract_category = (filters.contract_type or "").upper()
+    is_contract_category = contract_category in CONTRACT_CATEGORIES
     query = select(Application).where(Application.deleted_at.is_(None))
     if filters.q:
         term = filters.q.casefold()
@@ -73,7 +92,8 @@ def list_applications(session: Session, filters: ApplicationFilters | None = Non
         query = query.where(Application.outcome == filters.outcome)
     for value, column in (
         (filters.company, Application.company), (filters.title, Application.job_title),
-        (filters.location, Application.location), (filters.contract_type, Application.contract_type),
+        (filters.location, Application.location),
+        (None if is_contract_category else filters.contract_type, Application.contract_type),
         (filters.source, Application.source), (filters.remote_policy, Application.remote_policy),
     ):
         if value:
@@ -88,7 +108,10 @@ def list_applications(session: Session, filters: ApplicationFilters | None = Non
             func.lower(ApplicationDocument.filename).contains(filters.document_filename.casefold(), autoescape=True),
         ).exists()
         query = query.where(document_match)
-    return list(session.scalars(query.order_by(Application.date_applied.desc(), Application.id)))
+    records = list(session.scalars(query.order_by(Application.date_applied.desc(), Application.id)))
+    if is_contract_category:
+        records = [record for record in records if matches_contract_category(record.contract_type, contract_category)]
+    return records
 
 
 def normalized(value: str | None) -> str:

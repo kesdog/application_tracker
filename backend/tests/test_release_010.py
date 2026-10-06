@@ -86,4 +86,4 @@ def test_compiled_frontend_is_served_by_production_backend(tmp_path):
         page = client.get("/")
         assert page.status_code == 200
         assert "Application Tracker" in page.text
-        assert client.get("/api/health").json()["version"] == "0.10.0"
+        assert client.get("/api/health").json()["version"] == "0.10.1"

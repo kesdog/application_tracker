@@ -1,8 +1,8 @@
 # Application Tracker
 
-Version **0.10.0** adds validated application phone numbers, email/phone/both follow-ups, a read-only reminder scheduler, local email-draft fallback, calendar downloads, and Windows/Docker packaging to the FastAPI, SQLite WAL, and Vue 3 + TypeScript tracker.
+Version **0.10.1** adds a compact applications list with overdue follow-up shading, orange closed rows, calendar date filters, contract category filters, concise source links, and a dedicated Export screen.
 
-The left sidebar opens **Dashboard**, **Applications**, **Interviews**, **Tasks**, and **Settings**. **Add application** is its own screen under Applications with a breadcrumb back to the list. Record a job title, company, date applied, and either a job URL or email reference. Choose a contact type (email or phone), a remote policy (full remote, hybrid, or in person), and a source from the job-board list. The source defaults to a recognized board from the posting URL—Indeed, LinkedIn, Free-Work, or HelloWork—or Other, and can be changed manually. A phone number is optional for email contact and required for phone contact. French national numbers and numbers with an international `+` prefix are accepted, validated, and stored in E.164 format. The same backend schema validates human API, agent REST, and MCP requests. Saved records appear in a compact table ordered by applied date, newest first. Every new application starts as `SUBMITTED` with no outcome. On narrow windows, scroll the table horizontally to see all columns. **System status** is visible only in Settings.
+The left sidebar opens **Dashboard**, **Applications**, **Interviews**, **Tasks**, **Export**, and **Settings**. **Add application** is its own screen under Applications with a breadcrumb back to the list. Record a job title, company, date applied, and either a job URL or email reference. Choose a contact type (email or phone), a remote policy (full remote, hybrid, or in person), and a source from the job-board list. The source defaults to a recognized board from the posting URL—Indeed, LinkedIn, Free-Work, or HelloWork—or Other, and can be changed manually. A phone number is optional for email contact and required for phone contact. French national numbers and numbers with an international `+` prefix are accepted, validated, and stored in E.164 format. The same backend schema validates human API, agent REST, and MCP requests. Saved records appear in a compact table ordered by applied date, newest first. Every new application starts as `SUBMITTED` with no outcome. On narrow windows, scroll the table horizontally to see all columns. **System status** is visible only in Settings.
 
 Click a position in the table to open its focus view. **Edit application** lets you update its title, company, date, contact type, phone number, posting URL or email reference, location, remote policy, contract type, source, description, requirements, status, outcome, and posting state. **Cancel** discards the current draft. Focus URLs use a hash and can be bookmarked or refreshed without a router dependency. Return with **All applications** to see updated status/outcome badges.
 
@@ -14,7 +14,7 @@ The **Timeline** records application, note, task, follow-up, interview, outcome,
 
 Use the sidebar to open **Interviews** or **Tasks**. Interviews are ordered by scheduled date and show their application, meeting context, and near-term wording such as “Technical interview — tomorrow at 14:00.” Tasks are ordered by due date, show their parent application, and can be completed, cancelled, or reopened from the global view.
 
-Use **Dashboard** to see active application count, separate due-soon and overdue follow-up lists, due and overdue tasks, upcoming interviews, linked work for the next seven days, and recent activity. The Applications page supports free-text search plus status, outcome, company, position, location, contract, source, remote policy, document filename, and application-date filters. Filters are collapsed by default, combine when shown, can be cleared together, and retain the existing newest-first order. The export panel downloads all applications or the current filtered view as CSV or formatted XLSX.
+Use **Dashboard** to see active application count, separate due-soon and overdue follow-up lists, due and overdue tasks, upcoming interviews, linked work for the next seven days, and recent activity. The Applications page supports free-text search plus status, outcome, company, position, location, contract, source, remote policy, document filename, and application-date filters. Filters are collapsed by default, combine when shown, can be cleared together, and retain the existing newest-first order. The **Export** screen above Settings downloads all applications or a filtered view as CSV or formatted XLSX. Applied list filters carry over to Export and can be adjusted there. Contract filters group existing French and English descriptions into Full time (CDI), Fixed term (CDD), Part time (Temps partiel), and Apprenticeship / Internship (Alternance / Stage). Rows with overdue pending or drafted follow-ups are red, using the dashboard queue; closed applications are orange. Source cells use posting and email ref links instead of raw URLs.
 
 Use **Settings** to generate an agent token and choose its read, create, edit, draft, task, and interview permissions. The plaintext token is shown only when generated or regenerated. Agent changes appear in the open Applications, Dashboard, Tasks, Interviews, and application focus views through a small server-sent event that tells the UI what to refetch.
 
@@ -87,7 +87,7 @@ Relative data paths resolve against the project root, regardless of the terminal
 `GET /api/health` checks the live database connection and returns:
 
 ```json
-{"status":"ok","version":"0.10.0","database":"connected"}
+{"status":"ok","version":"0.10.1","database":"connected"}
 ```
 
 It returns HTTP 503 if the database query fails. The Settings page checks on load and when **Check again** is clicked, with a five-second timeout. It clears stale version/database values on a failed check. Continuous polling is not part of this release.
@@ -123,7 +123,7 @@ Example POST body:
 }
 ```
 
-Alembic applies pending migrations automatically at backend startup, including upgrades from existing 0.1.0–0.10.0 databases. Migration `0008_phone_and_followup_channels` adds optional application phone numbers and defaults existing follow-ups to `EMAIL`; migration `0009_application_contact_type` defaults existing applications to `EMAIL` contact. Child tables enforce application foreign keys and valid statuses; follow-up numbers are unique within each application. Startup stops if migration fails. Tests use temporary databases. To inspect or explicitly apply migrations from the project root:
+Alembic applies pending migrations automatically at backend startup, including upgrades from existing 0.1.0–0.10.1 databases. Migration `0008_phone_and_followup_channels` adds optional application phone numbers and defaults existing follow-ups to `EMAIL`; migration `0009_application_contact_type` defaults existing applications to `EMAIL` contact. Child tables enforce application foreign keys and valid statuses; follow-up numbers are unique within each application. Startup stops if migration fails. Tests use temporary databases. To inspect or explicitly apply migrations from the project root:
 
 ```powershell
 .\.venv\Scripts\python.exe -m alembic current
@@ -206,7 +206,7 @@ The normal-browser fallback is enabled by default. Run `python -m playwright ins
 
 `GET /api/applications/{id}/documents` lists CV and cover-letter metadata. `POST` to the same path accepts multipart form data with `document_type` (`CV` or `COVER_LETTER`) and exactly one source: `file`, or `external_reference` plus `filename`. Uploaded files are copied beneath `APP_DATA_DIR/documents/{application_id}`. `GET /api/applications/{id}/documents/{document_id}/content` downloads an uploaded file; referenced documents have no content endpoint payload.
 
-`GET /api/exports/applications.csv` and `GET /api/exports/applications.xlsx` export all active records when called without parameters. Both accept the same query filters as `GET /api/applications`, so the Applications page can export its current view exactly. CSV is UTF-8 with a header row. XLSX contains real date cells, a formatted and frozen header, worksheet filters, readable widths, document filenames, phone numbers, and status/outcome colors.
+`GET /api/exports/applications.csv` and `GET /api/exports/applications.xlsx` export all active records when called without parameters. Both accept the same query filters as `GET /api/applications`, so the Export screen can export the applied filters exactly. CSV is UTF-8 with a header row. XLSX contains real date cells, a formatted and frozen header, worksheet filters, readable widths, document filenames, phone numbers, and status/outcome colors.
 
 ## Agent access and live updates
 
@@ -279,7 +279,7 @@ Manual checks:
 3. Create and update an application through the agent REST path or MCP while the Applications page remains open. Confirm its table updates without a browser reload.
 4. Regenerate the token; confirm the previous token receives HTTP 401 or an MCP tool error immediately.
 5. Confirm an agent delete operation is unavailable, and the Settings page never shows the old token again.
-6. Expand **System status** and confirm backend version **0.10.0** and **SQLite · Connected**.
+6. Expand **System status** and confirm backend version **0.10.1** and **SQLite · Connected**.
 
 The 0.9 agent-token flow remains available but has not been activated in the user's database. The Python test client emits one upstream deprecation warning from Starlette; tests pass.
 
