@@ -120,7 +120,7 @@ export interface AgentPermissions { read: boolean; create: boolean; edit: boolea
 export interface AgentSettings { configured: boolean; permissions: AgentPermissions }
 export interface AgentTokenCreated extends AgentSettings { token: string }
 export interface PostingCheckResult { status: Application['posting_status']; checked_at: string; http_status: number | null; final_url: string | null; method: string; reason: string; failures: number }
-export interface PostingReviewPlan { application_id: string; job_url: string | null; searches: { label: string; url: string }[]; instructions: string }
+export interface PostingReviewPlan { application_id: string; job_url: string | null; searches: { label: string; url: string }[]; search_query: string; agent_search_prompt: string; instructions: string }
 export interface PostingReviewInput { status: Application['posting_status']; evidence_url: string; notes: string; checked_at: string; same_position: boolean; replace_job_url: boolean }
 export interface AgentConnectionInfo { local_mcp_command: string; rest_endpoint: string; mcp_transport: 'stdio' | 'streamable-http'; remote_mcp_endpoint: string | null }
 export interface IntegrationStatus { mail: { connected: boolean }; calendar: { connected: boolean } }

@@ -121,7 +121,7 @@ def create_mcp_server(settings: Settings | None = None, token: str | None = None
 
     @server.tool()
     def get_posting_review(application_id: str) -> dict:
-        """Get browser-search links when a posting URL is missing or its automated check is inconclusive. Search results are candidates, not proof of posting status."""
+        """Get one manual Google query and a prepared agent_search_prompt using app data and relevant emails. Follow the prompt with browser and mail tools, then record verified evidence. Search results alone do not prove posting status."""
         return call("get_posting_review", {"application_id": application_id})
 
     @server.tool()

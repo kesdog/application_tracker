@@ -6,6 +6,7 @@ import ApplicationInterviews from './ApplicationInterviews.vue'
 import ApplicationTimeline from './ApplicationTimeline.vue'
 import ApplicationDocuments from './ApplicationDocuments.vue'
 import PostingReview from './PostingReview.vue'
+import EmailReference from './EmailReference.vue'
 import { contactTypes, detectJobSource, jobSourceLabel, jobSources, remotePolicies, remotePolicyLabel } from './applicationOptions'
 
 const props = defineProps<{ id: string }>()
@@ -182,7 +183,7 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
             <div><dt>Date applied</dt><dd>{{ application.date_applied }}</dd></div>
             <div v-if="application.intermediary"><dt>Via / intermediary</dt><dd>{{ application.intermediary }}</dd></div>
             <div><dt>Job URL</dt><dd><a v-if="application.job_url" :href="application.job_url" target="_blank" rel="noopener noreferrer">{{ application.job_url }} ↗</a><span v-else class="missing-value">Missing — use the posting search below.</span></dd></div>
-            <div v-if="hasText(application.email_reference)"><dt>Email reference</dt><dd>{{ application.email_reference }}</dd></div>
+            <div v-if="hasText(application.email_reference)"><dt>Email reference</dt><dd><EmailReference :reference="application.email_reference" label="Open email ↗" /></dd></div>
             <div v-if="hasText(application.phone_number)"><dt>Phone number</dt><dd><a :href="`tel:${application.phone_number}`">{{ application.phone_number }}</a></dd></div>
             <div v-if="application.contact_type === 'PHONE'"><dt>Contact type</dt><dd>Phone</dd></div>
             <div v-if="hasText(application.remote_policy)"><dt>Remote policy</dt><dd>{{ remotePolicyLabel(application.remote_policy) }}</dd></div>

@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { createTimelineEntry, getTimeline, undoLastChange, updateTimelineEntry, type Timeline, type TimelineEvent } from './api'
+import EmailReference from './EmailReference.vue'
+
+function emailSummary(event: TimelineEvent) {
+  if (event.event_type !== 'MANUAL') return { text: event.summary, reference: null }
+  const reference = event.summary.match(/https?:\/\/[^\s<>]+/)?.[0] ?? event.summary.match(/\[Gmail:[a-f0-9]+\]/i)?.[0] ?? null
+  return { text: reference ? event.summary.replace(reference, '').trim() : event.summary, reference }
+}
 
 const props = defineProps<{ applicationId: string }>()
 const emit = defineEmits<{ undone: [] }>()
@@ -73,7 +80,7 @@ onMounted(load)
     <p v-if="error" class="error" role="alert">{{ error }}</p><p v-if="notice" class="notice" role="status">{{ notice }}</p>
     <form v-if="entryOpen" class="entry-form" @submit.prevent="saveEntry"><fieldset :disabled="busy"><legend>{{ entryForm.id ? 'Edit email timeline entry' : 'Add email timeline entry' }}</legend><label>What happened<input v-model="entryForm.summary" required maxlength="500" placeholder="e.g. Submitted technical task by email" /></label><label>Email time (local)<input v-model="entryForm.occurred_at" required type="datetime-local" /></label><div class="actions"><button class="primary" type="submit">Save entry</button><button type="button" @click="entryOpen = false">Cancel</button></div></fieldset></form>
     <p v-if="!timeline && busy" role="status">Loading activity…</p><p v-else-if="timeline && !timeline.events.length" class="hint">No activity recorded yet.</p>
-    <ol v-if="timeline?.events.length" class="timeline"><li v-for="event in timeline.events" :key="event.id" :class="`event-${event.event_type.toLowerCase()}`"><span class="icon" aria-hidden="true">{{ icons[event.event_type] ?? '•' }}</span><div><div class="event-heading"><strong>{{ event.summary }}</strong><button v-if="event.event_type === 'MANUAL'" type="button" :disabled="busy" @click="openEntry(event)">Edit</button></div><p>{{ dateText(event) }} · {{ event.event_type === 'MANUAL' ? 'EMAIL' : event.actor_type }}<template v-if="event.actor_reference"> · {{ event.actor_reference }}</template></p></div></li></ol>
+    <ol v-if="timeline?.events.length" class="timeline"><li v-for="event in timeline.events" :key="event.id" :class="`event-${event.event_type.toLowerCase()}`"><span class="icon" aria-hidden="true">{{ icons[event.event_type] ?? '•' }}</span><div><div class="event-heading"><strong>{{ emailSummary(event).text }} <EmailReference v-if="emailSummary(event).reference" :reference="emailSummary(event).reference" /></strong><button v-if="event.event_type === 'MANUAL'" type="button" :disabled="busy" @click="openEntry(event)">Edit</button></div><p>{{ dateText(event) }} · {{ event.event_type === 'MANUAL' ? 'EMAIL' : event.actor_type }}<template v-if="event.actor_reference"> · {{ event.actor_reference }}</template></p></div></li></ol>
   </section>
 </template>
 

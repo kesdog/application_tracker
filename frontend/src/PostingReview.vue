@@ -7,6 +7,8 @@ const emit = defineEmits<{ changed: [] }>()
 const plan = ref<PostingReviewPlan | null>(null)
 const busy = ref(false)
 const error = ref('')
+const copyMessage = ref('')
+const showPrompt = ref(false)
 const status = ref<Application['posting_status']>('UNKNOWN')
 const evidenceUrl = ref('')
 const notes = ref('')
@@ -21,11 +23,25 @@ const label = computed(() => !props.application.posting_last_checked_at ? 'Not c
   : props.application.posting_status === 'UNKNOWN' || props.application.posting_check_failures > 0 ? 'Unable to verify'
   : props.application.posting_status === 'LIVE' ? 'Live' : 'Closed')
 
-watch(() => [props.application.id, props.application.job_title, props.application.company, props.application.job_url], async () => {
-  try { plan.value = await getPostingReview(props.application.id) }
-  catch (cause) { error.value = cause instanceof Error ? cause.message : 'Unable to load search links.' }
+watch(() => props.application, async (_application, _previous, onCleanup) => {
+  let active = true
+  onCleanup(() => { active = false })
+  plan.value = null; copyMessage.value = ''; showPrompt.value = false
+  try { const nextPlan = await getPostingReview(props.application.id); if (active) plan.value = nextPlan }
+  catch (cause) { if (active) error.value = cause instanceof Error ? cause.message : 'Unable to prepare the search.' }
 }, { immediate: true })
 watch([status, samePosition], () => { if (status.value !== 'LIVE' || !samePosition.value) replaceUrl.value = false })
+
+async function agentSearch() {
+  if (!plan.value) return
+  try {
+    await navigator.clipboard.writeText(plan.value.agent_search_prompt)
+    copyMessage.value = 'Search prompt copied. Paste it into your connected agent.'
+  } catch {
+    showPrompt.value = true
+    copyMessage.value = 'Copy the prepared prompt below and paste it into your connected agent.'
+  }
+}
 
 async function check() {
   busy.value = true; error.value = ''
@@ -58,8 +74,9 @@ async function saveReview() {
     </div>
     <div class="step">
       <h4>{{ application.job_url ? 'Search for the position' : 'Find the missing job URL' }}</h4>
-      <p class="hint">Compare the role, employer, location and job ID. Open the posting itself; search snippets and missing results do not prove whether it is still active.</p>
-      <div class="searches"><a v-for="search in plan?.searches ?? []" :key="search.label" :href="search.url" target="_blank" rel="noopener noreferrer">{{ search.label }} ↗</a></div>
+      <div class="searches"><a v-if="plan" :href="plan.searches[0]?.url" target="_blank" rel="noopener noreferrer">Search manually</a><button type="button" :disabled="!plan" @click="agentSearch">Agent search</button></div>
+      <p v-if="copyMessage" class="hint" role="status">{{ copyMessage }}</p>
+      <label v-if="showPrompt" class="prepared-prompt">Agent search prompt<textarea :value="plan?.agent_search_prompt" readonly rows="12" @focus="($event.target as HTMLTextAreaElement).select()" /></label>
     </div>
     <details class="step">
       <summary>Record a browser review or update the link</summary>
@@ -87,7 +104,9 @@ async function saveReview() {
 <style scoped>
 .posting-panel { padding:24px; border:1px solid #dce2e9; border-radius:10px; background:white; }
 h3 { margin:0 0 14px; } h4 { margin:0 0 8px; } .hint { color:#627084; font-size:13px; line-height:1.5; }
-.step { border-top:1px solid #e5e9ee; padding:16px 0; } .searches { display:flex; flex-wrap:wrap; gap:12px; }
+.step { border-top:1px solid #e5e9ee; padding:16px 0; } .searches { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+.searches a { display:inline-flex; align-items:center; min-height:36px; padding:9px 13px; border:1px solid #b9c4d2; border-radius:6px; font-size:13px; font-weight:600; text-decoration:none; }
+.prepared-prompt { display:block; margin-top:12px; }
 a { color:#24568b; overflow-wrap:anywhere; } button + a { margin-left:12px; } summary { cursor:pointer; font-weight:600; }
 fieldset { border:0; padding:16px 0 0; display:grid; gap:14px; } label { font-size:14px; font-weight:600; }
 input, select, textarea { display:block; width:100%; margin-top:6px; padding:9px; border:1px solid #b9c4d2; border-radius:6px; font:inherit; }

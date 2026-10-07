@@ -28,7 +28,14 @@ def test_search_handoff_available_without_url_and_manual_review_preserves_lifecy
     app = application(client)
     plan = client.get(f"/api/applications/{app['id']}/posting-review").json()
     query = parse_qs(urlsplit(plan['searches'][0]['url']).query)['q'][0]
-    assert 'C# Engineer' in query and 'Acme' in query and 'Paris' in query
+    assert query == 'C# Engineer + Acme'
+    assert len(plan['searches']) == 1 and plan['searches'][0]['label'] == 'Search manually'
+    assert plan['search_query'] == query
+    prompt = plan['agent_search_prompt']
+    assert app['id'] in prompt and '2026-09-24' in prompt and 'Email 123' in prompt
+    assert 'get_application_context' in prompt and 'get_application_timeline' in prompt
+    assert 'signed-in mailbox' in prompt and 'record_posting_review' in prompt
+    assert 'Preserve application status, outcome and original application date' in prompt
     result = client.post(f"/api/applications/{app['id']}/posting-review", json=review())
     assert result.status_code == 200 and result.json()['method'] == 'MANUAL_BROWSER'
     current = client.get(f"/api/applications/{app['id']}").json()
@@ -63,7 +70,12 @@ def test_agent_routes_share_extraction_browser_configuration_permissions_and_rev
     assert created.status_code == 200
     app = created.json()
     assert app['company'] == 'Employer not disclosed' and app['intermediary'] == 'ISCOD'
-    assert call('get_posting_review', {'application_id': app['id']}).status_code == 200
+    agent_plan = call('get_posting_review', {'application_id': app['id']})
+    assert agent_plan.status_code == 200
+    assert agent_plan.json() == client.get(f"/api/applications/{app['id']}/posting-review").json()
+    assert len(agent_plan.json()['searches']) == 1
+    assert 'Employer: Employer not disclosed' in agent_plan.json()['agent_search_prompt']
+    assert 'ISCOD' in agent_plan.json()['search_query']
     assert call('record_posting_review', {'application_id': app['id'], 'review': review()}).status_code == 403
     client.put('/api/settings/agent/permissions', json={'read': True, 'create': True, 'edit': True, 'draft': False, 'tasks': False, 'interviews': False})
     assert call('record_posting_review', {'application_id': app['id'], 'review': review()}).status_code == 200

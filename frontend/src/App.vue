@@ -65,7 +65,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', route); events?.clo
         <AgentSettings v-else-if="page === 'settings'" />
         <Applications v-else />
       </main>
-      <footer>Application Tracker <span>0.10.1</span></footer>
+      <footer>Application Tracker <span>0.11.0</span></footer>
     </div>
   </div>
 </template>

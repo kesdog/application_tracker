@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { createInterview, deleteInterview, listApplicationInterviews, updateInterview, type Interview, type InterviewInput, type InterviewType } from './api'
 import { dateTimeText, interviewTypeText, relativeDateText } from './dateText'
+import EmailReference from './EmailReference.vue'
 
 const props = defineProps<{ applicationId: string }>()
 const emit = defineEmits<{ changed: [] }>()
@@ -98,7 +99,7 @@ onMounted(load)
       <div class="section-heading"><div><strong>{{ interviewTypeText(item.type) }} interview — {{ relativeDateText(item.scheduled_at) }}</strong><p class="meta">{{ dateTimeText(item.scheduled_at) }}<template v-if="item.duration"> · {{ item.duration }} minutes</template></p></div><div class="actions"><button type="button" :disabled="busy" @click="edit(item)">Edit</button><button type="button" :disabled="busy" :class="{ danger: deletingId === item.id }" @click="remove(item)">{{ deletingId === item.id ? 'Confirm delete' : 'Delete' }}</button></div></div>
       <p v-if="item.interviewer || item.location" class="meta"><template v-if="item.interviewer">With {{ item.interviewer }}</template><template v-if="item.interviewer && item.location"> · </template>{{ item.location }}</p>
       <p v-if="item.notes" class="content">{{ item.notes }}</p><p v-if="item.result" class="result"><strong>Result:</strong> {{ item.result }}</p>
-      <p v-if="item.meeting_url || item.email_reference"><a v-if="item.meeting_url" :href="item.meeting_url" target="_blank" rel="noopener noreferrer">Open meeting link ↗</a><span v-if="item.meeting_url && item.email_reference"> · </span><span v-if="item.email_reference">Email: {{ item.email_reference }}</span></p>
+      <p v-if="item.meeting_url || item.email_reference"><a v-if="item.meeting_url" :href="item.meeting_url" target="_blank" rel="noopener noreferrer">Open meeting link ↗</a><span v-if="item.meeting_url && item.email_reference"> · </span><EmailReference v-if="item.email_reference" :reference="item.email_reference" label="Open email ↗" /></p>
       <p><a :href="`/api/interviews/${encodeURIComponent(item.id)}/calendar.ics`" :download="`interview-${item.id}.ics`">Download calendar event</a></p>
     </article>
   </section>

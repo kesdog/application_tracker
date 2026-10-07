@@ -1,6 +1,6 @@
 # Application Tracker
 
-Version **0.10.1** adds a compact applications list with overdue follow-up shading, orange closed rows, calendar date filters, contract category filters, concise source links, and a dedicated Export screen.
+Version **0.11.0** simplifies posting discovery to **Search manually** and **Agent search**, with a portable search prompt and clickable email references throughout application details, interviews and email timeline entries.
 
 The left sidebar opens **Dashboard**, **Applications**, **Interviews**, **Tasks**, **Export**, and **Settings**. **Add application** is its own screen under Applications with a breadcrumb back to the list. Record a job title, company, date applied, and either a job URL or email reference. Choose a contact type (email or phone), a remote policy (full remote, hybrid, or in person), and a source from the job-board list. The source defaults to a recognized board from the posting URL—Indeed, LinkedIn, Free-Work, or HelloWork—or Other, and can be changed manually. A phone number is optional for email contact and required for phone contact. French national numbers and numbers with an international `+` prefix are accepted, validated, and stored in E.164 format. The same backend schema validates human API, agent REST, and MCP requests. Saved records appear in a compact table ordered by applied date, newest first. Every new application starts as `SUBMITTED` with no outcome. On narrow windows, scroll the table horizontally to see all columns. **System status** is visible only in Settings.
 
@@ -87,7 +87,7 @@ Relative data paths resolve against the project root, regardless of the terminal
 `GET /api/health` checks the live database connection and returns:
 
 ```json
-{"status":"ok","version":"0.10.1","database":"connected"}
+{"status":"ok","version":"0.11.0","database":"connected"}
 ```
 
 It returns HTTP 503 if the database query fails. The Settings page checks on load and when **Check again** is clicked, with a five-second timeout. It clears stale version/database values on a failed check. Continuous polling is not part of this release.
@@ -216,13 +216,13 @@ Agent REST operations use `POST /api/agent/tools/{operation}` with `Authorizatio
 
 Agent REST and MCP creation, updates, duplicate checks and search filters use `CDI`, `CDD`, `PART_TIME` or `APPRENTICESHIP_INTERNSHIP` for contract types. Recognized French/English wording (for example `Permanent`, `Temps partiel` and `Alternance / Stage`) normalizes to these values; unknown or ambiguous contract facts should be `null`. Existing stored wording remains readable and unchanged by unrelated edits. Agent dates must be ISO `YYYY-MM-DD`; inclusive search bounds require `date_from <= date_to`, and unknown filter fields are rejected. Use the verified application date or the original confirmation email date. Missing job URLs remain allowed when an email reference is available, and agents should leave unknown fields empty rather than add placeholders. `get_tracker_info.application_constraints` and the MCP input schemas advertise these rules.
 
-Compact agent results include `contract_type`, `has_overdue_followup` and `attention_state` (`NORMAL`, `OVERDUE`, `CLOSED`). Overdue means a pending/drafted follow-up in the dashboard queue; closed applications take precedence and have no actionable overdue follow-up. Raw posting/email reference values and nulls stay available as structured data even when the UI displays compact links or omits empty fields.
+Compact agent results include `contract_type`, `has_overdue_followup` and `attention_state` (`NORMAL`, `OVERDUE`, `CLOSED`). Overdue means a pending/drafted follow-up in the dashboard queue; closed applications take precedence and have no actionable overdue follow-up. Direct mailbox URLs open as saved; Gmail IDs, RFC Message-IDs and subject references open the message or a Gmail search in the signed-in mailbox. Raw posting/email reference values and nulls stay available as structured data even when the UI displays compact links or omits empty fields.
 
 When importing from an application confirmation email, supply its text or HTML as `confirmation_email` to `create_application`, or call `extract_confirmation_details` first. The shared extractor reads role/employer confirmation patterns from the body, returns the matched text for review, distinguishes ISCOD CV forwarding from an employment offer, and keeps the intermediary separate from the employer. Use the explicit application date when present, otherwise the original email date; never use the import date. An undisclosed ISCOD partner is saved as `Employer not disclosed`, with `intermediary=ISCOD`.
 
 LinkedIn links are reduced to a stable job-ID URL; Indeed tracking links with a `jk` key are reduced to a direct `viewjob` URL. ISCOD partner posting links and explicitly labeled employer vacancy links are also recovered. An Indeed company-confirmation URL remains confirmation evidence only. LinkedIn/Indeed confirmations without a posting URL can retain their source and email reference while the URL is researched.
 
-Posting verification has three steps in the application detail: direct URL inspection, ordinary rendered-browser fallback for inconclusive responses, then targeted searches and a recorded browser review. The same workflow is available over agent REST/MCP: `check_posting_status`, `get_posting_review`, and `record_posting_review`. The review requires the page URL, notes and (optionally) original check date, plus `same_position=true` for LIVE/CLOSED. Only a verified live match can replace the saved posting URL. Search snippets or missing results alone mean UNKNOWN. Reviews are audited, preserve previous links in the timeline, and never change application lifecycle/outcome.
+Posting verification has three steps in the application detail: direct URL inspection, ordinary rendered-browser fallback for inconclusive responses, then **Search manually** (one Google query using the job/position title plus employer) or **Agent search** (copy a prepared prompt for any connected agent), and a recorded browser review. The tracker stores job title and position title as one field, so it is included once in the query. When the employer is undisclosed, the intermediary is only a search clue. The agent prompt directs the agent to use the app data and relevant emails, preserve original email dates, inspect candidate pages in a browser, and save evidence using the agent REST/MCP tools. Copying a prompt does not launch or execute an agent. Clipboard failures expose the prompt for manual copying. The same manual query and prepared prompt are returned by `get_posting_review` over human REST, agent REST and MCP. The same review workflow is available over agent REST/MCP: `check_posting_status`, `get_posting_review`, and `record_posting_review`. The review requires the page URL, notes and (optionally) original check date, plus `same_position=true` for LIVE/CLOSED. Only a verified live match can replace the saved posting URL. Search snippets or missing results alone mean UNKNOWN. Reviews are audited, preserve previous links in the timeline, and never change application lifecycle/outcome.
 
 ## AI Agent Integration
 
@@ -283,7 +283,7 @@ Manual checks:
 3. Create and update an application through the agent REST path or MCP while the Applications page remains open. Confirm its table updates without a browser reload.
 4. Regenerate the token; confirm the previous token receives HTTP 401 or an MCP tool error immediately.
 5. Confirm an agent delete operation is unavailable, and the Settings page never shows the old token again.
-6. Expand **System status** and confirm backend version **0.10.1** and **SQLite · Connected**.
+6. Expand **System status** and confirm backend version **0.11.0** and **SQLite · Connected**.
 
 The 0.9 agent-token flow remains available but has not been activated in the user's database. The Python test client emits one upstream deprecation warning from Starlette; tests pass.
 

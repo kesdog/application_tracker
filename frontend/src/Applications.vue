@@ -6,6 +6,7 @@ import Pagination from './Pagination.vue'
 import { jobSourceLabel } from './applicationOptions'
 import ApplicationFilterForm from './ApplicationFilters.vue'
 import { appliedFilters, blankFilters } from './applicationFilters'
+import EmailReference from './EmailReference.vue'
 
 function selectedId() {
   const match = window.location.hash.match(/^#\/applications\/([^/]+)$/)
@@ -29,13 +30,6 @@ const visibleApplications = computed(() => applications.value.slice((page.value 
 function rowTone(application: Application) {
   if (application.status === 'CLOSED') return 'row-closed'
   return overdueIds.value.has(application.id) ? 'row-overdue' : ''
-}
-function emailReferenceUrl(reference: string | null) {
-  if (!reference) return null
-  try {
-    const url = new URL(reference)
-    return ['http:', 'https:'].includes(url.protocol) ? url.href : null
-  } catch { return null }
 }
 
 async function refresh() {
@@ -91,7 +85,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', navigate); window.r
             <td class="date-cell">{{ application.date_applied }}</td><td>{{ application.company }}<small v-if="application.intermediary" class="via">Via {{ application.intermediary }}</small></td><td><a :href="`#/applications/${application.id}`">{{ application.job_title }}</a></td>
             <td><span class="status-badge" :class="application.status.toLowerCase()">{{ application.status }}</span></td>
             <td><span v-if="application.outcome" class="status-badge" :class="application.outcome.toLowerCase()">{{ application.outcome }}</span><span v-else>—</span></td>
-            <td class="source-cell"><span>{{ jobSourceLabel(application.source) }}</span><a v-if="application.job_url" :href="application.job_url" target="_blank" rel="noopener noreferrer">posting</a><a v-if="emailReferenceUrl(application.email_reference)" :href="emailReferenceUrl(application.email_reference)!" target="_blank" rel="noopener noreferrer">email ref</a></td>
+            <td class="source-cell"><span>{{ jobSourceLabel(application.source) }}</span><a v-if="application.job_url" :href="application.job_url" target="_blank" rel="noopener noreferrer">posting</a><EmailReference v-if="application.email_reference" :reference="application.email_reference" /></td>
           </tr></tbody>
         </table>
       </div>
@@ -116,7 +110,7 @@ tr:last-child td { border-bottom: 0; }
 .interview { background: #f0e9fa; color: #654388; } .closed, .withdrawn, .ghosted { background: #edf0f3; color: #526174; }
 .successful { background: #eaf5ee; color: #216344; } .unsuccessful { background: #fcebed; color: #a12c32; } .job_cancelled { background: #fff1de; color: #844d15; }
 a { color: #24568b; text-underline-offset: 3px; }
-.source-cell a { display:block; margin-top:4px; }
+.source-cell :deep(a) { display:block; margin-top:4px; }
 .row-overdue { background:#fff1f1; box-shadow:inset 3px 0 #b33b42; }
 .row-closed { background:#fff1de; box-shadow:inset 3px 0 #b7791f; }
 .empty { padding: 32px 24px; margin: 0; color: #576678; font-size: 14px; line-height: 1.6; }
