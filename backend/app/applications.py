@@ -67,7 +67,7 @@ def list_applications(session: Session, filters: ApplicationFilters | None = Non
         searchable = (
             Application.job_title, Application.company, Application.intermediary, Application.location, Application.remote_policy,
             Application.contract_type, Application.source, Application.description, Application.requirements,
-            Application.job_url, Application.email_reference, Application.phone_number,
+            Application.job_url, Application.email_reference, Application.phone_number, Application.contact_email, Application.contact_name,
         )
         query = query.where(or_(*(func.lower(func.coalesce(column, "")).contains(term, autoescape=True) for column in searchable)))
     if filters.status:
@@ -142,6 +142,8 @@ def update_application(
 ) -> Application:
     application = get_application(session, application_id)
     changes = data.model_dump(exclude_unset=True)
+    if "deadline" in changes and changes["deadline"] is None:
+        changes["deadline_kind"] = None
     # Validate the whole prospective record before mutating any persisted fields.
     merged = {name: changes.get(name, getattr(application, name)) for name in ApplicationCreate.model_fields}
     try:

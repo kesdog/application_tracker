@@ -28,7 +28,7 @@ from app.dashboard_schemas import DashboardRead
 from app.document_schemas import DocumentRead
 from app.models import DocumentType
 from app.work_schemas import FollowUpCreate, FollowUpRead, FollowUpUpdate, NoteCreate, NoteRead, NoteUpdate, TaskCreate, TaskRead, TaskUpdate, WorkRead
-from app.schemas import ApplicationCreate, ApplicationFilters, ApplicationRead, ApplicationUpdate, PostingCheckRead
+from app.schemas import ApplicationCreate, ApplicationFilters, ApplicationRead, ApplicationUpdate, ContactValidation, PostingCheckRead
 from sqlalchemy.orm import Session as DatabaseSession
 
 
@@ -116,6 +116,10 @@ def create_app(
     def local_only(request: Request):
         if not settings.app_allow_remote_human and request.client and request.client.host not in {"127.0.0.1", "::1", "testclient"}:
             raise HTTPException(status_code=403, detail="Local access required")
+
+    @application.post("/api/contact-validation", response_model=ContactValidation, dependencies=[Depends(local_only)])
+    def validate_contact(data: ContactValidation):
+        return data
 
     def agent_token(authorization: str | None = Header(default=None)) -> str:
         token = authorization[7:] if authorization and authorization.startswith("Bearer ") else None

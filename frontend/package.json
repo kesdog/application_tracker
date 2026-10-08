@@ -4,19 +4,29 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.19.0",
-  "engines": { "node": ">=22.12.0" },
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "primevue:docs": "node scripts/primevue-docs.mjs",
+    "primevue:validate": "node scripts/primevue-docs.mjs validate-project"
   },
   "dependencies": {
+    "@primeuix/themes": "3.0.1",
+    "primeicons": "7.0.0",
+    "primevue": "5.0.2",
     "vue": "^3.5.43"
   },
   "devDependencies": {
+    "@primevue/mcp": "^5.0.2",
     "@types/node": "^26.6.1",
     "@vitejs/plugin-vue": "^6.0.9",
+    "@vue/test-utils": "^2.5.1",
+    "jsdom": "^30.1.2",
     "typescript": "^5.9.3",
     "vite": "^8.3.0",
     "vitest": "^5.0.1",

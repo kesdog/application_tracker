@@ -12,6 +12,10 @@ export interface ApplicationCreate {
   job_url: string | null
   email_reference: string | null
   phone_number: string | null
+  contact_email?: string | null
+  contact_name?: string | null
+  deadline?: string | null
+  deadline_kind?: 'APPLICATION_CLOSING' | 'FIRST_ROUND' | null
   contact_type?: 'EMAIL' | 'PHONE'
   location?: string | null
   remote_policy?: string | null
@@ -296,6 +300,10 @@ export function createApplication(data: ApplicationCreate): Promise<Application>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   })
+}
+
+export function validateContact(data: { contact_email: string | null; phone_number: string | null }): Promise<{ contact_email: string | null; phone_number: string | null }> {
+  return request('/api/contact-validation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
 }
 
 export async function getHealth(): Promise<Health> {

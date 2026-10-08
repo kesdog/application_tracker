@@ -1,10 +1,10 @@
 from datetime import date, datetime, timezone
 from typing import Annotated, Self
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, HttpUrl, TypeAdapter, field_validator, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, EmailStr, Field, HttpUrl, TypeAdapter, field_validator, model_validator
 import phonenumbers
 
-from app.models import ApplicationOutcome, ApplicationStatus, ContactType, PostingStatus
+from app.models import ApplicationOutcome, ApplicationStatus, ContactType, DeadlineKind, PostingStatus
 
 ShortText = Annotated[str, Field(min_length=1, max_length=300)]
 Reference = Annotated[str, Field(max_length=2048)]
@@ -20,6 +20,10 @@ class ApplicationCreate(BaseModel):
     job_url: Reference | None = None
     email_reference: Reference | None = None
     phone_number: str | None = Field(default=None, max_length=30)
+    contact_email: str | None = Field(default=None, max_length=320)
+    contact_name: ShortText | None = None
+    deadline: date | None = None
+    deadline_kind: DeadlineKind | None = None
     contact_type: ContactType = ContactType.EMAIL
     location: ShortText | None = None
     remote_policy: ShortText | None = None
@@ -35,7 +39,7 @@ class ApplicationCreate(BaseModel):
     def blank_override(cls, value):
         return None if value == "" else value
 
-    @field_validator("intermediary", "job_url", "email_reference", "location", "remote_policy", "contract_type", "source", "description", "requirements", mode="before")
+    @field_validator("intermediary", "job_url", "email_reference", "contact_email", "contact_name", "location", "remote_policy", "contract_type", "source", "description", "requirements", mode="before")
     @classmethod
     def empty_to_none(cls, value):
         return (value.strip() or None) if isinstance(value, str) else value
@@ -46,6 +50,11 @@ class ApplicationCreate(BaseModel):
         if value is not None:
             TypeAdapter(HttpUrl).validate_python(value)
         return value
+
+    @field_validator("contact_email")
+    @classmethod
+    def validate_contact_email(cls, value: str | None) -> str | None:
+        return str(TypeAdapter(EmailStr).validate_python(value)) if value is not None else None
 
     @field_validator("phone_number", mode="before")
     @classmethod
@@ -68,6 +77,8 @@ class ApplicationCreate(BaseModel):
             raise ValueError("Provide a job URL or an email reference")
         if self.contact_type == ContactType.PHONE and not self.phone_number:
             raise ValueError("Provide a phone number when contact type is phone")
+        if self.deadline_kind is not None and self.deadline is None:
+            raise ValueError("Provide a deadline date when its type is selected")
         return self
 
 
@@ -156,3 +167,19 @@ class ApplicationUpdate(ApplicationCreate):
             if name in self.model_fields_set and getattr(self, name) is None:
                 raise ValueError(f"{name} cannot be null")
         return self
+
+
+class ContactValidation(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    contact_email: str | None = Field(default=None, max_length=320)
+    phone_number: str | None = Field(default=None, max_length=30)
+
+    @field_validator("contact_email", mode="before")
+    @classmethod
+    def email(cls, value):
+        return ApplicationCreate.validate_contact_email(value.strip() or None) if isinstance(value, str) else ApplicationCreate.validate_contact_email(value)
+
+    @field_validator("phone_number", mode="before")
+    @classmethod
+    def phone(cls, value):
+        return ApplicationCreate.validate_phone_number(value)

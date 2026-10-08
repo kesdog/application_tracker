@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Select from 'primevue/select'
 import { computed, reactive, ref } from 'vue'
 import { applicationExportUrl, type ApplicationFilters } from './api'
 import ApplicationFilterForm from './ApplicationFilters.vue'
@@ -20,7 +21,7 @@ function clearFilters() { Object.assign(filters, blankFilters()); applyFilters()
     <p class="intro">Download CSV or Excel files. Filters from the applications list are carried over here.</p>
     <ApplicationFilterForm :filters="filters" @apply="applyFilters" @clear="clearFilters" />
     <div class="export-panel">
-      <label>Format<select v-model="format"><option value="csv">CSV</option><option value="xlsx">Excel (XLSX)</option></select></label>
+      <label>Format<Select class="at-form-control" aria-label="Format" v-model="format" :options="[{ value: 'csv', label: 'CSV' }, { value: 'xlsx', label: 'Excel (XLSX)' }]" option-label="label" option-value="value" option-disabled="disabled" /></label>
       <a :href="allUrl" :download="`applications.${format}`">Export all applications</a>
       <a v-if="hasFilters" class="primary" :href="filteredUrl" :download="`applications.${format}`">Export filtered applications</a>
     </div>
@@ -28,9 +29,11 @@ function clearFilters() { Object.assign(filters, blankFilters()); applyFilters()
 </template>
 
 <style scoped>
-.export-panel { display:flex; align-items:flex-end; flex-wrap:wrap; gap:14px; padding:20px; background:#fff; border:1px solid #dce2e9; border-radius:8px; }
+@layer legacy {
+.export-panel { display:flex; align-items:flex-end; flex-wrap:wrap; gap:14px; padding:20px; background:var(--at-surface); border:1px solid var(--at-border); border-radius:8px; }
 label { font-size:14px; font-weight:600; }
-select { display:block; margin-top:7px; padding:10px; border:1px solid #b9c4d2; border-radius:5px; background:#fff; color:#202c3d; font:inherit; }
-a { display:inline-flex; align-items:center; min-height:40px; padding:9px 13px; border:1px solid #b9c4d2; border-radius:6px; text-decoration:none; color:#24568b; font-size:14px; }
-.primary { background:#263e5c; border-color:#263e5c; color:#fff; }
+select { display:block; margin-top:7px; padding:10px; border:1px solid var(--at-border); border-radius:5px; background:var(--at-surface); color:var(--at-text); font:inherit; }
+a { display:inline-flex; align-items:center; min-height:40px; padding:9px 13px; border:1px solid var(--at-border); border-radius:6px; text-decoration:none; color:var(--at-link); font-size:14px; }
+.primary { background:var(--at-primary); border-color:var(--at-primary); color:var(--at-primary-contrast); }
+}
 </style>

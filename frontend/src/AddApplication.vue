@@ -1,165 +1,194 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
-import { createApplication, type Application, type DuplicateMatch } from './api'
-import { contactTypes, detectJobSource, jobSources, remotePolicies, type ContactType, type JobSource, type RemotePolicy } from './applicationOptions'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import Stepper from 'primevue/stepper'
+import StepList from 'primevue/steplist'
+import Step from 'primevue/step'
+import StepPanels from 'primevue/steppanels'
+import StepPanel from 'primevue/steppanel'
+import Select from 'primevue/select'
+import SelectButton from 'primevue/selectbutton'
+import Checkbox from 'primevue/checkbox'
+import Button from 'primevue/button'
+import SuggestionField from './components/shared/SuggestionField.vue'
+import DatePicker from './DatePicker.vue'
+import NumberField from './components/shared/NumberField.vue'
+import { createApplication, validateContact, type Application, type DuplicateMatch } from './api'
+import { contactTypes, detectJobSource, jobSources, remotePolicies, remotePolicyLabel, jobSourceLabel } from './applicationOptions'
+import { applicationPayload, blankApplicationDraft, blankWizardOptions, wizardErrors } from './applicationWizard'
+import { addressBookError, addressBookLoading, loadAddressBook, rememberApplication, savedContacts, suggestions } from './settings/applicationAddressBook'
 
-function today() {
-  const date = new Date()
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
-function blankForm() {
-  return {
-    job_title: '', company: '', intermediary: '', date_applied: today(), job_url: '', email_reference: '',
-    contact_type: 'EMAIL' as ContactType, phone_number: '', location: '',
-    remote_policy: '' as RemotePolicy | '', contract_type: '', source: 'OTHER' as JobSource,
-    description: '', requirements: '', followup_delay_days: '' as number | '', max_followup_suggestions: '' as number | '',
-  }
-}
-
-const form = reactive(blankForm())
+const form = reactive(blankApplicationDraft())
+const options = reactive(blankWizardOptions())
+const currentStep = ref('1')
+const steps = [{ value: '1', label: 'Role', icon: 'pi pi-briefcase' }, { value: '2', label: 'Posting', icon: 'pi pi-link' }, { value: '3', label: 'Contact & extras', icon: 'pi pi-address-book' }, { value: '4', label: 'Review', icon: 'pi pi-check-circle' }]
 const sourceIsAutomatic = ref(true)
-const requiresPostingUrl = computed(() => form.source === 'LINKEDIN' || form.source === 'INDEED')
 const saving = ref(false)
+const checking = ref(false)
 const error = ref('')
+const errors = reactive<Record<string, string>>({})
 const saved = ref<Application | null>(null)
 const duplicateWarnings = ref<DuplicateMatch[]>([])
-
-watch(() => form.job_url, url => {
-  if (sourceIsAutomatic.value) form.source = detectJobSource(url)
+const selectedContact = ref<string | null>(null)
+const wizardElement = ref<HTMLElement | null>(null)
+const showEmail = computed(() => options.contact && (form.contact_type === 'EMAIL' || options.extraContact))
+const showPhone = computed(() => options.contact && (form.contact_type === 'PHONE' || options.extraContact))
+const payload = computed(() => applicationPayload(form, options))
+const deadlineOptions = [{ value: 'APPLICATION_CLOSING', label: 'Applications close' }, { value: 'FIRST_ROUND', label: 'First-round selection' }]
+watch(() => form.job_url, url => { if (sourceIsAutomatic.value) form.source = detectJobSource(url) })
+watch(() => form.contact_type, () => { options.extraContact = false; delete errors.contact_email; delete errors.phone_number })
+watch(() => [options.contact, options.extraContact], () => {
+  if (!showEmail.value) { contactVersions.contact_email++; delete errors.contact_email }
+  if (!showPhone.value) { contactVersions.phone_number++; delete errors.phone_number }
 })
+onMounted(() => { void loadAddressBook() })
 
-function useDetectedSource() {
-  sourceIsAutomatic.value = true
-  form.source = detectJobSource(form.job_url)
+function useDetectedSource() { sourceIsAutomatic.value = true; form.source = detectJobSource(form.job_url) }
+function clearErrors() { for (const key of Object.keys(errors)) delete errors[key]; error.value = '' }
+async function goToStep(value: string) {
+  currentStep.value = value
+  clearErrors()
+  await nextTick()
+  wizardElement.value?.querySelector<HTMLElement>(`#wizard-step-${value}`)?.focus()
 }
-
+function useContact(id: string) {
+  const contact = savedContacts.value.find(item => item.value === id)?.record
+  if (!contact) return
+  form.contact_type = contact.contact_email ? contact.contact_type : 'PHONE'
+  form.contact_name = contact.contact_name || ''
+  form.contact_email = contact.contact_email || ''
+  form.phone_number = contact.phone_number || ''
+  // Run after the contact-type watcher so both saved methods remain visible.
+  void nextTick(() => { options.extraContact = Boolean(form.contact_email && form.phone_number) })
+}
+const contactVersions = { contact_email: 0, phone_number: 0 }
+async function checkContact(field: 'contact_email' | 'phone_number'): Promise<boolean> {
+  const version = ++contactVersions[field]
+  const raw = form[field]
+  if (!raw.trim()) { delete errors[field]; return true }
+  try {
+    await validateContact({ contact_email: field === 'contact_email' ? raw.trim() : null, phone_number: field === 'phone_number' ? raw.trim() : null })
+    if (version === contactVersions[field] && raw === form[field]) delete errors[field]
+    return true
+  } catch (reason) {
+    if (version === contactVersions[field] && raw === form[field]) errors[field] = reason instanceof Error ? reason.message : 'Unable to validate this contact.'
+    return false
+  }
+}
+async function validateStep(step: number): Promise<boolean> {
+  Object.assign(errors, wizardErrors(step, form, options))
+  if (step === 3 && options.contact) {
+    checking.value = true
+    try { await Promise.all([...(showEmail.value && form.contact_email.trim() ? [checkContact('contact_email')] : []), ...(showPhone.value && form.phone_number.trim() ? [checkContact('phone_number')] : [])]) }
+    finally { checking.value = false }
+  }
+  return !Object.values(errors).some(Boolean)
+}
+async function next() {
+  if (saving.value || checking.value) return
+  clearErrors()
+  if (await validateStep(Number(currentStep.value))) await goToStep(String(Number(currentStep.value) + 1))
+}
 function addAnother() {
-  Object.assign(form, blankForm())
+  Object.assign(form, blankApplicationDraft())
+  Object.assign(options, blankWizardOptions())
   sourceIsAutomatic.value = true
   saved.value = null
   duplicateWarnings.value = []
-  error.value = ''
+  selectedContact.value = null
+  void goToStep('1')
 }
-
 async function submit() {
-  if (saving.value) return
-  error.value = ''
-  if (!form.job_url.trim() && !form.email_reference.trim()) {
-    error.value = 'Provide a job URL or an email reference.'
-    return
-  }
-  if (requiresPostingUrl.value && form.job_url.trim() && detectJobSource(form.job_url) !== form.source) {
-    error.value = 'Use a direct posting URL on the selected LinkedIn or Indeed job board.'
-    return
-  }
-  if (form.contact_type === 'PHONE' && !form.phone_number.trim()) {
-    error.value = 'Provide a phone number when contact type is phone.'
-    return
+  if (saving.value || checking.value) return
+  if (currentStep.value !== '4') { await next(); return }
+  clearErrors()
+  for (const step of [1, 2, 3]) {
+    if (!await validateStep(step)) { currentStep.value = String(step); return }
   }
   saving.value = true
   try {
-    const application = await createApplication({
-      job_title: form.job_title.trim(), company: form.company.trim(), date_applied: form.date_applied,
-      intermediary: form.intermediary.trim() || null,
-      job_url: form.job_url.trim() || null, email_reference: form.email_reference.trim() || null,
-      contact_type: form.contact_type, phone_number: form.phone_number.trim() || null,
-      location: form.location.trim() || null, remote_policy: form.remote_policy || null,
-      contract_type: form.contract_type.trim() || null, source: form.source,
-      description: form.description.trim() || null, requirements: form.requirements.trim() || null,
-      followup_delay_days: form.followup_delay_days === '' ? null : form.followup_delay_days,
-      max_followup_suggestions: form.max_followup_suggestions === '' ? null : form.max_followup_suggestions,
-    })
+    const application = await createApplication(payload.value)
     saved.value = application
     duplicateWarnings.value = application.duplicate_warnings
+    rememberApplication(application)
   } catch (reason) {
     error.value = reason instanceof TypeError || (reason instanceof Error && reason.name === 'AbortError')
       ? 'Could not confirm the save. Check the applications list before retrying to avoid a duplicate. Your entries have been kept.'
       : reason instanceof Error ? reason.message : 'Unable to save the application.'
-  } finally {
-    saving.value = false
-  }
+  } finally { saving.value = false }
 }
 </script>
 
 <template>
   <section aria-labelledby="add-application-title">
     <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#/applications">Applications</a><span aria-hidden="true">/</span><span aria-current="page">Add application</span></nav>
-    <p class="eyebrow">Applications / New</p>
+    <p class="eyebrow">Your next opportunity</p>
     <h2 id="add-application-title">Add application</h2>
-    <p class="intro">Record a submitted role and keep its source and contact details together.</p>
-
-    <section v-if="saved" class="saved-panel" aria-live="polite">
-      <h3>Application saved</h3>
-      <p>{{ saved.job_title }} at {{ saved.company }} is in your tracker.</p>
-      <aside v-if="duplicateWarnings.length" class="duplicate-warning"><strong>Possible duplicate{{ duplicateWarnings.length === 1 ? '' : 's' }} found.</strong><p>Compare this record with:</p><ul><li v-for="match in duplicateWarnings" :key="match.id"><a :href="`#/applications/${match.id}`">{{ match.job_title }} at {{ match.company }}</a> · {{ match.date_applied }}</li></ul></aside>
-      <div class="actions"><a class="primary action-link" :href="`#/applications/${saved.id}`">View application</a><button type="button" @click="addAnother">Add another</button><a href="#/applications">All applications</a></div>
+    <p class="intro">A few small steps to capture the role, its source, and what comes next.</p>
+    <section v-if="saved" class="wizard-card saved-panel" aria-live="polite">
+      <i class="pi pi-check-circle success-icon" aria-hidden="true" /><h3>Application saved</h3><p>{{ saved.job_title }} at {{ saved.company }} is in your tracker.</p>
+      <aside v-if="duplicateWarnings.length" class="at-message warning"><strong>Possible duplicate{{ duplicateWarnings.length === 1 ? '' : 's' }} found.</strong><ul><li v-for="match in duplicateWarnings" :key="match.id"><a :href="`#/applications/${match.id}`">{{ match.job_title }} at {{ match.company }}</a> · {{ match.date_applied }}</li></ul></aside>
+      <div class="wizard-actions"><Button as="a" :href="`#/applications/${saved.id}`" label="View application" icon="pi pi-arrow-right" /><Button label="Add another" severity="secondary" outlined icon="pi pi-plus" @click="addAnother" /></div>
     </section>
-
-    <form v-else class="application-form" @submit.prevent="submit">
-      <fieldset :disabled="saving"><legend>Role details</legend>
-        <div class="form-grid">
-          <label>Job title <span>(required)</span><input v-model="form.job_title" name="job_title" required maxlength="300" autocomplete="off" /></label>
-          <label>Company <span>(required)</span><input v-model="form.company" name="company" required maxlength="300" autocomplete="organization" /></label>
-          <label>Via / intermediary<input v-model="form.intermediary" name="intermediary" maxlength="300" placeholder="School, recruiter or agency" /><small>Keep the actual employer in Company. If undisclosed, enter “Employer not disclosed”.</small></label>
-          <label>Date applied <span>(required)</span><input v-model="form.date_applied" name="date_applied" type="date" required /></label>
-          <label>Location<input v-model="form.location" name="location" maxlength="300" /></label>
-          <label>Remote policy<select v-model="form.remote_policy" name="remote_policy"><option value="">Select policy</option><option v-for="option in remotePolicies" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
-          <label>Contract type<input v-model="form.contract_type" name="contract_type" maxlength="300" /></label>
-        </div>
-      </fieldset>
-      <fieldset :disabled="saving"><legend>Posting and source</legend>
-        <p class="hint">Provide a job URL or an email reference. If the confirmation has no exact posting URL, keep its source and find the link later from the application’s posting review.</p>
-        <div class="form-grid">
-          <label>Job URL<input v-model="form.job_url" name="job_url" type="url" placeholder="https://…" maxlength="2048" /></label>
-          <label>Email reference<input v-model="form.email_reference" name="email_reference" placeholder="Message link, ID, or subject" maxlength="2048" /></label>
-          <label>Source<select v-model="form.source" name="source" @change="sourceIsAutomatic = false"><option v-for="option in jobSources" :key="option.value" :value="option.value">{{ option.label }}</option></select><small>{{ sourceIsAutomatic ? 'Detected from the job URL when possible.' : 'Selected manually.' }} <button v-if="!sourceIsAutomatic" class="inline-action" type="button" @click="useDetectedSource">Use detected source</button></small></label>
-        </div>
-      </fieldset>
-      <fieldset :disabled="saving"><legend>Contact</legend>
-        <div class="form-grid">
-          <label>Contact type<select v-model="form.contact_type" name="contact_type"><option v-for="option in contactTypes" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
-          <label>Phone number <span>{{ form.contact_type === 'PHONE' ? '(required for phone contact)' : '(optional)' }}</span><input v-model="form.phone_number" name="phone_number" type="tel" autocomplete="tel" placeholder="+33 6 12 34 56 78" :required="form.contact_type === 'PHONE'" /><small>French number or +country code for other countries.</small></label>
-        </div>
-      </fieldset>
-      <fieldset :disabled="saving"><legend>Follow-up plan</legend>
-        <p class="hint">A reminder is scheduled seven days after applying unless you set a different delay. The date can be adjusted later.</p>
-        <div class="form-grid">
-          <label>Follow-up delay (days)<input v-model.number="form.followup_delay_days" type="number" min="0" max="3650" step="1" placeholder="Global default: 7" /></label>
-          <label>Automatic reminder limit<input v-model.number="form.max_followup_suggestions" type="number" min="0" max="100" step="1" placeholder="Global default: 2" /></label>
-        </div>
-      </fieldset>
-      <fieldset :disabled="saving"><legend>Notes about the role</legend>
-        <div class="form-grid"><label>Description<textarea v-model="form.description" name="description" rows="4"></textarea></label><label>Requirements<textarea v-model="form.requirements" name="requirements" rows="4"></textarea></label></div>
-      </fieldset>
-      <p v-if="error" class="error" role="alert">{{ error }}</p>
-      <div class="actions"><button class="primary" type="submit" :disabled="saving">{{ saving ? 'Saving…' : 'Save application' }}</button><a href="#/applications">Cancel</a></div>
+    <form v-else ref="wizardElement" class="wizard-card" novalidate aria-label="Add application wizard" @submit.prevent="submit">
+      <p v-if="addressBookError" class="at-message warning" role="status">{{ addressBookError }} <Button type="button" label="Retry suggestions" text :disabled="addressBookLoading" @click="loadAddressBook" /></p>
+      <Stepper v-model:value="currentStep" linear>
+        <StepList><Step v-for="step in steps" :key="step.value" :value="step.value"><i :class="step.icon" aria-hidden="true" /><span>{{ step.label }}</span></Step></StepList>
+        <StepPanels>
+          <StepPanel value="1">
+            <h3 id="wizard-step-1" class="step-heading" tabindex="-1">Which role did you apply for?</h3><p class="step-intro">Start with the essentials. Type to find values from your application address book, or enter something new.</p>
+            <div class="form-grid">
+              <SuggestionField v-model="form.job_title" label="Job title" :suggestions="suggestions.job_title" :error="errors.job_title" :disabled="saving || checking" required />
+              <SuggestionField v-model="form.company" label="Company" :suggestions="suggestions.company" :error="errors.company" :disabled="saving || checking" required />
+              <div><DatePicker v-model="form.date_applied" label="Date applied" required :disabled="saving || checking" /><Select v-if="suggestions.date_applied.length" :model-value="null" :options="suggestions.date_applied" filter aria-label="Reuse an application date" placeholder="Previous dates…" :disabled="saving || checking" class="at-form-control" @update:model-value="form.date_applied = $event" /><small v-if="errors.date_applied" class="field-error" role="alert">{{ errors.date_applied }}</small></div>
+              <SuggestionField v-model="form.location" label="Location" :suggestions="suggestions.location" :disabled="saving || checking" placeholder="City, region, or remote" />
+            </div>
+            <div class="remote-field"><label id="remote-policy-label">Remote policy <span>(optional)</span></label><SelectButton v-model="form.remote_policy" :options="remotePolicies" option-label="label" option-value="value" aria-labelledby="remote-policy-label" :disabled="saving || checking" /><small>{{ form.remote_policy ? remotePolicyLabel(form.remote_policy) : 'Not specified' }} · Click the selected option again to clear it.</small></div>
+            <details class="optional-panel"><summary><i class="pi pi-sliders-h" aria-hidden="true" /> More role details</summary><div class="optional-content"><SuggestionField v-model="form.contract_type" label="Contract type" :suggestions="suggestions.contract_type" :disabled="saving || checking" /><label class="toggle"><Checkbox v-model="options.intermediary" binary input-id="has-intermediary" :disabled="saving || checking" /><span>A recruiter, school, or agency forwarded this application</span></label><SuggestionField v-if="options.intermediary" v-model="form.intermediary" label="Via / intermediary" :suggestions="suggestions.intermediary" :disabled="saving || checking" hint="Keep the actual employer in Company. Use Employer not disclosed if it is unknown." /></div></details>
+          </StepPanel>
+          <StepPanel value="2">
+            <h3 id="wizard-step-2" class="step-heading" tabindex="-1">Keep the posting and its evidence</h3><p class="step-intro">Add a job URL, an email reference, or both so you can find this opportunity again.</p>
+            <div class="form-grid"><SuggestionField v-model="form.job_url" label="Posting URL" :suggestions="suggestions.job_url" :error="errors.job_url" :disabled="saving || checking" :maxlength="2048" type="url" placeholder="https://…" /><SuggestionField v-model="form.email_reference" label="Application email reference" :suggestions="suggestions.email_reference" :disabled="saving || checking" :maxlength="2048" hint="A message link, ID, or subject. This is different from the recruiter's email address." /></div>
+            <div class="source-field"><label for="wizard-source">Source</label><Select v-model="form.source" input-id="wizard-source" :options="jobSources" option-label="label" option-value="value" :disabled="saving || checking" class="at-form-control" @change="sourceIsAutomatic = false" /><small>{{ sourceIsAutomatic ? 'Detected from the posting URL when possible.' : 'Selected manually.' }}</small><Button v-if="!sourceIsAutomatic" type="button" label="Use detected source" severity="secondary" text size="small" @click="useDetectedSource" /></div>
+            <label class="toggle"><Checkbox v-model="options.deadline" binary input-id="has-deadline" :disabled="saving || checking" /><span>This posting has a deadline or first-round selection date</span></label>
+            <div v-if="options.deadline" class="form-grid optional-content"><div><DatePicker v-model="form.deadline" label="Deadline" required :disabled="saving || checking" /><Select v-if="suggestions.deadline.length" :model-value="null" :options="suggestions.deadline" filter aria-label="Reuse a deadline date" placeholder="Previous deadlines…" :disabled="saving || checking" class="at-form-control" @update:model-value="form.deadline = $event" /><small v-if="errors.deadline" class="field-error" role="alert">{{ errors.deadline }}</small></div><div><label for="deadline-kind">What happens on this date?</label><Select v-model="form.deadline_kind" input-id="deadline-kind" :options="deadlineOptions" option-label="label" option-value="value" :disabled="saving || checking" class="at-form-control" /></div></div>
+          </StepPanel>
+          <StepPanel value="3">
+            <h3 id="wizard-step-3" class="step-heading" tabindex="-1">Add only the details you need</h3><p class="step-intro">Contact information, notes, and reminder overrides are optional.</p>
+            <label class="toggle"><Checkbox v-model="options.contact" binary input-id="has-contact" :disabled="saving || checking" /><span>I have a contact for this application</span></label>
+            <div v-if="options.contact" class="optional-content contact-card">
+              <div v-if="savedContacts.length"><label for="saved-contact">Reuse a contact from your address book</label><Select v-model="selectedContact" input-id="saved-contact" :options="savedContacts" option-label="label" option-value="value" filter show-clear placeholder="Choose a saved contact…" class="at-form-control" :disabled="saving || checking" @update:model-value="useContact" /><small>Contact details are reused only when you select them.</small></div>
+              <SuggestionField v-model="form.contact_name" label="Contact name" :suggestions="suggestions.contact_name" :disabled="saving || checking" />
+              <div><label id="contact-method-label">Preferred contact method</label><SelectButton v-model="form.contact_type" :options="contactTypes" option-label="label" option-value="value" :allow-empty="false" aria-labelledby="contact-method-label" :disabled="saving || checking" /></div>
+              <div class="form-grid"><SuggestionField v-if="showEmail" v-model="form.contact_email" label="Contact email" :suggestions="suggestions.contact_email" :maxlength="320" type="email" placeholder="name@company.com" :required="form.contact_type === 'EMAIL'" :error="errors.contact_email" :disabled="saving || checking" @blur="checkContact('contact_email')" /><SuggestionField v-if="showPhone" v-model="form.phone_number" label="Phone number" :suggestions="suggestions.phone_number" :maxlength="30" type="tel" placeholder="+33 6 12 34 56 78" :required="form.contact_type === 'PHONE'" :error="errors.phone_number" :disabled="saving || checking" hint="French national numbers or an international +country code. Saved in international format." @blur="checkContact('phone_number')" /></div>
+              <label class="toggle"><Checkbox v-model="options.extraContact" binary input-id="extra-contact" :disabled="saving || checking" /><span>Also add {{ form.contact_type === 'EMAIL' ? 'a phone number' : 'an email address' }}</span></label>
+            </div>
+            <details class="optional-panel"><summary><i class="pi pi-file-edit" aria-hidden="true" /> Notes about the role</summary><div class="optional-content"><label class="toggle"><Checkbox v-model="options.notes" binary input-id="has-notes" :disabled="saving || checking" /><span>Include description and requirements</span></label><div v-if="options.notes" class="form-grid"><SuggestionField v-model="form.description" label="Description" :suggestions="suggestions.description" :maxlength="50000" multiline :disabled="saving || checking" /><SuggestionField v-model="form.requirements" label="Requirements" :suggestions="suggestions.requirements" :maxlength="50000" multiline :disabled="saving || checking" /></div></div></details>
+            <details class="optional-panel"><summary><i class="pi pi-bell" aria-hidden="true" /> Follow-up preferences</summary><div class="optional-content"><p class="step-intro">Leave these blank to use your global follow-up preferences.</p><label class="toggle"><Checkbox v-model="options.followups" binary input-id="custom-followups" :disabled="saving || checking" /><span>Customize reminders for this application</span></label><div v-if="options.followups" class="form-grid"><div><NumberField v-model="form.followup_delay_days" label="Follow-up delay (days)" :disabled="saving || checking" :min="0" :max="3650" placeholder="Global default" /><Select v-if="suggestions.followup_delay_days.length" :model-value="null" :options="suggestions.followup_delay_days" :disabled="saving || checking" aria-label="Reuse a follow-up delay" placeholder="Previous values…" class="at-form-control" @update:model-value="form.followup_delay_days = Number($event)" /><small v-if="errors.followup_delay_days" class="field-error">{{ errors.followup_delay_days }}</small></div><div><NumberField v-model="form.max_followup_suggestions" label="Automatic reminder limit" :disabled="saving || checking" :min="0" :max="100" placeholder="Global default" /><Select v-if="suggestions.max_followup_suggestions.length" :model-value="null" :options="suggestions.max_followup_suggestions" :disabled="saving || checking" aria-label="Reuse a reminder limit" placeholder="Previous values…" class="at-form-control" @update:model-value="form.max_followup_suggestions = Number($event)" /><small v-if="errors.max_followup_suggestions" class="field-error">{{ errors.max_followup_suggestions }}</small></div></div></div></details>
+          </StepPanel>
+          <StepPanel value="4">
+            <h3 id="wizard-step-4" class="step-heading" tabindex="-1">Ready to add this opportunity?</h3><p class="step-intro">Check the details below. You can go back to any screen before saving.</p>
+            <div class="review-card"><div class="review-heading"><i class="pi pi-briefcase" aria-hidden="true" /><div><h3>{{ form.job_title }}</h3><p>{{ form.company }}<template v-if="form.location"> · {{ form.location }}</template></p></div><Button type="button" label="Edit role" severity="secondary" text @click="goToStep('1')" /></div><dl><div><dt>Applied</dt><dd>{{ form.date_applied }}</dd></div><div v-if="form.remote_policy"><dt>Remote policy</dt><dd>{{ remotePolicyLabel(form.remote_policy) }}</dd></div><div v-if="payload.contract_type"><dt>Contract</dt><dd>{{ payload.contract_type }}</dd></div><div v-if="payload.intermediary"><dt>Via</dt><dd>{{ payload.intermediary }}</dd></div></dl></div>
+            <div class="review-card"><div class="review-heading"><h3>Posting</h3><Button type="button" label="Edit posting" severity="secondary" text @click="goToStep('2')" /></div><dl><div><dt>Source</dt><dd>{{ jobSourceLabel(form.source) }}</dd></div><div v-if="payload.job_url"><dt>Posting URL</dt><dd>{{ payload.job_url }}</dd></div><div v-if="payload.email_reference"><dt>Email reference</dt><dd>{{ payload.email_reference }}</dd></div><div v-if="payload.deadline"><dt>{{ payload.deadline_kind === 'FIRST_ROUND' ? 'First-round selection' : 'Applications close' }}</dt><dd>{{ payload.deadline }}</dd></div></dl></div>
+            <div class="review-card"><div class="review-heading"><h3>Contact & extras</h3><Button type="button" label="Edit extras" severity="secondary" text @click="goToStep('3')" /></div><p v-if="!options.contact">No contact added.</p><dl v-else><div><dt>Preferred method</dt><dd>{{ form.contact_type === 'EMAIL' ? 'Email' : 'Phone' }}</dd></div><div v-if="payload.contact_name"><dt>Name</dt><dd>{{ payload.contact_name }}</dd></div><div v-if="payload.contact_email"><dt>Email</dt><dd>{{ payload.contact_email }}</dd></div><div v-if="payload.phone_number"><dt>Phone</dt><dd>{{ payload.phone_number }}</dd></div></dl><p v-if="payload.description || payload.requirements">Role notes included.</p><p>{{ options.followups ? 'Custom' : 'Default' }} follow-up preferences.</p></div>
+          </StepPanel>
+        </StepPanels>
+      </Stepper>
+      <p v-if="error" class="at-message error" role="alert">{{ error }}</p>
+      <div class="wizard-actions"><Button v-if="currentStep !== '1'" type="button" label="Back" icon="pi pi-arrow-left" severity="secondary" outlined :disabled="saving || checking" @click="goToStep(String(Number(currentStep) - 1))" /><a href="#/applications">Cancel</a><span class="step-count" aria-live="polite">Step {{ currentStep }} of 4</span><Button type="submit" :label="saving ? 'Saving…' : checking ? 'Checking contact…' : currentStep === '4' ? 'Save application' : 'Continue'" :icon="currentStep === '4' ? 'pi pi-check' : 'pi pi-arrow-right'" icon-pos="right" :disabled="saving || checking" /></div>
     </form>
   </section>
 </template>
-
 <style scoped>
-.breadcrumbs { display:flex; align-items:center; gap:9px; color:#627084; font-size:13px; margin-bottom:28px; }
-.breadcrumbs a, .actions a { color:#24568b; text-underline-offset:3px; }
-.application-form, .saved-panel { background:#fff; border:1px solid #dce2e9; border-radius:10px; padding:28px; max-width:900px; }
-fieldset { border:0; border-bottom:1px solid #e5e9ee; padding:0 0 25px; margin:0 0 25px; min-width:0; }
-fieldset:last-of-type { border-bottom:0; margin-bottom:0; }
-legend { font-size:17px; font-weight:650; margin-bottom:17px; }
-.form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
-label { display:block; font-size:14px; font-weight:600; }
-label span, small, .hint { color:#627084; font-size:12px; font-weight:400; }
-small { display:block; line-height:1.5; margin-top:5px; }
-.hint { font-size:13px; margin:0 0 15px; }
-input, select, textarea { display:block; width:100%; min-width:0; border:1px solid #b9c4d2; border-radius:6px; padding:10px; margin-top:7px; font:inherit; font-weight:400; color:#202c3d; background:#fff; }
-textarea { resize:vertical; }
-input:focus-visible, select:focus-visible, textarea:focus-visible { outline:3px solid #527ba8; outline-offset:2px; }
-.actions { display:flex; align-items:center; flex-wrap:wrap; gap:15px; margin-top:12px; }
-.primary { background:#263e5c; border-color:#263e5c; color:#fff; }
-.primary:hover:enabled { background:#192d45; }
-.action-link { display:inline-flex; align-items:center; min-height:40px; padding:9px 13px; border-radius:6px; text-decoration:none; }
-.actions .action-link { color:#fff; }
-.inline-action { border:0; padding:0; font-size:12px; color:#24568b; text-decoration:underline; }
-.duplicate-warning { background:#fff1de; border:1px solid #f0d4ae; border-radius:6px; padding:15px; margin:18px 0; font-size:14px; }
-.duplicate-warning p { margin:6px 0; }.duplicate-warning ul { margin:8px 0 0; padding-left:20px; }
-@media (max-width:650px) { .form-grid { grid-template-columns:1fr; }.application-form,.saved-panel { padding:20px; } }
+.breadcrumbs { display:flex; align-items:center; gap:9px; color:var(--at-text-muted); font-size:13px; margin-bottom:24px; }
+.wizard-card { max-width:960px; background:var(--at-surface); border:1px solid var(--at-border); border-radius:14px; padding:24px; }
+.step-heading { margin:8px 0 10px; font-size:22px; }.step-heading:focus { outline:none; }.step-intro { color:var(--at-text-muted); font-size:14px; line-height:1.6; margin:0 0 24px; }
+.form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }.form-grid > div { min-width:0; }
+label { display:block; font-size:14px; font-weight:600; }label span:not(.p-checkbox) { font-weight:400; }small { display:block; font-size:12px; color:var(--at-text-muted); line-height:1.5; margin:6px 0; }.field-error { color:var(--at-unsuccessful); }
+.remote-field { margin:24px 0; }.remote-field label { margin-bottom:10px; }.remote-field label span { color:var(--at-text-muted); font-size:12px; }.remote-field :deep(.p-selectbutton) { display:inline-flex; flex-wrap:wrap; }
+.optional-panel { border:1px solid var(--at-border); background:var(--at-background); border-radius:8px; margin:20px 0; }summary { cursor:pointer; padding:16px; font-size:14px; font-weight:600; }summary i { margin-right:8px; }.optional-content { padding:16px; }.optional-content > .suggestion-field, .contact-card > div { margin-bottom:18px; }
+.toggle { display:flex; align-items:center; gap:10px; font-size:14px; margin:20px 0; cursor:pointer; }.source-field { max-width:390px; margin:24px 0; }.contact-card { border:1px solid var(--at-border); border-radius:8px; }
+.wizard-actions { display:flex; align-items:center; flex-wrap:wrap; gap:14px; padding-top:22px; margin-top:14px; border-top:1px solid var(--at-border); }.step-count { margin-left:auto; color:var(--at-text-muted); font-size:12px; }
+.review-card { padding:18px; border:1px solid var(--at-border); border-radius:8px; margin:14px 0; }.review-heading { display:flex; align-items:center; gap:12px; }.review-heading .p-button { margin-left:auto; }.review-heading i { color:var(--at-primary); font-size:24px; }.review-card p { color:var(--at-text-muted); font-size:14px; }dd { overflow-wrap:anywhere; }.success-icon { color:var(--at-successful); font-size:32px; margin-bottom:16px; }
+:deep(.p-step-title) { display:flex; gap:7px; align-items:center; }:deep(.p-step-title i) { font-size:14px; }
+@media (max-width:650px) { .wizard-card { padding:16px; }.form-grid { grid-template-columns:1fr; }:deep(.p-step-title) { font-size:11px; flex-direction:column; }:deep(.p-step-number) { width:26px; height:26px; min-width:26px; font-size:12px; }:deep(.p-step-header) { gap:5px; padding:8px 3px; }.wizard-actions { gap:10px; }.step-count { width:100%; order:-1; margin:0; }.review-heading { flex-wrap:wrap; } }
 </style>

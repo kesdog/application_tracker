@@ -1,8 +1,12 @@
 <script setup lang="ts">
+import Button from 'primevue/button'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getDashboard, type DashboardData } from './api'
 import { dateTimeText, relativeDateText } from './dateText'
 import Pagination from './Pagination.vue'
+import AppTag from './components/shared/AppTag.vue'
+import { urgencyMeta } from './presentation/taskPresentation'
+import { actorLabels } from './presentation/timelinePresentation'
 
 const dashboard = ref<DashboardData | null>(null)
 const loading = ref(false)
@@ -22,14 +26,7 @@ const followups = computed(() => dashboard.value
   : [])
 const visibleFollowups = computed(() => followups.value.slice((followupPage.value - 1) * followupPageSize, followupPage.value * followupPageSize))
 
-function urgency(dueAt: string) {
-  const due = new Date(dueAt)
-  const now = new Date()
-  if (due.getTime() < now.getTime()) return 'overdue'
-  if (due.toDateString() === now.toDateString()) return 'today'
-  if (due.getTime() - now.getTime() <= 3 * 24 * 60 * 60 * 1000) return 'soon'
-  return 'scheduled'
-}
+const urgency = (dueAt: string) => urgencyMeta(dueAt).tone
 
 async function load() {
   loading.value = true; error.value = ''
@@ -45,8 +42,8 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
 
 <template>
   <section aria-labelledby="dashboard-title">
-    <div class="page-heading"><div><p class="eyebrow">Your workspace</p><h2 id="dashboard-title">Dashboard</h2></div><button type="button" :disabled="loading" @click="load">{{ loading ? 'Loading…' : 'Refresh' }}</button></div>
-    <p class="intro">See what needs attention next.</p><p v-if="error" class="error" role="alert">{{ error }}</p>
+    <div class="page-heading"><div><p class="eyebrow">Your workspace</p><h2 id="dashboard-title">Dashboard</h2></div><Button type="button" :disabled="loading" @click="load">{{ loading ? 'Loading…' : 'Refresh' }}</Button></div>
+    <p class="intro">See what needs attention next.</p><p v-if="error" class="at-message error" role="alert">{{ error }}</p>
     <p v-if="loading && !dashboard" role="status">Loading dashboard…</p>
     <template v-if="dashboard">
       <div class="metrics"><article v-for="card in cards" :key="card.label" class="metric" :class="card.tone"><strong>{{ card.value }}</strong><span>{{ card.label }}</span></article></div>
@@ -57,6 +54,8 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
 </template>
 
 <style scoped>
-.page-heading, .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }.metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }.metric { display: flex; flex-direction: column; gap: 3px; background: #fff; border: 1px solid #dce2e9; border-radius: 8px; padding: 14px; }.metric strong { font-size: 23px; color: #263e5c; }.metric span, .section-heading span { color: #576678; font-size: 12px; }.metric.urgent { border-top: 3px solid #b33b42; }.metric.urgent strong { color: #9d2930; }.metric.interview { border-top: 3px solid #6b4c91; }.panel { background: #fff; border: 1px solid #dce2e9; border-radius: 8px; padding: 18px; margin-top: 18px; }.section-heading p { color:#627084; font-size:12px; margin:4px 0 0; }.table-scroll { overflow-x:auto; } table { width:100%; border-collapse:collapse; text-align:left; font-size:13px; } th { background:#f3f6f8; color:#526174; font-size:11px; text-transform:uppercase; letter-spacing:.03em; } th, td { padding:10px 12px; border-bottom:1px solid #e5e9ee; } td small { display:block; color:#627084; font-size:11px; margin-top:3px; white-space:nowrap; } .urgency-overdue { background:#fff1f1; box-shadow:inset 3px 0 #b33b42; }.urgency-today { background:#fff8e8; box-shadow:inset 3px 0 #b7791f; }.urgency-soon { background:#f3f8ff; box-shadow:inset 3px 0 #3e73a8; }.urgency-badge { display:inline-block; border-radius:999px; padding:3px 7px; font-size:10px; font-weight:700; text-transform:uppercase; }.urgency-badge.overdue { color:#972b32; background:#fcebed; }.urgency-badge.today { color:#855410; background:#fff1d4; }.urgency-badge.soon { color:#235888; background:#eaf2fb; }.urgency-badge.scheduled { color:#526174; background:#edf0f3; }.items { list-style:none; padding:0; margin:12px 0 0; }.items li { padding:10px 0; border-top:1px solid #e5e9ee; }.items p, .items small { color:#627084; font-size:12px; margin:4px 0 0; }.activity li { display:block; }.empty { color:#576678; font-size:14px; margin:18px 0 0; }a { color:#24568b; text-underline-offset:3px; }
+@layer legacy {
+.page-heading, .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }.metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }.metric { display: flex; flex-direction: column; gap: 3px; background: var(--at-surface); border: 1px solid var(--at-border); border-radius: 8px; padding: 14px; }.metric strong { font-size: 23px; color: var(--at-primary); }.metric span, .section-heading span { color: var(--at-text-muted); font-size: 12px; }.metric.urgent { border-top: 3px solid var(--at-overdue); }.metric.urgent strong { color: var(--at-overdue); }.metric.interview { border-top: 3px solid var(--at-interview); }.panel { background: var(--at-surface); border: 1px solid var(--at-border); border-radius: 8px; padding: 18px; margin-top: 18px; }.section-heading p { color:var(--at-text-muted); font-size:12px; margin:4px 0 0; }.table-scroll { overflow-x:auto; } table { width:100%; border-collapse:collapse; text-align:left; font-size:13px; } th { background:var(--at-surface-muted); color:var(--at-text-muted); font-size:11px; text-transform:uppercase; letter-spacing:.03em; } th, td { padding:10px 12px; border-bottom:1px solid var(--at-border); } td small { display:block; color:var(--at-text-muted); font-size:11px; margin-top:3px; white-space:nowrap; } .urgency-overdue { background:color-mix(in srgb, var(--at-overdue) 10%, var(--at-surface)); box-shadow:inset 3px 0 var(--at-overdue); }.urgency-today { background:color-mix(in srgb, var(--at-due-soon) 10%, var(--at-surface)); box-shadow:inset 3px 0 var(--at-due-soon); }.urgency-soon { background:color-mix(in srgb, var(--at-submitted) 10%, var(--at-surface)); box-shadow:inset 3px 0 var(--at-submitted); }.urgency-badge { display:inline-block; border-radius:999px; padding:3px 7px; font-size:10px; font-weight:700; text-transform:uppercase; }.urgency-badge.overdue { color:var(--at-overdue); background:color-mix(in srgb, var(--at-unsuccessful) 10%, var(--at-surface)); }.urgency-badge.today { color:var(--at-due-soon); background:color-mix(in srgb, var(--at-due-soon) 10%, var(--at-surface)); }.urgency-badge.soon { color:var(--at-submitted); background:color-mix(in srgb, var(--at-submitted) 10%, var(--at-surface)); }.urgency-badge.scheduled { color:var(--at-text-muted); background:var(--at-surface-muted); }.items { list-style:none; padding:0; margin:12px 0 0; }.items li { padding:10px 0; border-top:1px solid var(--at-border); }.items p, .items small { color:var(--at-text-muted); font-size:12px; margin:4px 0 0; }.activity li { display:block; }.empty { color:var(--at-text-muted); font-size:14px; margin:18px 0 0; }a { color:var(--at-link); text-underline-offset:3px; }
 @media (max-width:800px) { .metrics { grid-template-columns:repeat(2, minmax(0, 1fr)); } }@media (max-width:480px) { .metrics { grid-template-columns:1fr; }.panel { padding:14px; } }
+}
 </style>

@@ -1,7 +1,14 @@
 <script setup lang="ts">
+import Select from 'primevue/select'
+import Button from 'primevue/button'
+import Textarea from 'primevue/textarea'
+import DateTimeField from './components/shared/DateTimeField.vue'
+import InputText from 'primevue/inputtext'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { createFollowUp, createNote, createTask, draftEmailFollowup, getWork, updateFollowUp, updateNote, updateTask, type ApplicationWork, type FollowUp, type FollowUpChannel, type Note, type NoteType, type Task } from './api'
 import Pagination from './Pagination.vue'
+import AppTag from './components/shared/AppTag.vue'
+import { followupStatusMeta, taskStatusMeta, urgencyMeta } from './presentation/taskPresentation'
 
 const props = defineProps<{ applicationId: string; phoneNumber: string | null }>()
 const emit = defineEmits<{ changed: [] }>()
@@ -113,66 +120,66 @@ onMounted(load)
 
 <template>
   <div class="work" :aria-busy="busy">
-    <div class="work-heading"><h3>Application work</h3><button type="button" :disabled="busy" @click="load">{{ busy ? 'Working…' : 'Refresh work' }}</button></div>
-    <p v-if="error" class="error" role="alert">{{ error }}</p>
-    <p v-if="notice" class="notice" role="status">{{ notice }}</p>
+    <div class="work-heading"><h3>Application work</h3><Button type="button" :disabled="busy" @click="load">{{ busy ? 'Working…' : 'Refresh work' }}</Button></div>
+    <p v-if="error" class="at-message error" role="alert">{{ error }}</p>
+    <p v-if="notice" class="at-message success" role="status">{{ notice }}</p>
     <p v-if="!work && busy" role="status">Loading notes, tasks, and follow-ups…</p>
     <template v-if="work">
-      <div class="actions"><button v-if="!work.notes.length && !noteOpen" type="button" :disabled="busy" @click="editNote()">Add note</button><button v-if="!work.tasks.length && !taskOpen" type="button" :disabled="busy" @click="taskOpen = true">Add task</button><button v-if="!work.followups.length && !followupOpen" type="button" :disabled="busy" @click="followupOpen = true">Add follow-up</button></div>
+      <div class="actions"><Button v-if="!work.notes.length && !noteOpen" type="button" :disabled="busy" @click="editNote()">Add note</Button><Button v-if="!work.tasks.length && !taskOpen" type="button" :disabled="busy" @click="taskOpen = true">Add task</Button><Button v-if="!work.followups.length && !followupOpen" type="button" :disabled="busy" @click="followupOpen = true">Add follow-up</Button></div>
       <section v-if="work.notes.length || noteOpen" class="panel" aria-labelledby="notes-title">
-        <div class="section-heading"><h3 id="notes-title">Notes <span v-if="work.notes.length">{{ work.notes.length }}</span></h3><button v-if="!noteOpen" type="button" :disabled="busy" @click="editNote()">Add note</button></div>
+        <div class="section-heading"><h3 id="notes-title">Notes <span v-if="work.notes.length">{{ work.notes.length }}</span></h3><Button v-if="!noteOpen" type="button" :disabled="busy" @click="editNote()">Add note</Button></div>
         <form v-if="noteOpen" @submit.prevent="saveNote">
           <fieldset :disabled="busy"><legend>{{ noteForm.id ? 'Edit note' : 'New note' }}</legend>
-            <label>Note type<select v-model="noteForm.type"><option v-for="type in noteTypes" :key="type" :value="type">{{ type }}</option></select></label>
-            <label>Note content<textarea v-model="noteForm.content" required rows="4"></textarea></label>
-            <div class="actions"><button class="primary" type="submit">Save note</button><button type="button" @click="noteOpen = false">Cancel note</button></div>
+            <label>Note type<Select class="at-form-control" aria-label="Note type" v-model="noteForm.type" :disabled="busy" :options="noteTypes.map(value => ({ value, label: value.replaceAll('_', ' ').toLowerCase() }))" option-label="label" option-value="value" option-disabled="disabled" /></label>
+            <label>Note content<Textarea class="at-form-control" v-model="noteForm.content" required rows="4"></Textarea></label>
+            <div class="actions"><Button class="primary" type="submit">Save note</Button><Button type="button" @click="noteOpen = false">Cancel note</Button></div>
           </fieldset>
         </form>
         <article v-for="note in work.notes" :key="note.id" class="item">
-          <div class="section-heading"><strong v-if="note.type !== 'GENERAL'">{{ note.type }}</strong><button type="button" :disabled="busy" :aria-label="`Edit ${note.type} note`" @click="editNote(note)">Edit note</button></div>
+          <div class="section-heading"><strong v-if="note.type !== 'GENERAL'">{{ note.type }}</strong><Button type="button" :disabled="busy" :aria-label="`Edit ${note.type} note`" @click="editNote(note)">Edit note</Button></div>
           <p class="content">{{ note.content }}</p>
           <p class="meta">{{ note.created_by }} · Created {{ dateText(note.created_at) }} · Updated {{ dateText(note.updated_at) }}</p>
         </article>
       </section>
 
       <section v-if="work.tasks.length || taskOpen" class="panel" aria-labelledby="tasks-title">
-        <div class="section-heading"><h3 id="tasks-title">Tasks <span v-if="work.tasks.length">{{ work.tasks.length }}</span></h3><button v-if="!taskOpen" type="button" :disabled="busy" @click="taskOpen = true">Add task</button></div>
+        <div class="section-heading"><h3 id="tasks-title">Tasks <span v-if="work.tasks.length">{{ work.tasks.length }}</span></h3><Button v-if="!taskOpen" type="button" :disabled="busy" @click="taskOpen = true">Add task</Button></div>
         <form v-if="taskOpen" @submit.prevent="saveTask">
           <fieldset :disabled="busy"><legend>New task</legend>
-            <label>Task title<input v-model="taskForm.title" required maxlength="300" /></label>
-            <label>Task description<textarea v-model="taskForm.description" rows="3"></textarea></label>
-            <label>Task due (local time)<input v-model="taskForm.due_at" type="datetime-local" /></label>
-            <div class="actions"><button class="primary" type="submit">Save task</button><button type="button" @click="taskOpen = false">Cancel task</button></div>
+            <label>Task title<InputText class="at-form-control" v-model="taskForm.title" required maxlength="300" /></label>
+            <label>Task description<Textarea class="at-form-control" v-model="taskForm.description" rows="3"></Textarea></label>
+            <DateTimeField v-model="taskForm.due_at" label="Task due (local time)" :disabled="busy" />
+            <div class="actions"><Button class="primary" type="submit">Save task</Button><Button type="button" @click="taskOpen = false">Cancel task</Button></div>
           </fieldset>
         </form>
         <article v-for="task in work.tasks" :key="task.id" class="item" :aria-label="task.title">
-          <div class="section-heading"><strong>{{ task.title }}</strong><span class="badge" :class="task.status.toLowerCase()">{{ task.status }}</span></div>
+          <div class="section-heading"><strong>{{ task.title }}</strong><div class="work-tags"><AppTag v-bind="taskStatusMeta[task.status]" /><AppTag v-if="task.status === 'PENDING' && task.due_at" v-bind="urgencyMeta(task.due_at)" /></div></div>
           <p v-if="task.description" class="content">{{ task.description }}</p>
           <p v-if="task.due_at || task.completed_at" class="meta"><template v-if="task.due_at">Due: {{ dateText(task.due_at) }}</template><template v-if="task.due_at && task.completed_at"> · </template><template v-if="task.completed_at">Completed {{ dateText(task.completed_at) }}</template></p>
-          <div class="actions"><button v-if="task.status !== 'COMPLETED'" type="button" :disabled="busy" @click="setTaskStatus(task, 'COMPLETED')">Complete task</button><button v-if="task.status === 'PENDING'" type="button" :disabled="busy" @click="setTaskStatus(task, 'CANCELLED')">Cancel task</button><button v-if="task.status !== 'PENDING'" type="button" :disabled="busy" @click="setTaskStatus(task, 'PENDING')">Reopen task</button></div>
+          <div class="actions"><Button v-if="task.status !== 'COMPLETED'" type="button" :disabled="busy" @click="setTaskStatus(task, 'COMPLETED')">Complete task</Button><Button v-if="task.status === 'PENDING'" type="button" :disabled="busy" @click="setTaskStatus(task, 'CANCELLED')">Cancel task</Button><Button v-if="task.status !== 'PENDING'" type="button" :disabled="busy" @click="setTaskStatus(task, 'PENDING')">Reopen task</Button></div>
         </article>
       </section>
 
       <section v-if="work.followups.length || followupOpen" class="panel" aria-labelledby="followups-title">
-        <div class="section-heading"><h3 id="followups-title">Follow-ups <span v-if="work.followups.length">{{ work.followups.length }}</span></h3><button v-if="!followupOpen" type="button" :disabled="busy" @click="followupOpen = true">Add follow-up</button></div>
+        <div class="section-heading"><h3 id="followups-title">Follow-ups <span v-if="work.followups.length">{{ work.followups.length }}</span></h3><Button v-if="!followupOpen" type="button" :disabled="busy" @click="followupOpen = true">Add follow-up</Button></div>
         <form v-if="followupOpen" @submit.prevent="saveFollowup">
           <fieldset :disabled="busy"><legend>New follow-up</legend>
-            <label>Follow-up due (local time)<input v-model="followupForm.due_at" type="datetime-local" /></label>
-            <label>Contact by<select v-model="followupForm.channel"><option value="EMAIL">Email</option><option value="PHONE" :disabled="!phoneNumber">Phone call</option><option value="BOTH" :disabled="!phoneNumber">Email and phone call</option></select></label>
+            <DateTimeField v-model="followupForm.due_at" label="Follow-up due (local time)" :disabled="busy" />
+            <label>Contact by<Select class="at-form-control" aria-label="Contact by" v-model="followupForm.channel" :disabled="busy" :options="[{ value: 'EMAIL', label: 'Email' }, { value: 'PHONE', label: 'Phone call', disabled: !phoneNumber }, { value: 'BOTH', label: 'Email and phone call', disabled: !phoneNumber }]" option-label="label" option-value="value" option-disabled="disabled" /></label>
             <p v-if="!phoneNumber" class="muted">Add a phone number to the application to plan a call.</p>
             <p class="muted">Leave the date blank for {{ work.followup_delay_days }} days from now.</p>
-            <label>Template reference<input v-model="followupForm.template_reference" maxlength="2048" placeholder="Optional name or reference" /></label>
-            <div class="actions"><button class="primary" type="submit">Save follow-up</button><button type="button" @click="followupOpen = false">Cancel follow-up</button></div>
+            <label>Template reference<InputText class="at-form-control" v-model="followupForm.template_reference" maxlength="2048" placeholder="Optional name or reference" /></label>
+            <div class="actions"><Button class="primary" type="submit">Save follow-up</Button><Button type="button" @click="followupOpen = false">Cancel follow-up</Button></div>
           </fieldset>
         </form>
         <article v-for="item in visibleFollowups" :key="item.id" class="item" :aria-label="`Follow-up ${item.sequence_number}`">
-          <div class="section-heading"><strong>{{ item.is_automatic ? 'Automatic ' : '' }}Follow-up #{{ item.sequence_number }} · {{ item.channel === 'BOTH' ? 'Email + phone' : item.channel === 'PHONE' ? 'Phone call' : 'Email' }}</strong><span class="badge" :class="item.status.toLowerCase()">{{ item.status === 'SENT' && item.channel !== 'EMAIL' ? 'COMPLETED' : item.status }}</span></div>
+          <div class="section-heading"><strong>{{ item.is_automatic ? 'Automatic ' : '' }}Follow-up #{{ item.sequence_number }} · {{ item.channel === 'BOTH' ? 'Email + phone' : item.channel === 'PHONE' ? 'Phone call' : 'Email' }}</strong><AppTag v-bind="followupStatusMeta[item.status]" :label="item.status === 'SENT' && item.channel !== 'EMAIL' ? 'Completed' : followupStatusMeta[item.status].label" /></div>
           <p class="meta">Due: {{ dateText(item.due_at) }}<template v-if="item.sent_at"> · {{ item.channel === 'EMAIL' ? 'Sent' : 'Completed' }} {{ dateText(item.sent_at) }}</template></p>
           <p v-if="item.template_reference && item.template_reference !== 'Automatic follow-up reminder'" class="content">Template: {{ item.template_reference }}</p>
           <p v-if="item.channel !== 'EMAIL' && phoneNumber" class="meta">Call: <a :href="`tel:${phoneNumber}`">{{ phoneNumber }}</a></p>
-          <form v-if="draftingId === item.id" @submit.prevent="saveEmailDraft(item)"><label>Email draft content<textarea v-model="draftContent" required rows="5"></textarea></label><p class="muted">If mail is not connected, this will be saved as an EMAIL_DRAFT note. It will not be sent.</p><div class="actions"><button class="primary" type="submit" :disabled="busy">Save draft</button><button type="button" @click="draftingId = null">Cancel</button></div></form>
-          <div class="actions"><button v-if="item.status === 'PENDING' && item.channel !== 'PHONE'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'DRAFTED')">Mark drafted</button><button v-if="item.status === 'PENDING' || item.status === 'DRAFTED'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'SENT')">Mark followed up</button><button v-if="item.status === 'PENDING' || item.status === 'DRAFTED'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'CANCELLED')">Cancel follow-up</button><button v-if="item.status === 'CANCELLED' || item.status === 'SENT'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'PENDING')">Reopen follow-up</button></div>
-          <div v-if="item.channel !== 'PHONE' && (item.status === 'PENDING' || item.status === 'DRAFTED')" class="actions"><button type="button" :disabled="busy" @click="draftingId = item.id; draftContent = ''">Write email draft</button></div>
+          <form v-if="draftingId === item.id" @submit.prevent="saveEmailDraft(item)"><label>Email draft content<Textarea class="at-form-control" v-model="draftContent" required rows="5"></Textarea></label><p class="muted">If mail is not connected, this will be saved as an EMAIL_DRAFT note. It will not be sent.</p><div class="actions"><Button class="primary" type="submit" :disabled="busy">Save draft</Button><Button type="button" @click="draftingId = null">Cancel</Button></div></form>
+          <div class="actions"><Button v-if="item.status === 'PENDING' && item.channel !== 'PHONE'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'DRAFTED')">Mark drafted</Button><Button v-if="item.status === 'PENDING' || item.status === 'DRAFTED'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'SENT')">Mark followed up</Button><Button v-if="item.status === 'PENDING' || item.status === 'DRAFTED'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'CANCELLED')">Cancel follow-up</Button><Button v-if="item.status === 'CANCELLED' || item.status === 'SENT'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'PENDING')">Reopen follow-up</Button></div>
+          <div v-if="item.channel !== 'PHONE' && (item.status === 'PENDING' || item.status === 'DRAFTED')" class="actions"><Button type="button" :disabled="busy" @click="draftingId = item.id; draftContent = ''">Write email draft</Button></div>
         </article>
         <Pagination v-if="work.followups.length > followupPageSize" v-model:page="followupPage" :total="work.followups.length" :page-size="followupPageSize" label="follow-ups" />
       </section>
@@ -181,24 +188,27 @@ onMounted(load)
 </template>
 
 <style scoped>
+@layer legacy {
 .work { margin-top: 32px; }
+.work-tags { display:flex; flex-wrap:wrap; gap:6px; }
 .work-heading, .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-h3 span { color: #627084; font-size: 13px; font-weight: 400; }
-.panel { background: #fff; border: 1px solid #dce2e9; border-radius: 8px; padding: 18px; margin: 16px 0; }
-.item { border-top: 1px solid #e5e9ee; margin-top: 12px; padding-top: 12px; }
+h3 span { color: var(--at-text-muted); font-size: 13px; font-weight: 400; }
+.panel { background: var(--at-surface); border: 1px solid var(--at-border); border-radius: 8px; padding: 18px; margin: 16px 0; }
+.item { border-top: 1px solid var(--at-border); margin-top: 12px; padding-top: 12px; }
 .content { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.6; }
 strong { overflow-wrap: anywhere; }
-.meta, .muted { color: #576678; font-size: 13px; line-height: 1.6; }
-.notice { color: #216344; font-size: 14px; }
-.badge { display: inline-block; background: #eaf1fc; color: #2a5189; font-size: 11px; font-weight: 700; padding: 5px 8px; border-radius: 4px; }
-.completed, .sent { color: #216344; background: #eaf5ee; } .cancelled { color: #526174; background: #edf0f3; }
+.meta, .muted { color: var(--at-text-muted); font-size: 13px; line-height: 1.6; }
+.notice { color: var(--at-successful); font-size: 14px; }
+.badge { display: inline-block; background: color-mix(in srgb, var(--at-submitted) 10%, var(--at-surface)); color: var(--at-submitted); font-size: 11px; font-weight: 700; padding: 5px 8px; border-radius: 4px; }
+.completed, .sent { color: var(--at-successful); background: color-mix(in srgb, var(--at-successful) 10%, var(--at-surface)); } .cancelled { color: var(--at-text-muted); background: var(--at-surface-muted); }
 fieldset { border: 0; margin: 20px 0; padding: 0; min-width: 0; }
 legend { font-size: 14px; font-weight: 650; margin-bottom: 10px; }
 label { display: block; font-size: 14px; margin: 12px 0; font-weight: 600; }
-input, select, textarea { display: block; width: 100%; min-width: 0; margin-top: 7px; padding: 10px; border: 1px solid #b9c4d2; border-radius: 5px; font: inherit; font-weight: 400; background: #fff; color: #202c3d; }
+input, select, textarea { display: block; width: 100%; min-width: 0; margin-top: 7px; padding: 10px; border: 1px solid var(--at-border); border-radius: 5px; font: inherit; font-weight: 400; background: var(--at-surface); color: var(--at-text); }
 textarea { resize: vertical; }
-input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid #527ba8; outline-offset: 2px; }
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--at-focus); outline-offset: 2px; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
-.primary { background: #263e5c; color: #fff; border-color: #263e5c; } .primary:hover:enabled { background: #192d45; }
+.primary { background: var(--at-primary); color:var(--at-primary-contrast); border-color: var(--at-primary); } .primary:hover:enabled { background: var(--at-primary-hover); }
 @media (max-width: 600px) { .panel { padding: 18px; } }
+}
 </style>

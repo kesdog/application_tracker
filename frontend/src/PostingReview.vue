@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import Select from 'primevue/select'
+import Button from 'primevue/button'
+import Textarea from 'primevue/textarea'
+import DateTimeField from './components/shared/DateTimeField.vue'
+import InputText from 'primevue/inputtext'
 import { computed, ref, watch } from 'vue'
 import { checkPosting, getPostingReview, recordPostingReview, type Application, type PostingReviewPlan } from './api'
 
@@ -69,30 +74,30 @@ async function saveReview() {
     <div v-if="application.job_url" class="step">
       <h4>Check the saved posting</h4>
       <p class="hint">Checks the URL, then opens the page in a browser if needed.</p>
-      <button type="button" :disabled="busy" @click="check">{{ busy ? 'Working…' : 'Check now' }}</button>
+      <Button type="button" :disabled="busy" @click="check">{{ busy ? 'Working…' : 'Check now' }}</Button>
       <a :href="application.job_url" target="_blank" rel="noopener noreferrer">Open saved posting ↗</a>
     </div>
     <div class="step">
       <h4>{{ application.job_url ? 'Search for the position' : 'Find the missing job URL' }}</h4>
-      <div class="searches"><a v-if="plan" :href="plan.searches[0]?.url" target="_blank" rel="noopener noreferrer">Search manually</a><button type="button" :disabled="!plan" @click="agentSearch">Agent search</button></div>
+      <div class="searches"><a v-if="plan" :href="plan.searches[0]?.url" target="_blank" rel="noopener noreferrer">Search manually</a><Button type="button" :disabled="!plan" @click="agentSearch">Agent search</Button></div>
       <p v-if="copyMessage" class="hint" role="status">{{ copyMessage }}</p>
-      <label v-if="showPrompt" class="prepared-prompt">Agent search prompt<textarea :value="plan?.agent_search_prompt" readonly rows="12" @focus="($event.target as HTMLTextAreaElement).select()" /></label>
+      <label v-if="showPrompt" class="prepared-prompt">Agent search prompt<Textarea class="at-form-control" :value="plan?.agent_search_prompt" readonly rows="12" @focus="($event.target as HTMLTextAreaElement).select()"></Textarea></label>
     </div>
     <details class="step">
       <summary>Record a browser review or update the link</summary>
       <form @submit.prevent="saveReview">
         <fieldset :disabled="busy">
-          <label>Conclusion<select v-model="status"><option value="UNKNOWN">Unable to verify</option><option value="LIVE">Live — accepting applications</option><option value="CLOSED">Closed — explicit closure evidence</option></select></label>
-          <label>Page checked<input v-model="evidenceUrl" type="url" required maxlength="2048" placeholder="https://…" /></label>
-          <label>Checked at (local time)<input v-model="checkedAt" type="datetime-local" required /></label>
-          <label>What did you find?<textarea v-model="notes" required minlength="10" maxlength="500" rows="3" placeholder="Describe the matching role and the evidence for your conclusion." /></label>
+          <label>Conclusion<Select class="at-form-control" aria-label="Conclusion" v-model="status" :disabled="busy" :options="[{ value: 'UNKNOWN', label: 'Unable to verify' }, { value: 'LIVE', label: 'Live — accepting applications' }, { value: 'CLOSED', label: 'Closed — explicit closure evidence' }]" option-label="label" option-value="value" option-disabled="disabled" /></label>
+          <label>Page checked<InputText class="at-form-control" v-model="evidenceUrl" type="url" required maxlength="2048" placeholder="https://…" /></label>
+          <DateTimeField v-model="checkedAt" label="Checked at (local time)" :disabled="busy" required />
+          <label>What did you find?<Textarea class="at-form-control" v-model="notes" required minlength="10" maxlength="500" rows="3" placeholder="Describe the matching role and the evidence for your conclusion."></Textarea></label>
           <label class="checkbox"><input v-model="samePosition" type="checkbox" />I verified this is the same position and employer.</label>
           <label class="checkbox"><input v-model="replaceUrl" type="checkbox" :disabled="status !== 'LIVE' || !samePosition" />Use this verified live page as the job posting link.</label>
-          <button type="submit" :disabled="status !== 'UNKNOWN' && !samePosition">Save review</button>
+          <Button type="submit" :disabled="status !== 'UNKNOWN' && !samePosition">Save review</Button>
         </fieldset>
       </form>
     </details>
-    <p v-if="error" class="error" role="alert">{{ error }}</p>
+    <p v-if="error" class="at-message error" role="alert">{{ error }}</p>
     <details v-if="application.posting_check_reason" class="step"><summary>Last check details</summary>
       <p>{{ application.posting_check_reason }}</p><p v-if="application.posting_check_method || application.posting_http_status !== null" class="hint"><template v-if="application.posting_check_method">Method: {{ application.posting_check_method }}</template><template v-if="application.posting_check_method && application.posting_http_status !== null"> · </template><template v-if="application.posting_http_status !== null">HTTP: {{ application.posting_http_status }}</template></p>
       <a v-if="application.posting_final_url" :href="application.posting_final_url" target="_blank" rel="noopener noreferrer">Last page checked ↗</a>
@@ -102,13 +107,15 @@ async function saveReview() {
 </template>
 
 <style scoped>
-.posting-panel { padding:24px; border:1px solid #dce2e9; border-radius:10px; background:white; }
-h3 { margin:0 0 14px; } h4 { margin:0 0 8px; } .hint { color:#627084; font-size:13px; line-height:1.5; }
-.step { border-top:1px solid #e5e9ee; padding:16px 0; } .searches { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
-.searches a { display:inline-flex; align-items:center; min-height:36px; padding:9px 13px; border:1px solid #b9c4d2; border-radius:6px; font-size:13px; font-weight:600; text-decoration:none; }
+@layer legacy {
+.posting-panel { padding:24px; border:1px solid var(--at-border); border-radius:10px; background:var(--at-surface); }
+h3 { margin:0 0 14px; } h4 { margin:0 0 8px; } .hint { color:var(--at-text-muted); font-size:13px; line-height:1.5; }
+.step { border-top:1px solid var(--at-border); padding:16px 0; } .searches { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+.searches a { display:inline-flex; align-items:center; min-height:36px; padding:9px 13px; border:1px solid var(--at-border); border-radius:6px; font-size:13px; font-weight:600; text-decoration:none; }
 .prepared-prompt { display:block; margin-top:12px; }
-a { color:#24568b; overflow-wrap:anywhere; } button + a { margin-left:12px; } summary { cursor:pointer; font-weight:600; }
+a { color:var(--at-link); overflow-wrap:anywhere; } button + a { margin-left:12px; } summary { cursor:pointer; font-weight:600; }
 fieldset { border:0; padding:16px 0 0; display:grid; gap:14px; } label { font-size:14px; font-weight:600; }
-input, select, textarea { display:block; width:100%; margin-top:6px; padding:9px; border:1px solid #b9c4d2; border-radius:6px; font:inherit; }
+input, select, textarea { display:block; width:100%; margin-top:6px; padding:9px; border:1px solid var(--at-border); border-radius:6px; font:inherit; }
 .checkbox { display:flex; align-items:center; gap:8px; font-weight:400; } .checkbox input { width:auto; margin:0; } button { justify-self:start; }
+}
 </style>

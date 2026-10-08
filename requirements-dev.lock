@@ -27,6 +27,8 @@ packaging==26.3
 openpyxl==3.1.5
 pefile==2024.8.26
 phonenumberslite==9.0.40
+email-validator==2.3.0
+dnspython==2.8.0
 Pillow==12.3.0
 pluggy==1.6.0
 pycparser==3.0

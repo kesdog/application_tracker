@@ -35,6 +35,11 @@ class ContactType(str, Enum):
     PHONE = "PHONE"
 
 
+class DeadlineKind(str, Enum):
+    APPLICATION_CLOSING = "APPLICATION_CLOSING"
+    FIRST_ROUND = "FIRST_ROUND"
+
+
 class ActorType(str, Enum):
     HUMAN = "HUMAN"
     AGENT = "AGENT"
@@ -57,6 +62,12 @@ class Application(Base):
     job_url: Mapped[str | None] = mapped_column(String(2048))
     email_reference: Mapped[str | None] = mapped_column(String(2048))
     phone_number: Mapped[str | None] = mapped_column(String(20))
+    contact_email: Mapped[str | None] = mapped_column(String(320))
+    contact_name: Mapped[str | None] = mapped_column(String(300))
+    deadline: Mapped[date | None]
+    deadline_kind: Mapped[DeadlineKind | None] = mapped_column(
+        SqlEnum(DeadlineKind, native_enum=False, create_constraint=True, name="deadline_kind")
+    )
     contact_type: Mapped[ContactType] = mapped_column(
         SqlEnum(ContactType, native_enum=False, create_constraint=True, name="contact_type"),
         default=ContactType.EMAIL, server_default="EMAIL",

@@ -17,6 +17,7 @@ dependencies = [
     "python-multipart>=0.0.20,<1",
     "mcp>=1.20,<2",
     "phonenumberslite>=9.0.40,<10",
+    "email-validator>=2.2,<3",
     "httpx>=0.28,<1",
     "extruct>=0.18,<1",
     "playwright>=1.50,<2",

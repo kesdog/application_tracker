@@ -1,223 +1,82 @@
-# Application Tracker — V1 Design Notes
+# Front-end design choices
 
-This document intentionally stays simple until the functional implementation is stable and a frontend component library is chosen.
+## Design direction
 
-## Product design goal
+The interface should feel like a calm, practical workspace. Prioritize readable information, fast scanning, and clear next actions. Use restrained decoration so application lists remain easy to work through.
 
-The interface should feel like a practical replacement for an Excel application-tracking workbook.
+Light and dark themes should have separate visual identities while keeping the same layout, control placement, and meaning of status colors.
 
-Priorities:
-1. information density
-2. fast scanning
-3. clear next actions
-4. minimal navigation
-5. predictable colors and icons
+## Layout and spacing
 
-Avoid decorative UI that makes large application lists harder to read.
+Use a sidebar for navigation and a slim header for the current page, navigation collapse control, and theme switch. Keep these controls in predictable positions so users can change the workspace appearance without interrupting their work.
 
-## Main navigation
+Center page content within a maximum width of 1280 px. Use 32 px side padding on desktop, with smaller padding on narrow screens. Group related content into bordered panels with generous internal spacing; avoid placing a border around every individual value.
 
-Keep V1 to six primary destinations:
+Use modest rounded corners: approximately 8 px for ordinary panels and 14 px for the creation wizard. The wizard has a narrower, 960 px maximum width to keep fields and instructions comfortable to scan.
 
-```text
-Dashboard
-Applications
-Interviews
-Tasks
-Settings
-```
+## Typography
 
-`Application Focus` is opened from Applications and does not need to be a permanent navigation item.
+Use the system sans-serif stack, including Segoe UI on Windows. Keep body and control text around 13–14 px, page headings around 28 px, and wizard screen headings around 22 px.
 
-## Dashboard
+Establish hierarchy with size, weight, and spacing before adding color. Supporting text uses a muted color with sufficient contrast; it should never become faint decoration. Short uppercase eyebrow labels help orient the user without competing with the main heading.
 
-The dashboard is operational, not analytical.
+## Theme identities
 
-Show:
-- active applications
-- follow-ups due/overdue
-- tasks due/overdue
-- upcoming interviews
-- recent activity
+| Visual role | Light: Paper | Dark: Midnight |
+| --- | --- | --- |
+| Character | Warm paper with forest-green navigation | Midnight navy with lavender actions and cyan links |
+| Page background | `#f7f6f2` | `#0c1222` |
+| Panels and fields | `#fffefb` | `#17213a` |
+| Secondary surfaces | `#eeeee7` | `#25324d` |
+| Main text | `#24352f` | `#f0f3ff` |
+| Supporting text | `#526257` | `#b9c5df` |
+| Primary action | `#1c5b53` | `#c3b2ff` |
+| Links | `#1b625b` | `#8fe3dd` |
 
-Do not add charts in V1 unless they directly help with pending work.
+**Paper** pairs warm, almost-white panels with a filled forest-green sidebar and white navigation text. Borders are quiet and shadows are minimal. This creates a light, familiar workspace without relying on a stark white background.
 
-## Applications table
+**Midnight** separates the navy page background from lighter blue panels. Lavender identifies primary actions and active navigation, while cyan distinguishes links. Soft shadows give panels depth without brightening the entire screen.
 
-This is the primary screen.
+The theme switch shows a sun or moon alongside the current theme name. Switching themes preserves the current page and unfinished form entries. Remember each theme's customized colors independently so switching does not erase the user's visual preferences.
 
-Suggested columns:
+## Navigation design
 
-```text
-Date Applied
-Company
-Position
-Location
-Contract
-Status
-Outcome
-Next Action
-Source
-```
+Pair each navigation label with a recognizable icon. Active destinations use both a background highlight and an edge indicator so selection does not depend on text color alone.
 
-Requirements:
-- searchable
-- filterable
-- sortable where useful
-- compact rows
-- source reachable in one or two clicks
-- clear `Export current view` action
+The expanded desktop sidebar is 238 px wide. Collapsing it produces a 76 px icon rail, giving more room to the main content. Keep every destination accessible in the collapsed state, with hover titles and accessible names. The expand/collapse control remains in the header.
 
-Filters:
-- status/outcome
-- company
-- title
-- location
-- contract type
-- source
-- remote policy
-- application date range
-- document filename
-- free text
+On narrow windows, navigation appears above the content and can fold away completely. Preserve an obvious way to reopen it. Keep navigation transitions brief and respect reduced-motion preferences.
 
-## Application Focus
+## Information density and emphasis
 
-Suggested order:
+Use compact table rows, aligned headings, and consistent spacing to support comparison between applications. Allow optional columns and row-density choices. Place secondary information below the main value in smaller, readable text.
 
-```text
-Header
-- company
-- job title
-- status
-- outcome
-- date applied
-- source
+Use colored badges with explicit labels for statuses and outcomes. Keep meanings consistent across themes: blue for submitted or upcoming items, purple for interviews, green for successful outcomes, red for unsuccessful or overdue items, amber for near-term urgency, and neutral tones for inactive states.
 
-Next action / upcoming date
+Apply subtle row tints and edge accents for urgency rather than filling entire rows with saturated color. Keep the next action easy to find. Empty states should use a short explanation and a relevant action, without large decorative illustrations.
 
-Job details
+## Form and wizard interactions
 
-Timeline
+Divide application creation into four short screens: Role, Posting, Contact & extras, and Review. This reduces the amount of information presented at once and gives users a clear sense of progress.
 
-Interviews
+Show required fields first. Place less-used fields behind checkboxes or expandable sections. Keep optional sections visually separate from the main task, and preserve their entries when users move between screens.
 
-Tasks
+Use a three-way segmented control for remote policy so all choices can be compared immediately. Use clear Email and Phone choices for contact method, with the relevant field visible and labeled. Present the optional deadline with a date picker and a plain-language choice of what the date means.
 
-Follow-ups
+Offer autocomplete for short text and explicit previous-value choices for dates, numbers, and longer notes. Suggestions should support free entry rather than force users to select an existing value.
 
-Notes
+Place validation messages beside the affected field. Explain the correction in plain language and keep invalid entries available for editing. Back preserves the draft; Review provides edit links and a clearly labeled final save action. Keep the primary action in a consistent position at the end of each screen.
 
-Documents
-```
+## Readability and accessibility
 
-The most urgent pending date should be visually obvious near the top.
+Target at least 4.5:1 contrast for normal text and 3:1 for large text. Include supporting text, placeholders, links, status text, and tinted rows in this requirement. Solid badges and selected controls use whichever black or white text provides stronger contrast against their fill.
 
-## Timeline
+Apply the theme consistently to fields, menus, calendars, dialogs, table headings, buttons, and validation messages. Disabled controls retain readable text while clearly communicating that they are unavailable.
 
-Use a vertical chronological timeline.
+Provide visible keyboard focus in both themes, including inside the sidebar. Labels remain available to assistive technology when their visible text is hidden in compact layouts. Pair color with text, icons, or shape, and provide a skip link to the main content.
 
-Each event should contain:
-- icon
-- event label
-- short summary
-- timestamp
-- actor where useful
+## Responsive presentation
 
-Example:
+At widths of 760 px and below, move navigation above the workspace, reduce outer padding, and allow the header controls to wrap. Stack form fields and detail groups when horizontal space becomes limited. Wide tables may scroll horizontally rather than compressing their text into unreadable columns.
 
-```text
-● Interview scheduled       18 Sep 14:10
-● Follow-up #1 sent         15 Sep 09:30
-● Application submitted     07 Sep 11:02
-```
-
-## Semantic colors
-
-Exact colors will be selected later, but meanings should remain consistent.
-
-Suggested mapping:
-
-```text
-SUBMITTED       neutral / blue
-INTERVIEW       purple
-SUCCESSFUL      green
-UNSUCCESSFUL    red
-WITHDRAWN       grey
-JOB_CANCELLED   orange
-GHOSTED         muted grey
-OVERDUE         red emphasis
-DUE SOON        amber/orange emphasis
-```
-
-Do not use color as the only indicator; pair it with text and/or icons.
-
-## Forms
-
-Keep forms compact.
-
-Application creation should show required fields first:
-- job title
-- company
-- date applied
-- job URL or email reference
-
-Optional fields can appear under an expandable `More details` section.
-
-This keeps manual entry fast while still supporting richer agent-created records.
-
-## Empty states
-
-Empty states should be functional.
-
-Examples:
-
-```text
-No applications yet.
-[Add application]
-
-No tasks due.
-
-No interviews scheduled.
-```
-
-Avoid large illustration-heavy empty states.
-
-## Agent-generated changes
-
-Agent changes should look like normal application changes but remain traceable.
-
-Where relevant, show a small actor indicator such as:
-
-```text
-Human
-Agent
-System
-```
-
-Do not visually separate agent-managed applications from human-managed applications.
-
-## Responsive behavior
-
-Desktop is the V1 priority.
-
-For narrow windows:
-- table may horizontally scroll
-- filters may collapse into a drawer/panel
-- focus view sections should stack vertically
-
-A dedicated mobile UI is not required for V1.
-
-## Component library
-
-Not selected yet.
-
-Selection criteria later:
-- strong Vue 3 support
-- accessible components
-- compact data tables
-- filters/forms/dialogs
-- low styling overhead
-- easy theming
-- no dependency on a heavy design system unless justified
-
-Until then, use minimal CSS and avoid building a custom design system.
+On very narrow screens, the theme's sun or moon can replace its visible name while the switch retains an accessible label. Preserve comfortable control spacing and avoid horizontal overflow in forms and panels.

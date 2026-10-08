@@ -10,4 +10,8 @@ const url = computed(() => emailReferenceUrl(props.reference))
   <span v-else-if="reference">{{ reference }}</span>
 </template>
 
-<style scoped>a { color:#24568b; text-underline-offset:3px; overflow-wrap:anywhere; }</style>
+<style scoped>
+@layer legacy {
+a { color:var(--at-link); text-underline-offset:3px; overflow-wrap:anywhere; }
+}
+</style>

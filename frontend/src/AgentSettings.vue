@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import Button from 'primevue/button'
+import Textarea from 'primevue/textarea'
 import { onMounted, ref } from 'vue'
+import AppearanceSettings from './components/settings/AppearanceSettings.vue'
 import { getAgentConnectionInfo, getAgentSettings, getHealth, getIntegrationStatus, regenerateAgentToken, saveAgentPermissions, type AgentConnectionInfo, type AgentPermissions, type AgentSettings, type Health, type IntegrationStatus } from './api'
 
 const settings = ref<AgentSettings | null>(null)
@@ -59,18 +62,19 @@ onMounted(() => { void load(); void checkConnection() })
 <template>
   <section aria-labelledby="agent-settings-title">
     <p class="eyebrow">Your workspace</p><h2 id="agent-settings-title">Settings</h2>
-    <p class="intro">Manage agent access, integrations, and local system status.</p>
+    <p class="intro">Customize your workspace and manage agent access, integrations, and local system status.</p>
+    <AppearanceSettings />
     <h3>Agent access</h3><p class="hint">Create a token for an external agent, then choose what it can do. Agents cannot delete applications.</p>
-    <p v-if="loading" role="status">Loading agent settings…</p><p v-if="error" class="error" role="alert">{{ error }}</p>
+    <p v-if="loading" role="status">Loading agent settings…</p><p v-if="error" class="at-message error" role="alert">{{ error }}</p>
     <template v-if="settings">
       <section class="panel"><h3>Access token</h3><p>{{ settings.configured ? 'An agent token is configured.' : 'No agent token has been created.' }}</p>
-        <button type="button" class="primary" :disabled="saving" @click="generate">{{ settings.configured ? 'Regenerate token' : 'Generate token' }}</button>
+        <Button type="button" class="primary" :disabled="saving" @click="generate">{{ settings.configured ? 'Regenerate token' : 'Generate token' }}</Button>
         <p v-if="settings.configured" class="hint">Regenerating invalidates the previous token immediately.</p>
-        <div v-if="token" class="token-box"><label for="agent-token">New token — shown once</label><textarea id="agent-token" :value="token" readonly rows="3" @focus="($event.target as HTMLTextAreaElement).select()"></textarea><p>Copy it into your agent's secure configuration. This page does not store the plaintext token.</p></div>
+        <div v-if="token" class="token-box"><label for="agent-token">New token — shown once</label><Textarea class="at-form-control" id="agent-token" :value="token" readonly rows="3" @focus="($event.target as HTMLTextAreaElement).select()"></Textarea><p>Copy it into your agent's secure configuration. This page does not store the plaintext token.</p></div>
       </section>
       <form class="panel" @submit.prevent="save"><h3>Permissions</h3><p class="hint">Changes apply to REST and MCP calls immediately.</p>
         <label v-for="item in labels" :key="item.key" class="permission"><input v-model="permissions[item.key]" type="checkbox" :disabled="saving || !settings.configured" /><span><strong>{{ item.label }}</strong><small>{{ item.help }}</small></span></label>
-        <button class="primary" type="submit" :disabled="saving || !settings.configured">Save permissions</button>
+        <Button class="primary" type="submit" :disabled="saving || !settings.configured">Save permissions</Button>
       </form>
     </template>
     <section class="panel"><h3>Agent connection help</h3>
@@ -78,16 +82,18 @@ onMounted(() => { void load(); void checkConnection() })
       <p class="hint">Remote MCP uses the same bearer token and permissions as REST. Keep it private: use TLS and network access controls before exposing it beyond your machine.</p>
     </section>
     <section class="panel"><h3>Integrations</h3><p>Mail: {{ integrations?.mail.connected ? 'Connected' : 'Not connected' }}. Calendar: {{ integrations?.calendar.connected ? 'Connected' : 'Not connected' }}.</p><p>Without a mail provider, email drafts are saved as local notes. Interview calendar files can be downloaded and imported manually. Nothing is sent or added to an external calendar automatically.</p></section>
-    <section class="panel" aria-label="System status" aria-live="polite" :aria-busy="connection === 'checking'"><div class="status-heading"><h3>System status</h3><button type="button" :disabled="connection === 'checking'" @click="checkConnection">{{ connection === 'checking' ? 'Checking…' : 'Check again' }}</button></div>
-      <p v-if="connection === 'disconnected'" class="error">Unable to reach the backend. Make sure it is running, then check again or refresh this page.</p>
+    <section class="panel" aria-label="System status" aria-live="polite" :aria-busy="connection === 'checking'"><div class="status-heading"><h3>System status</h3><Button type="button" :disabled="connection === 'checking'" @click="checkConnection">{{ connection === 'checking' ? 'Checking…' : 'Check again' }}</Button></div>
+      <p v-if="connection === 'disconnected'" class="at-message error">Unable to reach the backend. Make sure it is running, then check again or refresh this page.</p>
       <p v-else-if="connection === 'connected'" class="connected">Backend connected. Your local database is ready.</p>
       <p v-else>Connecting to your local backend…</p>
       <dl><div><dt>Backend version</dt><dd>{{ health?.version ?? 'Unavailable' }}</dd></div><div><dt>Database</dt><dd>{{ health ? 'SQLite · Connected' : 'Unavailable' }}</dd></div></dl>
     </section>
-    <p v-if="message" class="success" role="status">{{ message }}</p>
+    <p v-if="message" class="at-message success" role="status">{{ message }}</p>
   </section>
 </template>
 
 <style scoped>
-.panel { background:#fff;border:1px solid #dce2e9;border-radius:8px;padding:24px;margin:20px 0; }.panel p,.hint {color:#576678;font-size:14px;line-height:1.5}.primary {background:#263e5c;border-color:#263e5c;color:#fff}.permission {display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-top:1px solid #e5e9ee;cursor:pointer}.permission input {margin-top:3px}.permission span {display:flex;flex-direction:column;gap:3px}.permission small {color:#576678;font-weight:400}.token-box {margin-top:18px;padding:16px;background:#fff1de;border:1px solid #efcca1;border-radius:6px}.token-box label {display:block;font-weight:650;margin-bottom:8px}.token-box textarea {width:100%;padding:10px;font:inherit;resize:none;overflow-wrap:anywhere}.success,.panel p.connected {color:#216344}.status-heading {display:flex;align-items:center;justify-content:space-between;gap:12px}.panel p.error {color:#a12c32}.panel dl {margin-top:15px}.connection-list div {display:grid;grid-template-columns:220px minmax(0,1fr);gap:12px;padding:10px 0;border-top:1px solid #e5e9ee}.connection-list dt{font-weight:650}.connection-list dd{margin:0;overflow-wrap:anywhere}.connection-list code{font-size:12px}
+@layer legacy {
+.panel { background:var(--at-surface);border:1px solid var(--at-border);border-radius:8px;padding:24px;margin:20px 0; }.panel p,.hint {color:var(--at-text-muted);font-size:14px;line-height:1.5}.primary {background:var(--at-primary);border-color:var(--at-primary);color:var(--at-primary-contrast)}.permission {display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-top:1px solid var(--at-border);cursor:pointer}.permission input {margin-top:3px}.permission span {display:flex;flex-direction:column;gap:3px}.permission small {color:var(--at-text-muted);font-weight:400}.token-box {margin-top:18px;padding:16px;background:color-mix(in srgb, var(--at-cancelled) 10%, var(--at-surface));border:1px solid color-mix(in srgb, var(--at-cancelled) 10%, var(--at-surface));border-radius:6px}.token-box label {display:block;font-weight:650;margin-bottom:8px}.token-box textarea {width:100%;padding:10px;font:inherit;resize:none;overflow-wrap:anywhere}.success,.panel p.connected {color:var(--at-successful)}.status-heading {display:flex;align-items:center;justify-content:space-between;gap:12px}.panel p.error {color:var(--at-unsuccessful)}.panel dl {margin-top:15px}.connection-list div {display:grid;grid-template-columns:220px minmax(0,1fr);gap:12px;padding:10px 0;border-top:1px solid var(--at-border)}.connection-list dt{font-weight:650}.connection-list dd{margin:0;overflow-wrap:anywhere}.connection-list code{font-size:12px}
+}
 </style>

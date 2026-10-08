@@ -15,7 +15,7 @@ from app.schemas import ApplicationFilters
 HEADERS = [
     "Date Applied", "Company", "Job Title", "Status", "Outcome", "Location",
     "Remote Policy", "Contract Type", "Source", "Job URL", "Email Reference",
-    "Phone Number", "Contact Type", "Posting Status", "Documents", "Intermediary",
+    "Phone Number", "Contact Type", "Posting Status", "Documents", "Intermediary", "Contact Name", "Contact Email", "Deadline", "Deadline Type",
 ]
 
 
@@ -31,6 +31,7 @@ def _rows(session: Session, filters: ApplicationFilters) -> list[list]:
         record.remote_policy or "", record.contract_type or "", record.source or "",
         record.job_url or "", record.email_reference or "", record.phone_number or "", record.contact_type.value, record.posting_status.value,
         "; ".join(sorted(documents.get(record.id, []), key=str.casefold)), record.intermediary or "",
+        record.contact_name or "", record.contact_email or "", record.deadline or "", record.deadline_kind.value if record.deadline_kind else "",
     ] for record in records]
 
 
@@ -74,6 +75,7 @@ def xlsx_export(session: Session, filters: ApplicationFilters) -> bytes:
     }
     for row in range(2, sheet.max_row + 1):
         sheet.cell(row, 1).number_format = "yyyy-mm-dd"
+        sheet.cell(row, 19).number_format = "yyyy-mm-dd"
         for column in (4, 5):
             value = sheet.cell(row, column).value
             if value in fills:
