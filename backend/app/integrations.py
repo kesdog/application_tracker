@@ -110,3 +110,28 @@ def calendar_file(application, interview) -> str:
         fields.append(f"URL:{interview.meeting_url}")
     fields.extend(["END:VEVENT", "END:VCALENDAR", ""])
     return "\r\n".join(fields)
+
+
+def followup_calendar_file(application, item, origin) -> str:
+    """Explicit, offline fallback; importing this event does not send a message."""
+    from app.models import utc_now
+    def escaped(value):
+        return value.replace("\\", "\\\\").replace("\r", "").replace("\n", "\\n").replace(";", "\\;").replace(",", "\\,")
+    start = max(item.due_at, item.snoozed_until or item.due_at)
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Application Tracker//Follow-up reminder//EN", "BEGIN:VEVENT",
+        f"UID:followup-{item.id}@application-tracker", f"DTSTAMP:{utc_now().strftime('%Y%m%dT%H%M%SZ')}",
+        f"DTSTART:{start.strftime('%Y%m%dT%H%M%SZ')}", f"DTEND:{(start + timedelta(minutes=15)).strftime('%Y%m%dT%H%M%SZ')}",
+        "SUMMARY:" + escaped("Review follow-up - " + application.company),
+        "DESCRIPTION:Review the prepared message in Application Tracker. Sending is a separate manual action.",
+        f"URL:{origin}/#/followups/{application.id}/{item.id}", "BEGIN:VALARM", "ACTION:DISPLAY", "TRIGGER:PT0M",
+        "DESCRIPTION:Review your follow-up", "END:VALARM", "END:VEVENT", "END:VCALENDAR"]
+    folded = []
+    for line in lines:
+        chunk = ""
+        for char in line:
+            if len((chunk + char).encode("utf-8")) > 75:
+                folded.append(chunk)
+                chunk = " "
+            chunk += char
+        folded.append(chunk)
+    return "\r\n".join(folded) + "\r\n"

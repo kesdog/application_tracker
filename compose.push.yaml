@@ -1,0 +1,11 @@
+# Optional overlay: compose.yaml works without phone push configuration.
+services:
+  tracker:
+    environment:
+      APP_PUSH_VAPID_KEY_FILE: /run/secrets/tracker_vapid_key
+      APP_PUSH_CONTACT: ${TRACKER_PUSH_CONTACT:?Set TRACKER_PUSH_CONTACT to mailto:your-admin-email}
+    secrets:
+      - tracker_vapid_key
+secrets:
+  tracker_vapid_key:
+    file: ./deploy/secrets/vapid.pem

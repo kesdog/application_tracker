@@ -32,7 +32,7 @@ from app.models import DocumentType
 from app.work_schemas import FollowUpCreate, FollowUpRead, FollowUpUpdate, NoteCreate, NoteRead, NoteUpdate, TaskCreate, TaskRead, TaskUpdate, WorkRead
 from app.schemas import ApplicationCreate, ApplicationFilters, ApplicationRead, ApplicationUpdate, ContactValidation, PostingCheckRead
 from sqlalchemy.orm import Session as DatabaseSession
-from app import followup_templates, followup_reminders, human_auth
+from app import followup_templates, followup_reminders, human_auth, push
 from sqlalchemy import select, func, or_
 
 
@@ -46,6 +46,7 @@ def create_app(
     settings: Settings | None = None,
     mail_provider: integrations.MailProvider | None = None,
     calendar_provider: integrations.CalendarProvider | None = None,
+    push_sender=None,
 ) -> FastAPI:
     settings = settings or Settings()
     mail_provider = mail_provider or integrations.DisconnectedMailProvider()
@@ -59,6 +60,8 @@ def create_app(
         reminder_task = None
         posting_checks = None
         posting_task = None
+        phone_push = None
+        push_task = None
         try:
             migrate_database(engine)
             with Session(engine) as session:
@@ -71,8 +74,13 @@ def create_app(
             posting_checks = scheduler.PostingCheckScheduler(engine, settings)
             application.state.posting_checks = posting_checks
             posting_task = asyncio.create_task(posting_checks.run())
+            phone_push = push.PushScheduler(engine, settings, sender=push_sender)
+            push_task = asyncio.create_task(phone_push.run())
             yield
         finally:
+            if phone_push is not None and push_task is not None:
+                phone_push.stop.set()
+                await push_task
             if reminders is not None and reminder_task is not None:
                 reminders.stop.set()
                 await reminder_task
@@ -248,6 +256,34 @@ def create_app(
     def reminder_notices(session: Session = Depends(get_session)):
         followup_reminders.synchronize(session)
         return followup_reminders.notices(session)
+
+    @application.get("/api/settings/notifications")
+    def phone_notification_status(session: Session = Depends(get_session)):
+        return push.status(session, settings)
+
+    @application.post("/api/settings/notifications/devices", status_code=201)
+    def enable_phone_notifications(data: push.SubscriptionInput, session: Session = Depends(get_session)):
+        return push.subscribe(session, settings, data)
+
+    @application.delete("/api/settings/notifications/devices/{device_id}", status_code=204)
+    def remove_phone_notifications(device_id: str, session: Session = Depends(get_session)):
+        push.remove(session, device_id)
+        return Response(status_code=204)
+
+    @application.post("/api/settings/notifications/devices/{device_id}/test", status_code=202)
+    def test_phone_notifications(device_id: str, session: Session = Depends(get_session)):
+        return push.test_notification(session, settings, device_id)
+
+    @application.get("/api/applications/{application_id}/followups/{followup_id}/calendar.ics")
+    def followup_calendar(application_id: str, followup_id: str, session: Session = Depends(get_session)):
+        parent = applications.get_application(session, application_id)
+        from app.models import FollowUp, FollowUpStatus, ApplicationStatus
+        item = work.child(session, FollowUp, application_id, followup_id)
+        if item.status == FollowUpStatus.SENT or item.archived_at or parent.status == ApplicationStatus.CLOSED or parent.followup_paused:
+            raise HTTPException(409, "This follow-up is no longer an active reminder")
+        origin = settings.app_public_url if settings.app_mode == "hosted" else f"http://{settings.app_host}:{settings.app_port}"
+        return Response(content=integrations.followup_calendar_file(parent, item, origin), media_type="text/calendar; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="followup-{item.id}.ics"'})
 
     @application.post("/api/followups/notices/{notice_id}/read")
     def read_notice(notice_id: str, session: Session = Depends(get_session)):

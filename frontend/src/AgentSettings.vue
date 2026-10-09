@@ -5,6 +5,7 @@ import { onMounted, ref } from 'vue'
 import AppearanceSettings from './components/settings/AppearanceSettings.vue'
 import FollowUpSettings from './components/settings/FollowUpSettings.vue'
 import PhoneInstallation from './components/settings/PhoneInstallation.vue'
+import PhoneNotifications from './components/settings/PhoneNotifications.vue'
 import { getAgentConnectionInfo, getAgentSettings, getHealth, getIntegrationStatus, regenerateAgentToken, saveAgentPermissions, type AgentConnectionInfo, type AgentPermissions, type AgentSettings, type Health, type IntegrationStatus } from './api'
 
 const settings = ref<AgentSettings | null>(null)
@@ -67,6 +68,7 @@ onMounted(() => { void load(); void checkConnection() })
     <p class="intro">Customize your workspace and manage agent access, integrations, and local system status.</p>
     <FollowUpSettings />
     <PhoneInstallation />
+    <PhoneNotifications />
     <AppearanceSettings />
     <h3>Agent access</h3><p class="hint">Create a token for an external agent, then choose what it can do. Agents cannot delete applications.</p>
     <p v-if="loading" role="status">Loading agent settings…</p><p v-if="error" class="at-message error" role="alert">{{ error }}</p>

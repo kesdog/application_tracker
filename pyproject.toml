@@ -22,6 +22,7 @@ dependencies = [
     "extruct>=0.18,<1",
     "playwright>=1.50,<2",
     "tzdata>=2025.2",
+    "pywebpush>=2.5,<3",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +37,7 @@ application-tracker-mcp = "app.mcp_server:run"
 application-tracker-desktop = "app.desktop:run"
 application-tracker-password = "app.human_auth:password_cli"
 application-tracker-backup = "app.backup:run"
+application-tracker-push-key = "app.push_keys:run"
 
 [tool.setuptools.packages.find]
 where = ["backend"]

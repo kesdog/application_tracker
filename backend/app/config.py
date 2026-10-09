@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     app_password_hash_file: Path | None = None
     app_session_hours: int = Field(default=8, ge=1, le=168)
     app_trusted_proxy_ips: str = "127.0.0.1"
+    app_push_vapid_key_file: Path | None = None
+    app_push_contact: str | None = None
     followup_delay_days: int = Field(default=7, ge=0, le=3650)
     max_followup_suggestions: int = Field(default=2, ge=0, le=100)
     app_data_dir: Path = DEFAULT_DATA_DIR
@@ -42,6 +44,14 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_hosted_access(self):
+        if self.app_push_vapid_key_file or self.app_push_contact:
+            if not self.app_push_vapid_key_file or not self.app_push_contact:
+                raise ValueError("Web Push requires both APP_PUSH_VAPID_KEY_FILE and APP_PUSH_CONTACT")
+            if self.app_mode != "hosted" or not (self.app_public_url or "").startswith("https://"):
+                raise ValueError("Web Push requires an HTTPS hosted workspace")
+            from app.push_keys import read_key, validate_contact
+            read_key(self.app_push_vapid_key_file)
+            validate_contact(self.app_push_contact)
         if self.app_mode == "local":
             if self.app_allow_remote_human:
                 raise ValueError("Remote human access requires APP_MODE=hosted with a public URL and password hash")

@@ -358,3 +358,36 @@ class LoginAttempt(Base):
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     window_started_at: Mapped[datetime]
     attempts: Mapped[int] = mapped_column(default=0)
+
+
+class PushDevice(Base):
+    __tablename__ = "push_devices"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    endpoint_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    endpoint: Mapped[str] = mapped_column(Text)
+    keys: Mapped[dict] = mapped_column(JSON)
+    label: Mapped[str] = mapped_column(String(80))
+    key_fingerprint: Mapped[str] = mapped_column(String(64))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    reason: Mapped[str | None] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(default=utc_now, onupdate=utc_now)
+
+
+class PushDelivery(Base):
+    __tablename__ = "push_deliveries"
+    __table_args__ = (UniqueConstraint("device_id", "batch_key", name="push_batch_unique"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    device_id: Mapped[str] = mapped_column(ForeignKey("push_devices.id"), index=True)
+    batch_key: Mapped[str] = mapped_column(String(100))
+    kind: Mapped[str] = mapped_column(String(20), default="REMINDER")
+    notice_ids: Mapped[list] = mapped_column(JSON, default=list)
+    state: Mapped[str] = mapped_column(String(20), default="PENDING", index=True)
+    attempts: Mapped[int] = mapped_column(default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(default=utc_now, index=True)
+    lease_until: Mapped[datetime | None]
+    lease_token: Mapped[str | None] = mapped_column(String(36))
+    last_status: Mapped[int | None]
+    last_error: Mapped[str | None] = mapped_column(String(120))
+    accepted_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)

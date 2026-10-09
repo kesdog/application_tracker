@@ -1,5 +1,12 @@
 import { expireHumanSession, withSessionHeaders } from './auth'
 
+export interface PhoneDevice { id: string; label: string; active: boolean; reason: string | null; created_at: string; latest: null | { state: string; attempts: number; error: string | null; accepted_at: string | null } }
+export interface PhoneNotificationStatus { configured: boolean; public_key: string | null; devices: PhoneDevice[] }
+export const getPhoneNotificationStatus = () => request<PhoneNotificationStatus>('/api/settings/notifications')
+export const registerPhoneDevice = (subscription: PushSubscriptionJSON, label: string) => request<PhoneDevice>('/api/settings/notifications/devices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...subscription, label }) })
+export const removePhoneDevice = (id: string) => request<void>('/api/settings/notifications/devices/' + encodeURIComponent(id), { method: 'DELETE' })
+export const testPhoneDevice = (id: string) => request<{ message: string }>('/api/settings/notifications/devices/' + encodeURIComponent(id) + '/test', { method: 'POST' })
+
 export interface Health {
   status: 'ok'
   version: string

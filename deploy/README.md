@@ -1,6 +1,6 @@
 # Hosted workspace and phone access
 
-This phase supplies a single-workspace password, authenticated browser sessions, an installable phone shell, an HTTPS reverse proxy, and portable backups. Follow-up notices still appear inside the app. Web Push delivery is Phase 6; this setup does not send emails or wake an AI agent.
+This setup supplies a single-workspace password, authenticated browser sessions, an installable phone shell, an HTTPS reverse proxy, portable backups, and optional Web Push. The base stack works without push configuration; the optional setup below enables phone reminders. It does not send emails or wake an AI agent.
 
 The current local installation stays on loopback with no login. Hosting has not been provisioned. Docker is unavailable on the development machine, so the container stack requires the server checks below before going live.
 
@@ -84,7 +84,7 @@ docker compose --env-file deploy/hosted.env -f compose.yaml -f compose.restore.y
 docker compose --env-file deploy/hosted.env -f compose.yaml -f compose.restore.yaml up -d --no-build
 ```
 
-Keep using the override on subsequent commands until the selected volume is made permanent in Compose. Verify application/follow-up counts and document downloads before retiring the old workspace. Restore checks the database checksum, refuses nonempty destinations and symlinks, relocates stored document paths across Windows/Linux, and clears browser sessions. If restoration fails, preserve the original backup and retry with a fresh destination after resolving the error. Existing data is never overwritten.
+Keep using the override on subsequent commands until the selected volume is made permanent in Compose. Verify application/follow-up counts and document downloads before retiring the old workspace. Restore checks the database checksum, refuses nonempty destinations and symlinks, relocates stored document paths across Windows/Linux, and clears browser sessions and phone registrations. If restoration fails, preserve the original backup and retry with a fresh destination after resolving the error. Existing data is never overwritten. Enable phone devices again after restoration.
 
 For password rotation, generate a new secret into a different filename, set its ownership/permissions as above, stop the tracker, replace the configured secret file, and recreate the tracker container. Verify the old password and sessions are rejected. The tracker reads the hash only at startup.
 
@@ -92,6 +92,36 @@ For password rotation, generate a new secret into a different filename, set its 
 
 On the actual HTTPS workspace, sign in from Safari on iPhone/iPad and use Share → Add to Home Screen. On Android, use the browser's Install app/Add to Home screen menu or the installation button in Settings when available. The installed app starts in Follow-ups and preserves message deep links through login.
 
-The service worker caches only public icons and offline guidance, following the [PWA service worker model](https://web.dev/learn/pwa/service-workers). It does not cache private APIs or application records. Reconnect and sign in to work with your data. Installing the app does not request notification permission or enable background reminders.
+The service worker caches only public icons and offline guidance, following the [PWA service worker model](https://web.dev/learn/pwa/service-workers). It does not cache private APIs or application records. Reconnect and sign in to work with your data. Installing the app does not request notification permission; enabling a device is a separate explicit action.
 
-Before calling this deployment complete, verify on an iPhone and an Android phone: installation, sign-in, resume after closing the app, follow-up deep links, copy/paste into a mail client, sign-out, expired sessions, and offline/reconnect behavior. Desktop browser checks at a phone-sized viewport cannot establish real-device behavior. Web Push subscriptions, delivery retries and actual background notification checks remain the next phase.
+Before calling this deployment complete, verify on an iPhone and an Android phone: installation, sign-in, resume after closing the app, follow-up deep links, copy/paste into a mail client, sign-out, expired sessions, and offline/reconnect behavior. Desktop browser checks at a phone-sized viewport cannot establish real-device behavior. Actual background notification checks are still required.
+
+## Optional phone notifications
+
+Use a stable P-256 VAPID secret and an administrator contact email. The app uses [pywebpush](https://github.com/web-push-libs/pywebpush) for standard encrypted Web Push; browser/OS push providers remain necessary. BSM and an application message broker are not required.
+
+After building the current image, generate the secret once. Set `TRACKER_PUSH_CONTACT=mailto:YOUR_ADMIN_EMAIL` in `deploy/hosted.env`.
+
+```bash
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$PWD/deploy/secrets:/secrets" application-tracker:hosted \
+  python -m app.push_keys --output /secrets/vapid.pem
+sudo chown 10001:10001 deploy/secrets/vapid.pem
+sudo chmod 400 deploy/secrets/vapid.pem
+docker compose --env-file deploy/hosted.env -f compose.yaml -f compose.push.yaml config --quiet
+docker compose --env-file deploy/hosted.env -f compose.yaml -f compose.push.yaml up -d --no-build
+```
+
+Keep using `compose.push.yaml` on later Compose operations, together with any restore override. Back up this secret separately from workspace backups and keep it stable across redeployments. Regenerating it invalidates old browser subscriptions; devices must enable notifications again. The optional overlay can be removed to stop sending without affecting the manual queue.
+
+Open Settings → Phone notifications on the target phone, name the device, and tap Enable notifications. [iPhone/iPad Web Push](https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/) requires a Home Screen web app on supported iOS/iPadOS versions, with permission requested from a user action. The UI feature-detects support and explains denial/unavailability. No permission request or subscription is made on page load. Up to 20 devices may be registered; removal stops new server deliveries. Signing out closes private browser access but leaves separately opted-in generic reminders enabled.
+
+Tap Test notification, close the app, and wait for the notification. The worker scans every 30 seconds. Check notification status afterward: PENDING/RETRY means queued work; ACCEPTED means the push service accepted it, not proof the phone displayed it. FAILED explains a generic failure without exposing endpoint credentials. Tests bypass quiet hours and are limited to one per minute per device.
+
+General · Follow-ups → Reminder preferences controls quiet hours and daily digest. Digest is enabled by default and batches newly available notices once per device per local day at or after the saved reminder time. Without digest, newly available notices are grouped per scan. Existing due work is grouped when a device is enabled or the server returns after downtime. An ordinary notice is not repeatedly sent after acceptance; the in-app queue remains the source of current work. A single-item notification links to the exact message; grouped reminders link to the queue. Opening or dismissing a phone notification never records sending or dismisses in-app notices.
+
+The worker rechecks current job/message state before delivery. Sending, archiving, snoozing, pausing, closing/deleting a job, dismissing in-app notices, or disabling scheduled notices suppresses/defer pending reminders. Retryable timeouts, 429 and server errors use bounded exponential delays and Retry-After; six failed attempts end in FAILED. Invalid/expired subscriptions (404/410) become inactive. Leases recover interrupted work after two minutes. A crash after network acceptance but before recording it may replay a delivery; a stable provider topic and notification tag limit visible duplication, but exactly-once delivery cannot be guaranteed. Messages expire from the outbox after seven days and from the push provider after one hour; phones may suppress or delay notifications independently.
+
+Subscription endpoints and encryption keys are confidential workspace data. APIs expose device labels/status, not endpoint credentials. The sender accepts only HTTPS endpoints from supported Chrome, Firefox, Apple and Windows browser providers, disables redirects, and avoids provider exception text in logs. Keep backups private. Removing a device or restoring a workspace does not recall notifications already delivered to its OS.
+
+Real-device acceptance remains pending until the HTTPS server is deployed. On both target phones verify: permission denial, app-closed delivery, exact-message taps through expired sign-in, quiet-hour deferral, digest grouping, reconnect catch-up, revoked subscriptions and device removal. Use Download calendar reminder in a follow-up as an optional fallback; importing or dismissing the event never changes the message state. Re-export after changing the due date and remove stale imported calendar events yourself.

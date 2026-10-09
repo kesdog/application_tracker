@@ -92,6 +92,8 @@ The backend reads the root `.env` file; process environment variables take prece
 | `APP_PASSWORD_HASH` | unset | Alternative secret hash; configure exactly one hash source |
 | `APP_SESSION_HOURS` | `8` | Hosted browser session lifetime, 1–168 hours |
 | `APP_TRUSTED_PROXY_IPS` | `127.0.0.1` | Proxy addresses/ranges allowed to supply forwarded scheme/client information |
+| `APP_PUSH_VAPID_KEY_FILE` | unset | Optional persistent P-256 private key for hosted Web Push |
+| `APP_PUSH_CONTACT` | unset | Optional `mailto:` administrator contact; configure with the VAPID key |
 | `APP_DATA_DIR` | `./data` | Directory created during backend startup |
 | `APP_STATIC_DIR` | `./frontend/dist` | Compiled Vue frontend served by the backend when present |
 | `LOG_LEVEL` | `info` | Uvicorn logging level; case insensitive |
@@ -161,7 +163,7 @@ Message edits invalidate Ready approval. Revision checks reject conflicting save
 
 Snooze delays a reminder, reschedule changes the due date, pause affects the application's reminders, and archive retains message history. A confirmed automatic send prepares the next message up to the configured limit. Correcting its timestamp updates an untouched successor; undo removes an untouched successor. An edited successor must be archived before reopening the earlier send so its content is preserved.
 
-The scheduler persists in-app notices with a unique follow-up/due-time key. Quiet hours defer their availability; restarting or scanning again does not duplicate them. Due notices appear together in Follow-ups and can be dismissed without changing message state. This increment does **not** deliver phone push notifications. Hosted authentication, phone installation and HTTPS configuration are implemented; [the deployment guide](deploy/README.md) covers server setup and verification. Push subscriptions/delivery retries and the optional long-poll runner remain in [FOLLOWUP_PLAN.md](FOLLOWUP_PLAN.md); `daily_digest` is a reserved delivery preference.
+The scheduler persists in-app notices with a unique follow-up/due-time key. Quiet hours defer their availability; restarting or scanning again does not duplicate them. Due notices appear together in Follow-ups and can be dismissed without changing message state. Hosted workspaces can optionally deliver Web Push through explicitly enabled devices in **Settings → Phone notifications**. The saved daily digest batches new notices once per device per local day at or after the reminder time; turning it off groups new notices on each scan. Delivery uses a persistent outbox with bounded retries and expired-device cleanup. ACCEPTED means the push service accepted delivery, not that a phone displayed it. Generic notifications open the queue or exact message without recording a send. **Download calendar reminder** is an optional manual fallback. The local installation sends no push without configuration and device opt-in. [The deployment guide](deploy/README.md) covers keys, HTTPS and actual-phone acceptance; the optional AI runner remains in [FOLLOWUP_PLAN.md](FOLLOWUP_PLAN.md).
 
 Migration `0016_prepared_followups` maps legacy PENDING/DRAFTED to PREPARED, preserves SENT and its timestamp, and archives CANCELLED records. Startup prepares missing unsent content once and recovers old draft notes only when activity explicitly links them to that follow-up. Historical sent-message text is not fabricated. Back up the SQLite database before upgrading; schema downgrade discards the new message/settings fields.
 
