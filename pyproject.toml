@@ -21,6 +21,7 @@ dependencies = [
     "httpx>=0.28,<1",
     "extruct>=0.18,<1",
     "playwright>=1.50,<2",
+    "tzdata>=2025.2",
 ]
 
 [project.optional-dependencies]

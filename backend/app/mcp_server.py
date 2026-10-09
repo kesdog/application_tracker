@@ -22,7 +22,7 @@ from app.database import create_database, migrate_database
 from app.agent_schemas import AgentApplicationCreate, AgentApplicationFilters, AgentApplicationUpdate
 from app.posting_review import PostingReviewCreate
 from app.interview_schemas import InterviewCreate, InterviewUpdate
-from app.work_schemas import FollowUpCreate, NoteCreate, TaskCreate
+from app.work_schemas import FollowUpCreate, FollowUpUpdate, NoteCreate, TaskCreate
 
 
 _request_token: ContextVar[str | None] = ContextVar("mcp_request_token", default=None)
@@ -163,6 +163,16 @@ def create_mcp_server(settings: Settings | None = None, token: str | None = None
     def mark_followup_sent(application_id: str, followup_id: str) -> dict:
         """Record an already-sent follow-up. This updates tracker history only and never sends email."""
         return call("mark_followup_sent", {"application_id": application_id, "followup_id": followup_id})
+
+    @server.tool()
+    def get_followup_request(application_id: str, followup_id: str) -> dict:
+        """Get prepared text, variables and global/job/message customization. Mailbox access comes from your own tools; do not send or approve."""
+        return call("get_followup_request", {"application_id": application_id, "followup_id": followup_id})
+
+    @server.tool()
+    def revise_followup(application_id: str, followup_id: str, changes: FollowUpUpdate) -> dict:
+        """Revise content with expected_revision. Never sends or marks ready. Stale results are rejected."""
+        return call("revise_followup", {"application_id": application_id, "followup_id": followup_id, "changes": changes.model_dump(mode="json", exclude_unset=True)})
 
     @server.tool()
     def draft_followup(application_id: str, followup_id: str, content: str) -> dict:

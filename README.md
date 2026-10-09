@@ -145,6 +145,34 @@ Alembic applies pending migrations automatically at backend startup, including u
 
 Migration commands use the same `.env` settings and database as the application. Run one backend process against the local database during schema upgrades.
 
+## Prepared follow-ups
+
+Settings now includes **General · Follow-ups**: one default subject/message template, highlighted variable insertion, live preview, signature, language/tone guidance, instructions, calendar-day delay, automatic limit, timezone and quiet hours. Use `{company_name}` and `{position_name}`; the field picker exposes all application fields and related notes, documents, tasks and interviews. Friendly aliases such as `{company name}` are normalized. Unknown tags are rejected when saving a default template. Missing optional data stays highlighted in an individual message until filled or removed.
+
+Every eligible application created by the UI or an agent immediately gets a prepared message in the same transaction. Its first due date uses the original application date plus the saved delay at the saved local reminder time, including daylight-saving changes. The **Follow-ups** view is the canonical queue; dashboard and application rows link directly to its editor. Copy subject/message into your own mail client, **Mark ready** after review, send there, then **Record already sent** with the actual time. Copying and Ready never record a send. Phone-only follow-ups record completed calls instead.
+
+Message edits invalidate Ready approval. Revision checks reject conflicting saves without overwriting newer text. Saved messages retain their original text when settings or application data changes: preview refreshed variables or the latest template and explicitly apply the replacement. Language and tone are editing/AI preferences, not automatic translation. Per-job preferences and per-message instructions travel with **Copy AI instructions** and the authenticated agent tools. Notes can record replies without a mailbox connection.
+
+Snooze delays a reminder, reschedule changes the due date, pause affects the application's reminders, and archive retains message history. A confirmed automatic send prepares the next message up to the configured limit. Correcting its timestamp updates an untouched successor; undo removes an untouched successor. An edited successor must be archived before reopening the earlier send so its content is preserved.
+
+The scheduler persists in-app notices with a unique follow-up/due-time key. Quiet hours defer their availability; restarting or scanning again does not duplicate them. Due notices appear together in Follow-ups and can be dismissed without changing message state. This increment does **not** deliver phone push notifications. Hosted human authentication, HTTPS, installation, push subscriptions/delivery retries and the optional long-poll runner remain in [FOLLOWUP_PLAN.md](FOLLOWUP_PLAN.md). Keep the backend local until hosted access is implemented; `daily_digest` is a reserved delivery preference.
+
+Migration `0016_prepared_followups` maps legacy PENDING/DRAFTED to PREPARED, preserves SENT and its timestamp, and archives CANCELLED records. Startup prepares missing unsent content once and recovers old draft notes only when activity explicitly links them to that follow-up. Historical sent-message text is not fabricated. Back up the SQLite database before upgrading; schema downgrade discards the new message/settings fields.
+
+| Endpoint | Behavior |
+| --- | --- |
+| `GET/PUT /api/settings/general` | Read/save defaults; PUT accepts `expected_revision` |
+| `GET /api/followups/variables` | Canonical template variable registry and aliases |
+| `POST /api/followups/preview` | Render subject/body, report missing and unknown fields |
+| `GET /api/followups` | Server pagination, status/due/search/paused/archive filters |
+| `GET /api/followups/notices` | Available unread in-app notices |
+| `POST /api/followups/notices/{id}/read` | Dismiss one notice |
+| `GET /api/applications/{app}/followups/{id}/proposal?latest=true` | Preview replacing saved text; false uses its saved template |
+| `POST /api/applications/{app}/followups/{id}/apply-template` | Explicit replacement with `expected_revision` and `latest` |
+| `GET /api/applications/{app}/followups/{id}/ai-request` | Provider-neutral versioned request for manual copying |
+
+Agent REST/MCP adds `get_followup_request` (read permission) and `revise_followup` (draft permission). The latter requires `expected_revision`, accepts only subject/body/instructions/customization, rejects closed/archived jobs, and cannot approve Ready or send. Existing mailbox tools remain external to the tracker. The legacy mark-followup-sent operation still records an externally completed send when its existing permission allows it; it never sends mail.
+
 ## Notes, tasks, and follow-ups API
 
 All work endpoints are scoped to `/api/applications/{application_id}`:
@@ -157,15 +185,15 @@ All work endpoints are scoped to `/api/applications/{application_id}`:
 | `POST /tasks` | Create with `title`, optional `description` and `due_at` |
 | `PATCH /tasks/{id}` | Edit title/description/due date/status |
 | `POST /followups` | Create with optional `due_at` and `template_reference` |
-| `PATCH /followups/{id}` | Edit due date/template reference/status |
+| `PATCH /followups/{id}` | Edit message/instructions/customization, reminder controls or PREPARED/READY/SENT; send `expected_revision` |
 
-Creation returns HTTP 201; updates return HTTP 200. Missing parents or child IDs belonging to another application return HTTP 404. Invalid input returns HTTP 422. Child ownership, IDs, sequence numbers, authorship, and completion/sent timestamps cannot be overwritten through request bodies.
+Creation returns HTTP 201; updates return HTTP 200. Missing parents or child IDs belonging to another application return HTTP 404. Invalid input returns HTTP 422. Child ownership, IDs, sequence numbers, authorship and task completion timestamps cannot be overwritten through request bodies. Follow-ups accept an explicit actual `sent_at` when their status is SENT.
 
 Note types are `GENERAL`, `ASSESSMENT`, `EMAIL_DRAFT`, `INTERVIEW`, and `AGENT`. The human REST routes record `created_by=HUMAN`; note type is a category, not an identity. Notes have UTC `created_at` and `updated_at` timestamps.
 
 Task statuses are `PENDING`, `COMPLETED`, and `CANCELLED`. Completing a task sets `completed_at` once; repeating the same status preserves that timestamp. Returning to pending or cancelled clears it. Tasks with due dates appear first, ordered earliest first.
 
-Follow-up statuses are `PENDING`, `DRAFTED`, `SENT`, and `CANCELLED`. Marking sent sets `sent_at` once. Changing away from sent clears it; the current release stores current state, with audit history planned for 0.6.0. Follow-up creation takes a SQLite write lock before allocating the next sequence number, so simultaneous requests receive distinct numbers. The default due date is the creation time plus the effective delay; an explicit due date overrides it. Manual creation always remains available, even when the suggestion limit is zero or already exceeded.
+Follow-up statuses are `PREPARED`, `READY` and `SENT`. Legacy inputs PENDING/DRAFTED map to PREPARED; CANCELLED archives the message. Marking sent sets `sent_at` once unless an actual send time is supplied. Reopening clears it and preserves the change in audit history. Follow-up creation takes a SQLite write lock before allocating the next sequence number, so simultaneous requests receive distinct numbers. For additional manual follow-ups the default due date is creation time plus the effective delay; an explicit date overrides it. Manual creation remains available even when the automatic limit is zero or exceeded.
 
 All input datetimes require an explicit timezone. SQLite stores UTC, API responses include `Z`, and forms/display use local time. To mark a task complete or a follow-up sent, PATCH `{"status":"COMPLETED"}` or `{"status":"SENT"}` to its corresponding endpoint. These operations do not change the parent application's lifecycle.
 
@@ -202,7 +230,7 @@ Application filters are combined with AND logic. Text filters are case-insensiti
 
 `GET /api/dashboard` returns operational counts, due/overdue tasks and follow-ups, interviews scheduled within seven days, a due-date-ordered upcoming work list, and the ten most recent timeline events. Soft-deleted applications and their child work are excluded. Completed/cancelled tasks and sent/cancelled follow-ups do not count as due.
 
-`GET /api/reminders` returns the background scheduler's last check and grouped due/overdue follow-ups and tasks, plus upcoming interviews. It refreshes every 60 seconds and only reads records. Follow-ups accept `channel: "EMAIL"`, `"PHONE"`, or `"BOTH"`; legacy records remain `EMAIL`. Phone and combined follow-ups require a saved phone number. `POST /api/applications/{application_id}/followups/{followup_id}/draft` accepts `{"content":"..."}` for email or combined follow-ups. With no connected provider, it stores an `EMAIL_DRAFT` note and returns `location: "LOCAL_NOTE"` with an explicit unsent message. `GET /api/integrations` reports mail and calendar connection status.
+`GET /api/reminders` returns the background scheduler's last check and grouped due/overdue follow-ups and tasks, plus upcoming interviews. It refreshes every 60 seconds; the scheduler also persists scheduled follow-up notices without changing message state. Follow-ups accept `channel: "EMAIL"`, `"PHONE"`, or `"BOTH"`; legacy records remain `EMAIL`. Phone and combined follow-ups require a saved phone number. The legacy `POST /api/applications/{application_id}/followups/{followup_id}/draft` accepts `{"content":"..."}` for email or combined follow-ups. With no connected provider, it stores an `EMAIL_DRAFT` note, updates the prepared message and returns `location: "LOCAL_NOTE"` with an explicit unsent message. It never marks Ready. `GET /api/integrations` reports mail and calendar connection status.
 
 ## Automatic posting checks
 

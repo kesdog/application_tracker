@@ -40,7 +40,9 @@ def _due_items(session: Session, application_id: str) -> list[AgentDueItem]:
     )):
         items.append(AgentDueItem(id=task.id, kind="TASK", title=task.title, due_at=task.due_at, status=task.status.value))
     for followup in session.scalars(select(work.FollowUp).join(Application).where(
-        work.FollowUp.application_id == application_id, work.FollowUp.status.in_((FollowUpStatus.PENDING, FollowUpStatus.DRAFTED)),
+        work.FollowUp.application_id == application_id, work.FollowUp.status.in_((FollowUpStatus.PREPARED, FollowUpStatus.READY)),
+        work.FollowUp.archived_at.is_(None), Application.followup_paused.is_(False),
+        (work.FollowUp.snoozed_until.is_(None) | (work.FollowUp.snoozed_until <= utc_now())),
         Application.status != ApplicationStatus.CLOSED,
     )):
         items.append(AgentDueItem(id=followup.id, kind="FOLLOWUP", title=f"Follow-up #{followup.sequence_number}", due_at=followup.due_at, status=followup.status.value))

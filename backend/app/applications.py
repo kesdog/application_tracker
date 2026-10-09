@@ -48,10 +48,9 @@ def create_application(
         occurred_at=datetime.combine(application.date_applied, time(12)),
     )
     record_audit(session, application.id, "APPLICATION", application.id, "CREATE", new=data.model_dump(), actor_type=actor_type, actor_reference=actor_reference)
-    session.commit()
     from app.work import schedule_automatic_followup
-    if schedule_automatic_followup(session, application, settings or Settings(), actor_type=actor_type, actor_reference=actor_reference):
-        session.commit()
+    schedule_automatic_followup(session, application, settings or Settings(), actor_type=actor_type, actor_reference=actor_reference)
+    session.commit()
     session.refresh(application)
     application.duplicate_warnings = duplicates
     return application
@@ -169,6 +168,12 @@ def update_application(
     for name, value in changes.items():
         setattr(application, name, value)
     if changes:
+        if {"followup_instructions", "followup_customization"} & set(changes):
+            from app.models import FollowUp, FollowUpStatus
+            for item in session.scalars(select(FollowUp).where(FollowUp.application_id == application_id, FollowUp.status != FollowUpStatus.SENT)):
+                item.revision += 1
+                item.status = FollowUpStatus.PREPARED
+                item.approved_revision = None
         record_audit(
             session, application_id, "APPLICATION", application_id, "UPDATE",
             previous=previous, new=changes, actor_type=actor_type, actor_reference=actor_reference, reversible=True,
@@ -182,7 +187,7 @@ def update_application(
         other = set(changes) - {"status", "outcome", "posting_status"}
         if other:
             record_event(session, application_id, "APPLICATION_UPDATED", "Application details updated", actor_type=actor_type, actor_reference=actor_reference, metadata={"fields": sorted(other)})
-        if "followup_delay_days" in changes:
+        if {"followup_delay_days", "date_applied"} & set(changes):
             from app.work import reschedule_pending_automatic_followups
             reschedule_pending_automatic_followups(session, application, settings or Settings())
     session.commit()

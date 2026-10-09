@@ -4,6 +4,7 @@ from typing import Annotated
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models import FollowUpChannel, FollowUpStatus, NoteType, TaskStatus
+from app.followup_templates import Customization
 
 Content = Annotated[str, Field(min_length=1)]
 Title = Annotated[str, Field(min_length=1, max_length=300)]
@@ -12,7 +13,7 @@ Title = Annotated[str, Field(min_length=1, max_length=300)]
 class Input(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
-    @field_validator("due_at", mode="after", check_fields=False)
+    @field_validator("due_at", "sent_at", "snoozed_until", mode="after", check_fields=False)
     @classmethod
     def store_utc(cls, value):
         return value.astimezone(timezone.utc).replace(tzinfo=None) if value else None
@@ -52,6 +53,10 @@ class FollowUpCreate(Input):
     due_at: AwareDatetime | None = None
     template_reference: str | None = Field(default=None, max_length=2048)
     channel: FollowUpChannel = FollowUpChannel.EMAIL
+    subject: str | None = Field(default=None, max_length=3000)
+    body: str | None = Field(default=None, max_length=50000)
+    instructions: str = Field(default="", max_length=12000)
+    customization: Customization = Field(default_factory=Customization)
 
 
 class FollowUpUpdate(Input):
@@ -59,6 +64,21 @@ class FollowUpUpdate(Input):
     template_reference: str | None = Field(default=None, max_length=2048)
     status: FollowUpStatus | None = None
     channel: FollowUpChannel | None = None
+    subject: str | None = Field(default=None, max_length=3000)
+    body: str | None = Field(default=None, max_length=50000)
+    instructions: str | None = Field(default=None, max_length=12000)
+    customization: Customization | None = None
+    expected_revision: int | None = Field(default=None, ge=1)
+    sent_at: AwareDatetime | None = None
+    snoozed_until: AwareDatetime | None = None
+    archived: bool | None = None
+
+    @model_validator(mode="after")
+    def no_null_content(self):
+        for name in ("subject", "body", "instructions", "customization", "archived"):
+            if name in self.model_fields_set and getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null")
+        return self
 
     @model_validator(mode="after")
     def due_date_required(self):
@@ -74,7 +94,7 @@ class Read(BaseModel):
     id: str
     application_id: str
 
-    @field_validator("created_at", "updated_at", "due_at", "completed_at", "sent_at", check_fields=False)
+    @field_validator("created_at", "updated_at", "due_at", "completed_at", "sent_at", "prepared_at", "snoozed_until", "archived_at", check_fields=False)
     @classmethod
     def expose_utc(cls, value):
         return value.replace(tzinfo=timezone.utc) if value is not None and value.tzinfo is None else value
@@ -104,6 +124,18 @@ class FollowUpRead(Read):
     is_automatic: bool
     channel: FollowUpChannel
     template_reference: str | None
+    subject: str
+    body: str
+    instructions: str
+    customization: dict
+    template_snapshot: dict
+    variable_snapshot: dict
+    revision: int
+    approved_revision: int | None
+    prepared_at: datetime | None
+    updated_at: datetime
+    snoozed_until: datetime | None
+    archived_at: datetime | None
 
 
 class WorkRead(BaseModel):

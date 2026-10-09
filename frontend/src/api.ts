@@ -25,6 +25,9 @@ export interface ApplicationCreate {
   requirements?: string | null
   followup_delay_days?: number | null
   max_followup_suggestions?: number | null
+  followup_instructions?: string
+  followup_customization?: Customization
+  followup_paused?: boolean
 }
 
 export interface Application extends ApplicationCreate {
@@ -64,7 +67,25 @@ export interface TaskInput { title: string; description: string | null; due_at: 
 export interface Task extends TaskInput { id: string; application_id: string; status: 'PENDING' | 'COMPLETED' | 'CANCELLED'; completed_at: string | null }
 export type FollowUpChannel = 'EMAIL' | 'PHONE' | 'BOTH'
 export interface FollowUpInput { due_at: string | null; template_reference: string | null; channel: FollowUpChannel }
-export interface FollowUp extends FollowUpInput { id: string; application_id: string; sequence_number: number; status: 'PENDING' | 'DRAFTED' | 'SENT' | 'CANCELLED'; is_automatic: boolean; sent_at: string | null }
+export interface Customization { language?: string | null; tone?: string | null; signature?: string | null }
+export interface FollowUp extends FollowUpInput {
+  id: string; application_id: string; sequence_number: number; status: 'PREPARED' | 'READY' | 'SENT'; is_automatic: boolean; sent_at: string | null
+  subject: string; body: string; instructions: string; customization: Customization; revision: number; approved_revision: number | null
+  template_snapshot: Record<string, unknown>; variable_snapshot: Record<string, string>; prepared_at: string | null; updated_at: string
+  snoozed_until: string | null; archived_at: string | null
+}
+export interface FollowUpChanges { subject?: string; body?: string; instructions?: string; customization?: Customization; expected_revision?: number; status?: FollowUp['status']; sent_at?: string | null; due_at?: string; snoozed_until?: string | null; archived?: boolean }
+export interface TemplateVariable { key: string; label: string; group: string; aliases: string[] }
+export interface GeneralSettings {
+  subject_template: string; body_template: string; signature: string; language: string; tone: string; instructions: string
+  followup_delay_days: number; max_followup_suggestions: number; timezone: string; reminder_time: string
+  notifications_enabled: boolean; quiet_start: string; quiet_end: string; daily_digest: boolean; revision: number
+}
+export interface RenderedTemplate { text: string; missing: string[]; unknown: string[] }
+export interface TemplatePreview { subject: RenderedTemplate; body: RenderedTemplate; variables: Record<string, string> }
+export interface MessageProposal { subject: RenderedTemplate; body: RenderedTemplate; expected_revision: number }
+export interface FollowUpRow extends FollowUp { application: Application }
+export interface FollowUpPage { items: FollowUpRow[]; total: number; page: number; page_size: number }
 export interface ApplicationWork { notes: Note[]; tasks: Task[]; followups: FollowUp[]; followup_delay_days: number; max_followup_suggestions: number }
 
 export type InterviewType = 'PHONE' | 'HR' | 'TECHNICAL' | 'ONSITE' | 'FINAL' | 'OTHER'
@@ -157,7 +178,21 @@ export const updateNote = (id: string, noteId: string, data: NoteInput) => write
 export const createTask = (id: string, data: TaskInput) => writeChild<Task>(id, 'tasks', data)
 export const updateTask = (id: string, taskId: string, data: { status: Task['status'] }) => writeChild<Task>(id, 'tasks', data, taskId)
 export const createFollowUp = (id: string, data: FollowUpInput) => writeChild<FollowUp>(id, 'followups', data)
-export const updateFollowUp = (id: string, followupId: string, data: { status: FollowUp['status'] }) => writeChild<FollowUp>(id, 'followups', data, followupId)
+export const updateFollowUp = (id: string, followupId: string, data: FollowUpChanges) => writeChild<FollowUp>(id, 'followups', data, followupId)
+export const getGeneralSettings = (): Promise<GeneralSettings> => request('/api/settings/general')
+export function saveGeneralSettings(data: GeneralSettings): Promise<GeneralSettings> {
+  const { revision, ...values } = data
+  return request('/api/settings/general', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...values, expected_revision: revision }) })
+}
+export const getTemplateVariables = (): Promise<TemplateVariable[]> => request('/api/followups/variables')
+export const previewTemplate = (data: { subject: string; body: string; application_id?: string; customization?: Customization }): Promise<TemplatePreview> => request('/api/followups/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+export const getFollowUps = (query = ''): Promise<FollowUpPage> => request('/api/followups' + query)
+export interface FollowUpNotice { id: string; followup: FollowUp; application: Pick<Application, 'id' | 'company' | 'job_title'> }
+export const getFollowUpNotices = (): Promise<FollowUpNotice[]> => request('/api/followups/notices')
+export const readFollowUpNotice = (id: string): Promise<{ read: boolean }> => request(`/api/followups/notices/${encodeURIComponent(id)}/read`, { method: 'POST' })
+export const proposeFollowUp = (appId: string, id: string, latest: boolean): Promise<MessageProposal> => request(`/api/applications/${encodeURIComponent(appId)}/followups/${encodeURIComponent(id)}/proposal?latest=${latest}`)
+export const applyFollowUpTemplate = (appId: string, id: string, expected_revision: number, latest: boolean): Promise<FollowUp> => request(`/api/applications/${encodeURIComponent(appId)}/followups/${encodeURIComponent(id)}/apply-template`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expected_revision, latest }) })
+export const getFollowUpAIRequest = (appId: string, id: string): Promise<Record<string, unknown>> => request(`/api/applications/${encodeURIComponent(appId)}/followups/${encodeURIComponent(id)}/ai-request`)
 
 export function listApplicationInterviews(applicationId: string): Promise<Interview[]> {
   return request(`/api/applications/${encodeURIComponent(applicationId)}/interviews`)

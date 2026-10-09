@@ -10,6 +10,7 @@ const AddApplication = defineAsyncComponent(() => import('./AddApplication.vue')
 const Interviews = defineAsyncComponent(() => import('./Interviews.vue'))
 const Tasks = defineAsyncComponent(() => import('./Tasks.vue'))
 const Dashboard = defineAsyncComponent(() => import('./Dashboard.vue'))
+const FollowUps = defineAsyncComponent(() => import('./FollowUps.vue'))
 const AgentSettings = defineAsyncComponent(() => import('./AgentSettings.vue'))
 const Exports = defineAsyncComponent(() => import('./Exports.vue'))
 
@@ -22,12 +23,13 @@ const page = computed(() => {
   if (hash.value.startsWith('#/settings')) return 'settings'
   if (hash.value.startsWith('#/interviews')) return 'interviews'
   if (hash.value.startsWith('#/tasks')) return 'tasks'
+  if (hash.value.startsWith('#/followups')) return 'followups'
   if (hash.value.startsWith('#/applications')) return 'applications'
   return 'dashboard'
 })
 const sectionTitle = computed(() => ({
   dashboard: 'Dashboard', applications: 'Applications', 'add-application': 'Add application',
-  interviews: 'Interviews', tasks: 'Tasks', export: 'Export', settings: 'Settings',
+  interviews: 'Interviews', tasks: 'Tasks', followups: 'Follow-ups', export: 'Export', settings: 'Settings',
 })[page.value])
 let events: EventSource | null = null
 
@@ -60,6 +62,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', route); events?.clo
         </div>
         <a href="#/interviews" aria-label="Interviews" title="Interviews" :class="{ active: page === 'interviews' }" :aria-current="page === 'interviews' ? 'page' : undefined"><i class="pi pi-calendar" aria-hidden="true" /><span class="nav-label">Interviews</span></a>
         <a href="#/tasks" aria-label="Tasks" title="Tasks" :class="{ active: page === 'tasks' }" :aria-current="page === 'tasks' ? 'page' : undefined"><i class="pi pi-check-square" aria-hidden="true" /><span class="nav-label">Tasks</span></a>
+        <a href="#/followups" aria-label="Follow-ups" title="Follow-ups" :class="{ active: page === 'followups' }" :aria-current="page === 'followups' ? 'page' : undefined"><i class="pi pi-envelope" aria-hidden="true" /><span class="nav-label">Follow-ups</span></a>
       </nav>
       <nav class="settings-nav" aria-label="Export and settings"><a href="#/export" aria-label="Export" title="Export" :class="{ active: page === 'export' }" :aria-current="page === 'export' ? 'page' : undefined"><i class="pi pi-download" aria-hidden="true" /><span class="nav-label">Export</span></a><a href="#/settings" aria-label="Settings" title="Settings" :class="{ active: page === 'settings' }" :aria-current="page === 'settings' ? 'page' : undefined"><i class="pi pi-cog" aria-hidden="true" /><span class="nav-label">Settings</span></a></nav>
     </aside>
@@ -71,6 +74,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', route); events?.clo
         <AddApplication v-else-if="page === 'add-application'" />
         <Interviews v-else-if="page === 'interviews'" />
         <Tasks v-else-if="page === 'tasks'" />
+        <FollowUps v-else-if="page === 'followups'" />
         <Exports v-else-if="page === 'export'" />
         <AgentSettings v-else-if="page === 'settings'" />
         <Applications v-else />

@@ -1,4 +1,4 @@
-"""Read-only reminder scheduler. It never sends, closes, or edits records."""
+"""Refresh reminder snapshots and durable notices. Never send mail or close jobs."""
 import asyncio
 import logging
 from datetime import timedelta, timezone
@@ -25,6 +25,11 @@ class ReminderScheduler:
                 return dashboard.dashboard(session)
 
         data = await asyncio.to_thread(collect)
+        def schedule_notices():
+            from app.followup_reminders import synchronize
+            with Session(self.engine) as session:
+                synchronize(session)
+        await asyncio.to_thread(schedule_notices)
         now = utc_now()
         groups = {name: [] for name in ("due_followups", "overdue_followups", "due_tasks", "overdue_tasks", "upcoming_interviews")}
         for item in data["upcoming"]:

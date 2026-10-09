@@ -23,7 +23,7 @@ PERMISSION_FOR = {
     "get_interview_context": "read", "create_application": "create", "update_application": "edit",
     "create_timeline_entry": "edit", "update_timeline_entry": "edit", "check_posting_status": "edit",
     "create_note": "draft", "create_followup": "draft", "mark_followup_sent": "draft",
-    "draft_followup": "draft",
+    "draft_followup": "draft", "get_followup_request": "read", "revise_followup": "draft",
     "create_task": "tasks", "complete_task": "tasks", "create_interview": "interviews",
     "update_interview": "interviews",
 }
@@ -143,6 +143,17 @@ def _invoke(
         checker = PostingChecker(browser_fallback=render_with_playwright if settings.posting_playwright_fallback else None)
         result = posting_service.check_application_posting(session, application_id, checker, actor_type=ActorType.AGENT).model_dump(mode="json")
         topic = "application.updated"
+    elif operation == "get_followup_request":
+        result = work.ai_request(session, application_id, args["followup_id"], settings)
+    elif operation == "revise_followup":
+        changes = FollowUpUpdate.model_validate(args["changes"])
+        if changes.expected_revision is None:
+            raise ValueError("expected_revision is required when revising a prepared message")
+        if set(changes.model_fields_set) - {"subject", "body", "instructions", "customization", "expected_revision"}:
+            raise ValueError("This operation only revises message content and instructions")
+        item = work.update_followup(session, application_id, args["followup_id"], changes, settings=settings, **actor)
+        result = FollowUpRead.model_validate(item).model_dump(mode="json")
+        topic = "followup.updated"
     elif operation == "create_note":
         item = work.create_note(session, application_id, NoteCreate.model_validate(args["note"]), **actor)
         result = NoteRead.model_validate(item).model_dump(mode="json")

@@ -35,7 +35,7 @@ def test_draft_fallback_keeps_mailbox_disconnected_and_never_sends(tmp_path):
         assert work["notes"][0]["type"] == "EMAIL_DRAFT"
         assert work["notes"][0]["content"] == "Checking in about the role"
         drafted = next(item for item in work["followups"] if item["id"] == followup["id"])
-        assert drafted["status"] == "DRAFTED"
+        assert drafted["status"] == "PREPARED"
         assert drafted["sent_at"] is None
         assert client.get("/api/integrations").json() == {"mail": {"connected": False}, "calendar": {"connected": False}}
 
@@ -62,7 +62,7 @@ def test_scheduler_classifies_work_without_mutation(tmp_path):
         assert len(result["due_tasks"]) == 1
         with Session(client.app.state.engine) as session:
             from app.models import FollowUp, Task
-            assert session.query(FollowUp).filter(FollowUp.is_automatic.is_(False)).one().status.value == "PENDING"
+            assert session.query(FollowUp).filter(FollowUp.is_automatic.is_(False)).one().status.value == "PREPARED"
             assert session.query(Task).one().status.value == "PENDING"
 
 

@@ -72,10 +72,10 @@ def test_followup_defaults_sequences_and_unlimited_manual_creation(client, path)
     before = datetime.now(timezone.utc)
     automatic = client.get(path + '/work').json()['followups']
     assert len(automatic) == 1 and automatic[0]['is_automatic'] is True
-    assert automatic[0]['due_at'].startswith('2026-10-01T09:00:00')
+    assert automatic[0]['due_at'] == '2026-10-01T07:00:00Z'  # 09:00 Europe/Paris
     records = [client.post(path + '/followups', json={}).json() for _ in range(4)]
     assert [item['sequence_number'] for item in records] == [2, 3, 4, 5]
-    assert all(item['status'] == 'PENDING' and item['sent_at'] is None for item in records)
+    assert all(item['status'] == 'PREPARED' and item['sent_at'] is None for item in records)
     assert all(item['channel'] == 'EMAIL' for item in records)
     due = datetime.fromisoformat(records[0]['due_at'])
     assert before + timedelta(days=7) <= due <= datetime.now(timezone.utc) + timedelta(days=7)
@@ -100,13 +100,13 @@ def test_followup_drafted_sent_cancelled_and_timestamp(client, path):
     item = response.json()
     url = path + '/followups/' + item['id']
     drafted = client.patch(url, json={'status': 'DRAFTED'}).json()
-    assert drafted['status'] == 'DRAFTED'
+    assert drafted['status'] == 'PREPARED'
     assert drafted['sent_at'] is None
     sent = client.patch(url, json={'status': 'SENT'}).json()
     assert sent['sent_at'].endswith('Z')
     assert client.patch(url, json={'status': 'SENT'}).json()['sent_at'] == sent['sent_at']
     cancelled = client.patch(url, json={'status': 'CANCELLED'}).json()
-    assert cancelled['status'] == 'CANCELLED' and cancelled['sent_at'] is None
+    assert cancelled['status'] == 'PREPARED' and cancelled['archived_at'] is not None and cancelled['sent_at'] is None
     assert client.patch(url, json={'template_reference': None}).json()['template_reference'] is None
     assert client.get(path).json()['status'] == 'SUBMITTED'
 
@@ -202,12 +202,12 @@ def test_automatic_followups_reschedule_and_repeat_until_the_limit(client, path)
     assert initial['is_automatic'] is True and initial['sequence_number'] == 1
     assert client.patch(path, json={'followup_delay_days': 3}).status_code == 200
     rescheduled = client.get(path + '/work').json()['followups'][0]
-    assert rescheduled['due_at'].startswith('2026-09-27T09:00:00')
+    assert rescheduled['due_at'] == '2026-09-27T07:00:00Z'
     sent = client.patch(path + '/followups/' + initial['id'], json={'status': 'SENT'}).json()
     assert sent['status'] == 'SENT'
     automatic = [item for item in client.get(path + '/work').json()['followups'] if item['is_automatic']]
     assert [item['sequence_number'] for item in automatic] == [1, 2]
-    assert automatic[1]['status'] == 'PENDING'
+    assert automatic[1]['status'] == 'PREPARED'
 
 
 def test_simultaneous_followups_get_unique_sequences(client, path):

@@ -5,7 +5,7 @@ import Textarea from 'primevue/textarea'
 import DateTimeField from './components/shared/DateTimeField.vue'
 import InputText from 'primevue/inputtext'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { createFollowUp, createNote, createTask, draftEmailFollowup, getWork, updateFollowUp, updateNote, updateTask, type ApplicationWork, type FollowUp, type FollowUpChannel, type Note, type NoteType, type Task } from './api'
+import { createFollowUp, createNote, createTask, getWork, updateNote, updateTask, type ApplicationWork, type FollowUpChannel, type Note, type NoteType, type Task } from './api'
 import Pagination from './Pagination.vue'
 import AppTag from './components/shared/AppTag.vue'
 import { followupStatusMeta, taskStatusMeta, urgencyMeta } from './presentation/taskPresentation'
@@ -23,8 +23,6 @@ const followupForm = reactive({ due_at: '', template_reference: '', channel: 'EM
 const noteOpen = ref(false)
 const taskOpen = ref(false)
 const followupOpen = ref(false)
-const draftingId = ref<string | null>(null)
-const draftContent = ref('')
 const followupPage = ref(1)
 const followupPageSize = 5
 const visibleFollowups = computed(() => (work.value?.followups ?? []).slice((followupPage.value - 1) * followupPageSize, followupPage.value * followupPageSize))
@@ -95,26 +93,6 @@ function saveFollowup() {
   }, 'Follow-up added.')
 }
 
-function setFollowupStatus(item: FollowUp, status: FollowUp['status']) {
-  return perform(async () => {
-    const saved = await updateFollowUp(props.applicationId, item.id, { status })
-    work.value!.followups = work.value!.followups.map(row => row.id === saved.id ? saved : row)
-  }, 'Follow-up updated. The tracker did not place a call or send email.')
-}
-
-async function saveEmailDraft(item: FollowUp) {
-  if (busy.value) return
-  busy.value = true; error.value = ''; notice.value = ''
-  try {
-    const result = await draftEmailFollowup(props.applicationId, item.id, draftContent.value)
-    work.value = await getWork(props.applicationId)
-    notice.value = result.message
-    draftingId.value = null; draftContent.value = ''
-    emit('changed')
-  } catch (cause) { error.value = cause instanceof Error ? cause.message : 'Unable to save the draft.' }
-  finally { busy.value = false }
-}
-
 onMounted(load)
 </script>
 
@@ -177,9 +155,8 @@ onMounted(load)
           <p class="meta">Due: {{ dateText(item.due_at) }}<template v-if="item.sent_at"> · {{ item.channel === 'EMAIL' ? 'Sent' : 'Completed' }} {{ dateText(item.sent_at) }}</template></p>
           <p v-if="item.template_reference && item.template_reference !== 'Automatic follow-up reminder'" class="content">Template: {{ item.template_reference }}</p>
           <p v-if="item.channel !== 'EMAIL' && phoneNumber" class="meta">Call: <a :href="`tel:${phoneNumber}`">{{ phoneNumber }}</a></p>
-          <form v-if="draftingId === item.id" @submit.prevent="saveEmailDraft(item)"><label>Email draft content<Textarea class="at-form-control" v-model="draftContent" required rows="5"></Textarea></label><p class="muted">If mail is not connected, this will be saved as an EMAIL_DRAFT note. It will not be sent.</p><div class="actions"><Button class="primary" type="submit" :disabled="busy">Save draft</Button><Button type="button" @click="draftingId = null">Cancel</Button></div></form>
-          <div class="actions"><Button v-if="item.status === 'PENDING' && item.channel !== 'PHONE'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'DRAFTED')">Mark drafted</Button><Button v-if="item.status === 'PENDING' || item.status === 'DRAFTED'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'SENT')">Mark followed up</Button><Button v-if="item.status === 'PENDING' || item.status === 'DRAFTED'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'CANCELLED')">Cancel follow-up</Button><Button v-if="item.status === 'CANCELLED' || item.status === 'SENT'" type="button" :disabled="busy" @click="setFollowupStatus(item, 'PENDING')">Reopen follow-up</Button></div>
-          <div v-if="item.channel !== 'PHONE' && (item.status === 'PENDING' || item.status === 'DRAFTED')" class="actions"><Button type="button" :disabled="busy" @click="draftingId = item.id; draftContent = ''">Write email draft</Button></div>
+          <p v-if="item.archived_at" class="muted">Archived</p>
+          <div class="actions"><Button as="a" :href="`#/followups/${applicationId}/${item.id}`">Review message and reminders</Button></div>
         </article>
         <Pagination v-if="work.followups.length > followupPageSize" v-model:page="followupPage" :total="work.followups.length" :page-size="followupPageSize" label="follow-ups" />
       </section>

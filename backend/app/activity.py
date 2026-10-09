@@ -180,8 +180,25 @@ def undo_last(session: Session, application_id: str, *, actor_type: ActorType = 
     entity = session.get(model, entry.entity_id)
     if entity is None or (entry.entity_type != "APPLICATION" and entity.application_id != application_id):
         raise UndoUnavailable("The changed record no longer exists")
+    if entry.entity_type == "FOLLOWUP":
+        from app.models import FollowUpStatus
+        if entity.status == FollowUpStatus.SENT and entry.previous_value.get("status", "SENT") != "SENT":
+            from app.work import remove_untouched_successor
+            remove_untouched_successor(session, entity)
+        old_revision = entity.revision
     for field, value in entry.previous_value.items():
         setattr(entity, field, restore_value(model, field, value))
+    if entry.entity_type == "FOLLOWUP":
+        entity.revision = old_revision + 1
+        entity.approved_revision = entity.revision if entity.status == FollowUpStatus.READY else None
+        if entity.status == FollowUpStatus.SENT and "sent_at" in entry.previous_value:
+            from app.work import reschedule_untouched_successor
+            from app.config import Settings
+            reschedule_untouched_successor(session, entity, Settings())
+    elif entry.entity_type == "APPLICATION" and {"date_applied", "followup_delay_days"} & set(entry.previous_value):
+        from app.work import reschedule_pending_automatic_followups
+        from app.config import Settings
+        reschedule_pending_automatic_followups(session, entity, Settings())
     entry.undone_at = utc_now()
     fields = sorted(entry.previous_value)
     record_event(

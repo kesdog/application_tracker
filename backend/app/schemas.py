@@ -5,6 +5,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, EmailStr, Field, Http
 import phonenumbers
 
 from app.models import ApplicationOutcome, ApplicationStatus, ContactType, DeadlineKind, PostingStatus
+from app.followup_templates import Customization
 
 ShortText = Annotated[str, Field(min_length=1, max_length=300)]
 Reference = Annotated[str, Field(max_length=2048)]
@@ -33,6 +34,14 @@ class ApplicationCreate(BaseModel):
     requirements: str | None = None
     followup_delay_days: int | None = Field(default=None, ge=0, le=3650)
     max_followup_suggestions: int | None = Field(default=None, ge=0, le=100)
+    followup_instructions: str = Field(default="", max_length=12000)
+    followup_customization: dict = Field(default_factory=dict)
+    followup_paused: bool = False
+
+    @field_validator("followup_customization")
+    @classmethod
+    def valid_customization(cls, value):
+        return Customization.model_validate(value).model_dump(exclude_none=True)
 
     @field_validator("followup_delay_days", "max_followup_suggestions", mode="before")
     @classmethod
@@ -152,6 +161,9 @@ class PostingCheckRead(BaseModel):
 
 
 class ApplicationUpdate(ApplicationCreate):
+    followup_instructions: str | None = Field(default=None, max_length=12000)
+    followup_customization: dict | None = None
+    followup_paused: bool | None = None
     job_title: ShortText | None = None
     company: ShortText | None = None
     date_applied: date | None = None
@@ -163,7 +175,7 @@ class ApplicationUpdate(ApplicationCreate):
     @model_validator(mode="after")
     def require_source(self) -> Self:
         # PATCH is partial: the service validates sources against the stored record.
-        for name in ("job_title", "company", "date_applied", "status", "posting_status"):
+        for name in ("job_title", "company", "date_applied", "status", "posting_status", "followup_instructions", "followup_customization", "followup_paused"):
             if name in self.model_fields_set and getattr(self, name) is None:
                 raise ValueError(f"{name} cannot be null")
         return self

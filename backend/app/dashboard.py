@@ -24,7 +24,9 @@ def dashboard(session: Session) -> dict:
     followup_rows = session.execute(
         select(FollowUp, Application).join(Application).where(
             Application.deleted_at.is_(None), Application.status != ApplicationStatus.CLOSED,
-            FollowUp.status.in_((FollowUpStatus.PENDING, FollowUpStatus.DRAFTED)),
+            FollowUp.status.in_((FollowUpStatus.PREPARED, FollowUpStatus.READY)),
+            FollowUp.archived_at.is_(None), Application.followup_paused.is_(False),
+            (FollowUp.snoozed_until.is_(None) | (FollowUp.snoozed_until <= now)),
             FollowUp.due_at <= horizon,
         )
     ).all()

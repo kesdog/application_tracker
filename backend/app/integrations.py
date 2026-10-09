@@ -66,7 +66,7 @@ def draft_followup(
     item = child(session, FollowUp, application_id, followup_id)
     if item.channel == FollowUpChannel.PHONE:
         raise InvalidApplication("Phone-only follow-ups do not have an email draft")
-    if item.status in (FollowUpStatus.SENT, FollowUpStatus.CANCELLED):
+    if item.status == FollowUpStatus.SENT or item.archived_at:
         raise InvalidApplication("Reopen the follow-up before drafting")
     if provider.is_connected():
         reference = provider.create_draft(application, item, data.content)
@@ -78,11 +78,14 @@ def draft_followup(
         record_event(session, application_id, "NOTE_CREATED", "Email draft saved as a note", actor_type=actor_type, actor_reference=actor_reference, metadata={"note_id": note.id, "followup_id": item.id})
         record_audit(session, application_id, "NOTE", note.id, "CREATE", new={"content": data.content, "type": NoteType.EMAIL_DRAFT}, actor_type=actor_type, actor_reference=actor_reference)
         result = DraftResult(location="LOCAL_NOTE", note_id=note.id, message_reference=None, message="Draft saved as a local note. It was not placed in a mailbox or sent.")
-    if item.status != FollowUpStatus.DRAFTED:
-        previous = item.status
-        item.status = FollowUpStatus.DRAFTED
+    if item.body != data.content or item.status != FollowUpStatus.PREPARED:
+        previous = {"status": item.status, "body": item.body, "revision": item.revision, "approved_revision": item.approved_revision}
+        item.body = data.content
+        item.status = FollowUpStatus.PREPARED
+        item.revision += 1
+        item.approved_revision = None
         record_event(session, application_id, "FOLLOWUP_DRAFTED", f"Follow-up #{item.sequence_number} drafted", actor_type=actor_type, actor_reference=actor_reference, metadata={"followup_id": item.id})
-        record_audit(session, application_id, "FOLLOWUP", item.id, "UPDATE", previous={"status": previous}, new={"status": item.status}, actor_type=actor_type, actor_reference=actor_reference, reversible=True)
+        record_audit(session, application_id, "FOLLOWUP", item.id, "UPDATE", previous=previous, new={name: getattr(item, name) for name in previous}, actor_type=actor_type, actor_reference=actor_reference, reversible=True)
     session.commit()
     return result
 

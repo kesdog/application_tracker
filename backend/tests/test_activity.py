@@ -140,7 +140,7 @@ def test_operational_mutations_create_expected_timeline_events(client):
     task = client.post(root + "/tasks", json={"title": "Prepare"}).json()
     client.patch(root + f"/tasks/{task['id']}", json={"status": "COMPLETED"})
     followup = client.post(root + "/followups", json={}).json()
-    client.patch(root + f"/followups/{followup['id']}", json={"status": "DRAFTED"})
+    client.patch(root + f"/followups/{followup['id']}", json={"body": "Checking in about the role", "status": "DRAFTED"})
     client.patch(root + f"/followups/{followup['id']}", json={"status": "SENT"})
     interview = client.post(root + "/interviews", json={"type": "PHONE", "scheduled_at": "2026-10-01T10:00:00Z"}).json()
     client.patch(root + f"/interviews/{interview['id']}", json={"type": "FINAL"})

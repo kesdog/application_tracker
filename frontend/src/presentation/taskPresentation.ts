@@ -7,10 +7,9 @@ export const taskStatusMeta: Record<Task['status'], PresentationMeta> = {
   CANCELLED: { label: 'Cancelled', tone: 'withdrawn', icon: 'pi pi-ban' },
 }
 export const followupStatusMeta: Record<FollowUp['status'], PresentationMeta> = {
-  PENDING: { label: 'Pending', tone: 'submitted', icon: 'pi pi-clock' },
-  DRAFTED: { label: 'Drafted', tone: 'submitted', icon: 'pi pi-file-edit' },
+  PREPARED: { label: 'Prepared', tone: 'submitted', icon: 'pi pi-file-edit' },
+  READY: { label: 'Ready', tone: 'submitted', icon: 'pi pi-check-circle' },
   SENT: { label: 'Sent', tone: 'successful', icon: 'pi pi-check' },
-  CANCELLED: { label: 'Cancelled', tone: 'withdrawn', icon: 'pi pi-ban' },
 }
 export function urgencyMeta(dueAt: string | null, now = Date.now()): PresentationMeta {
   if (!dueAt) return { label: 'No due date', tone: 'neutral', icon: 'pi pi-clock' }

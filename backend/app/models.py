@@ -98,6 +98,9 @@ class Application(Base):
     posting_check_failures: Mapped[int] = mapped_column(default=0, server_default="0")
     followup_delay_days: Mapped[int | None]
     max_followup_suggestions: Mapped[int | None]
+    followup_instructions: Mapped[str] = mapped_column(Text, default="", server_default="")
+    followup_customization: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
+    followup_paused: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     deleted_at: Mapped[datetime | None]
 
 
@@ -116,10 +119,17 @@ class TaskStatus(str, Enum):
 
 
 class FollowUpStatus(str, Enum):
-    PENDING = "PENDING"
-    DRAFTED = "DRAFTED"
+    PREPARED = "PREPARED"
+    READY = "READY"
+    PENDING = "PREPARED"  # Source compatibility for existing integrations.
+    DRAFTED = "PREPARED"
     SENT = "SENT"
     CANCELLED = "CANCELLED"
+
+    @classmethod
+    def _missing_(cls, value):
+        if value in ("PENDING", "DRAFTED"):
+            return cls.PREPARED
 
 
 class FollowUpChannel(str, Enum):
@@ -192,6 +202,39 @@ class FollowUp(Base):
     is_automatic: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     channel: Mapped[FollowUpChannel] = mapped_column(SqlEnum(FollowUpChannel, native_enum=False, create_constraint=False, name="followup_channel"), default=FollowUpChannel.EMAIL, server_default="EMAIL")
     template_reference: Mapped[str | None] = mapped_column(String(2048))
+    subject: Mapped[str] = mapped_column(Text, default="", server_default="")
+    body: Mapped[str] = mapped_column(Text, default="", server_default="")
+    template_snapshot: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
+    variable_snapshot: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
+    customization: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
+    instructions: Mapped[str] = mapped_column(Text, default="", server_default="")
+    revision: Mapped[int] = mapped_column(default=1, server_default="1")
+    approved_revision: Mapped[int | None]
+    prepared_at: Mapped[datetime | None]
+    updated_at: Mapped[datetime] = mapped_column(default=utc_now, onupdate=utc_now)
+    snoozed_until: Mapped[datetime | None]
+    archived_at: Mapped[datetime | None]
+    parent_followup_id: Mapped[str | None] = mapped_column(String(36))
+
+
+class GeneralSettings(Base):
+    __tablename__ = "general_settings"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    values: Mapped[dict] = mapped_column(JSON, default=dict)
+    revision: Mapped[int] = mapped_column(default=1)
+    updated_at: Mapped[datetime] = mapped_column(default=utc_now, onupdate=utc_now)
+
+
+class FollowUpNotice(Base):
+    __tablename__ = "followup_notices"
+    __table_args__ = (UniqueConstraint("followup_id", "schedule_key", name="followup_notice_unique"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    followup_id: Mapped[str] = mapped_column(ForeignKey("followups.id"), index=True)
+    schedule_key: Mapped[str] = mapped_column(String(160))
+    due_at: Mapped[datetime]
+    state: Mapped[str] = mapped_column(String(30), default="PENDING")
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)
+    read_at: Mapped[datetime | None]
 
 
 class Interview(Base):

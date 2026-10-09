@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import asyncio
 import logging
+from datetime import datetime
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -30,6 +31,8 @@ from app.models import DocumentType
 from app.work_schemas import FollowUpCreate, FollowUpRead, FollowUpUpdate, NoteCreate, NoteRead, NoteUpdate, TaskCreate, TaskRead, TaskUpdate, WorkRead
 from app.schemas import ApplicationCreate, ApplicationFilters, ApplicationRead, ApplicationUpdate, ContactValidation, PostingCheckRead
 from sqlalchemy.orm import Session as DatabaseSession
+from app import followup_templates, followup_reminders
+from sqlalchemy import select, func, or_
 
 
 class HealthResponse(BaseModel):
@@ -97,6 +100,10 @@ def create_app(
     async def invalid_application(_request, exc):
         return JSONResponse(status_code=422, content={"detail": str(exc)})
 
+    @application.exception_handler(followup_templates.RevisionConflict)
+    async def revision_conflict(_request, exc):
+        return JSONResponse(status_code=409, content={"detail": str(exc)})
+
     @application.exception_handler(activity.InvalidActor)
     async def invalid_actor(_request, exc):
         return JSONResponse(status_code=403, content={"detail": str(exc)})
@@ -116,6 +123,77 @@ def create_app(
     def local_only(request: Request):
         if not settings.app_allow_remote_human and request.client and request.client.host not in {"127.0.0.1", "::1", "testclient"}:
             raise HTTPException(status_code=403, detail="Local access required")
+
+    @application.get("/api/settings/general")
+    def general_settings(session: Session = Depends(get_session)):
+        result = followup_templates.current_settings(session, settings)
+        session.commit()
+        return result
+
+    @application.put("/api/settings/general")
+    def save_general_settings(data: followup_templates.GeneralSettingsInput, session: Session = Depends(get_session)):
+        try:
+            return followup_templates.save_settings(session, data, settings)
+        except followup_templates.RevisionConflict:
+            raise
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @application.get("/api/followups/variables")
+    def template_variables():
+        return followup_templates.variables()
+
+    @application.post("/api/followups/preview")
+    def preview_template(data: followup_templates.PreviewInput, session: Session = Depends(get_session)):
+        general = followup_templates.current_settings(session, settings)
+        general.update(data.customization.model_dump(exclude_none=True))
+        if data.application_id:
+            app = applications.get_application(session, data.application_id)
+            values = followup_templates.context_values(session, app, None, general)
+        else:
+            values = {v["key"]: "" for v in followup_templates.variables()}
+            values.update(company_name="Example Company", position_name="Software Engineer", date_applied=datetime.now().date().isoformat(),
+                          signature=general["signature"], language=general["language"], tone=general["tone"], followup_number="1")
+        return {"subject": followup_templates.render(data.subject, values), "body": followup_templates.render(data.body, values), "variables": values}
+
+    @application.get("/api/followups")
+    def followup_queue(page: int = 1, page_size: int = 20, status: str = "", q: str = "", archived: bool = False,
+                       paused: bool | None = None, due: str = "", session: Session = Depends(get_session)):
+        from app.models import FollowUp, Application, FollowUpStatus, utc_now
+        if page < 1 or not 1 <= page_size <= 100 or status not in ("", "PREPARED", "READY", "SENT") or due not in ("", "overdue", "upcoming"):
+            raise HTTPException(422, "Invalid follow-up filter or pagination")
+        query = select(FollowUp, Application).join(Application).where(Application.deleted_at.is_(None))
+        query = query.where(FollowUp.archived_at.is_not(None) if archived else FollowUp.archived_at.is_(None))
+        if status:
+            query = query.where(FollowUp.status == FollowUpStatus(status))
+        elif not archived:
+            query = query.where(FollowUp.status != FollowUpStatus.SENT, Application.status != "CLOSED")
+        if paused is not None:
+            query = query.where(Application.followup_paused == paused)
+        if due:
+            query = query.where(FollowUp.due_at < utc_now() if due == "overdue" else FollowUp.due_at >= utc_now())
+        if q:
+            query = query.where(or_(Application.company.contains(q, autoescape=True), Application.job_title.contains(q, autoescape=True)))
+        total = session.scalar(select(func.count()).select_from(query.subquery()))
+        rows = session.execute(query.order_by(FollowUp.due_at, FollowUp.id).offset((page - 1) * page_size).limit(page_size)).all()
+        return {"total": total, "page": page, "page_size": page_size, "items": [
+            {**FollowUpRead.model_validate(item).model_dump(mode="json"), "application": ApplicationRead.model_validate(app).model_dump(mode="json")}
+            for item, app in rows]}
+
+    @application.get("/api/followups/notices")
+    def reminder_notices(session: Session = Depends(get_session)):
+        followup_reminders.synchronize(session)
+        return followup_reminders.notices(session)
+
+    @application.post("/api/followups/notices/{notice_id}/read")
+    def read_notice(notice_id: str, session: Session = Depends(get_session)):
+        from app.models import FollowUpNotice, utc_now
+        notice = session.get(FollowUpNotice, notice_id)
+        if not notice:
+            raise HTTPException(404, "Notice not found")
+        notice.read_at = utc_now()
+        session.commit()
+        return {"read": True}
 
     @application.post("/api/contact-validation", response_model=ContactValidation, dependencies=[Depends(local_only)])
     def validate_contact(data: ContactValidation):
@@ -287,6 +365,22 @@ def create_app(
     @application.patch("/api/applications/{application_id}/followups/{item_id}", response_model=FollowUpRead)
     def update_followup(application_id: str, item_id: str, data: FollowUpUpdate, session: Session = Depends(get_session)):
         return work.update_followup(session, application_id, item_id, data, settings=settings)
+
+    @application.get("/api/applications/{application_id}/followups/{item_id}/proposal")
+    def message_proposal(application_id: str, item_id: str, latest: bool = True, session: Session = Depends(get_session)):
+        return work.proposed_message(session, application_id, item_id, settings, latest=latest)
+
+    class ApplyTemplate(BaseModel):
+        expected_revision: int
+        latest: bool = True
+
+    @application.post("/api/applications/{application_id}/followups/{item_id}/apply-template", response_model=FollowUpRead)
+    def apply_template(application_id: str, item_id: str, data: ApplyTemplate, session: Session = Depends(get_session)):
+        return work.apply_message(session, application_id, item_id, settings, data.expected_revision, latest=data.latest)
+
+    @application.get("/api/applications/{application_id}/followups/{item_id}/ai-request")
+    def followup_ai_request(application_id: str, item_id: str, session: Session = Depends(get_session)):
+        return work.ai_request(session, application_id, item_id, settings)
 
     @application.post("/api/applications/{application_id}/followups/{item_id}/draft", response_model=integrations.DraftResult)
     def draft_followup(application_id: str, item_id: str, data: integrations.DraftRequest, session: Session = Depends(get_session)):

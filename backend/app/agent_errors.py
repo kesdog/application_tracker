@@ -30,6 +30,8 @@ def from_exception(exc: Exception) -> AgentApiError:
         return AgentApiError(code, message, 404)
     if name == "IdempotencyConflict":
         return AgentApiError("IDEMPOTENCY_CONFLICT", message, 409)
+    if name == "RevisionConflict":
+        return AgentApiError("REVISION_CONFLICT", message, 409)
     if "job url or an email reference" in lower:
         return AgentApiError("SOURCE_REQUIRED", message, 422)
     if "outcome requires status" in lower or "reopen this application" in lower:
