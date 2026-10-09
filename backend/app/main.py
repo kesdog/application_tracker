@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import asyncio
 import logging
+import threading
 from datetime import datetime
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
@@ -31,7 +32,7 @@ from app.models import DocumentType
 from app.work_schemas import FollowUpCreate, FollowUpRead, FollowUpUpdate, NoteCreate, NoteRead, NoteUpdate, TaskCreate, TaskRead, TaskUpdate, WorkRead
 from app.schemas import ApplicationCreate, ApplicationFilters, ApplicationRead, ApplicationUpdate, ContactValidation, PostingCheckRead
 from sqlalchemy.orm import Session as DatabaseSession
-from app import followup_templates, followup_reminders
+from app import followup_templates, followup_reminders, human_auth
 from sqlalchemy import select, func, or_
 
 
@@ -80,17 +81,46 @@ def create_app(
                 await posting_task
             engine.dispose()
 
-    application = FastAPI(title="Application Tracker", version=__version__, lifespan=lifespan)
+    hosted = settings.app_mode == "hosted"
+    application = FastAPI(title="Application Tracker", version=__version__, lifespan=lifespan,
+                          docs_url=None if hosted else "/docs", redoc_url=None if hosted else "/redoc", openapi_url=None if hosted else "/openapi.json")
     application.state.settings = settings
     application.state.mail_provider = mail_provider
     application.state.calendar_provider = calendar_provider
+    password_slots = threading.BoundedSemaphore(2)
 
     @application.middleware("http")
     async def protect_human_routes(request: Request, call_next):
         local = request.client is None or request.client.host in {"127.0.0.1", "::1", "testclient"}
-        if not local and not settings.app_allow_remote_human and not request.url.path.startswith("/api/agent/"):
+        if not hosted and not local and not request.url.path.startswith("/api/agent/"):
             return JSONResponse(status_code=403, content={"detail": "Local access required"})
-        return await call_next(request)
+        path = request.url.path
+        if hosted and path != "/api/health":
+            try:
+                human_auth.check_transport(request, settings)
+                public = path in {"/api/auth/session", "/api/auth/login"}
+                if path.startswith("/api/") and not path.startswith("/api/agent/") and not public:
+                    token = request.cookies.get(human_auth.COOKIE)
+                    if not await asyncio.to_thread(human_auth.authenticated, application.state.engine, settings, token):
+                        raise HTTPException(401, "Sign in to your workspace")
+                    if request.method not in {"GET", "HEAD", "OPTIONS"}:
+                        human_auth.require_origin(request, settings)
+                        import hmac
+                        if not hmac.compare_digest(request.headers.get("x-csrf-token", ""), human_auth.csrf_token(token)):
+                            raise HTTPException(403, "Refresh the page before saving; the security token is missing or invalid")
+            except HTTPException as exc:
+                response = JSONResponse(status_code=exc.status_code, content={"detail": exc.detail}, headers=exc.headers)
+                response.headers["Cache-Control"] = "no-store"
+                return response
+        response = await call_next(request)
+        if hosted:
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["Referrer-Policy"] = "same-origin"
+            response.headers["X-Frame-Options"] = "DENY"
+            response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+        if path.startswith("/api/") or path == "/":
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
     @application.exception_handler(applications.ApplicationNotFound)
     async def not_found(_request, exc):
@@ -121,8 +151,42 @@ def create_app(
             yield session
 
     def local_only(request: Request):
-        if not settings.app_allow_remote_human and request.client and request.client.host not in {"127.0.0.1", "::1", "testclient"}:
+        if not hosted and request.client and request.client.host not in {"127.0.0.1", "::1", "testclient"}:
             raise HTTPException(status_code=403, detail="Local access required")
+
+    @application.get("/api/auth/session")
+    def human_session(request: Request):
+        if not hosted:
+            return {"enabled": False, "authenticated": True, "csrf_token": None}
+        token = request.cookies.get(human_auth.COOKIE)
+        valid = human_auth.authenticated(application.state.engine, settings, token)
+        return {"enabled": True, "authenticated": valid, "csrf_token": human_auth.csrf_token(token) if valid else None}
+
+    @application.post("/api/auth/login")
+    def human_login(data: human_auth.LoginInput, request: Request, response: Response):
+        if not hosted:
+            raise HTTPException(404, "Hosted sign-in is not enabled")
+        human_auth.require_origin(request, settings)
+        if request.headers.get("content-type", "").split(";")[0].lower() != "application/json":
+            raise HTTPException(415, "Use a JSON sign-in request")
+        human_auth.record_attempt(application.state.engine, request.client.host if request.client else "unknown")
+        if not password_slots.acquire(blocking=False):
+            raise HTTPException(429, "Sign-in is busy. Try again shortly.", headers={"Retry-After": "2"})
+        try:
+            if not human_auth.verify_password(data.password, settings.app_password_hash.get_secret_value()):
+                raise HTTPException(401, "Incorrect workspace password")
+        finally:
+            password_slots.release()
+        token = human_auth.create_session(application.state.engine, settings, request.cookies.get(human_auth.COOKIE))
+        response.set_cookie(human_auth.COOKIE, token, max_age=settings.app_session_hours * 3600, secure=True, httponly=True, samesite="strict", path="/")
+        return {"enabled": True, "authenticated": True, "csrf_token": human_auth.csrf_token(token)}
+
+    @application.post("/api/auth/logout")
+    def human_logout(request: Request, response: Response):
+        if hosted:
+            human_auth.revoke(application.state.engine, request.cookies.get(human_auth.COOKIE))
+        response.delete_cookie(human_auth.COOKIE, secure=True, httponly=True, samesite="strict", path="/")
+        return {"authenticated": False}
 
     @application.get("/api/settings/general")
     def general_settings(session: Session = Depends(get_session)):
@@ -223,7 +287,7 @@ def create_app(
 
     @application.get("/api/settings/agent/connection", response_model=agent_auth.AgentConnectionInfo, dependencies=[Depends(local_only)])
     def agent_connection_info():
-        address = f"http://{settings.app_host}:{settings.app_port}"
+        address = settings.app_public_url if hosted else f"http://{settings.app_host}:{settings.app_port}"
         remote = f"http://{settings.mcp_host}:{settings.mcp_port}/mcp" if settings.mcp_transport == "streamable-http" else None
         return agent_auth.AgentConnectionInfo(
             local_mcp_command="application-tracker-mcp",
@@ -253,7 +317,8 @@ def create_app(
     async def events(request: Request):
         supplied = request.headers.get("last-event-id")
         cursor = int(supplied) if supplied and supplied.isdecimal() else None
-        return StreamingResponse(invalidation.stream(application.state.engine, cursor), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+        check = (lambda: human_auth.authenticated(application.state.engine, settings, request.cookies.get(human_auth.COOKIE))) if hosted else None
+        return StreamingResponse(invalidation.stream(application.state.engine, cursor, authorized=check), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     @application.post("/api/applications", response_model=ApplicationRead, status_code=201)
     def create_application(data: ApplicationCreate, session: Session = Depends(get_session)):
@@ -464,6 +529,20 @@ def create_app(
 
     if (settings.app_static_dir / "index.html").is_file():
         application.mount("/assets", StaticFiles(directory=settings.app_static_dir / "assets"), name="assets")
+        if (settings.app_static_dir / "icons").is_dir():
+            application.mount("/icons", StaticFiles(directory=settings.app_static_dir / "icons"), name="icons")
+
+        @application.get("/manifest.webmanifest", include_in_schema=False)
+        def web_manifest():
+            return FileResponse(settings.app_static_dir / "manifest.webmanifest", media_type="application/manifest+json")
+
+        @application.get("/sw.js", include_in_schema=False)
+        def service_worker():
+            return FileResponse(settings.app_static_dir / "sw.js", media_type="application/javascript", headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
+
+        @application.get("/offline.html", include_in_schema=False)
+        def offline_page():
+            return FileResponse(settings.app_static_dir / "offline.html")
 
         @application.get("/", include_in_schema=False)
         def frontend_index():
@@ -483,7 +562,7 @@ app = create_app()
 
 def run() -> None:
     settings = Settings()
-    uvicorn.run(app, host=settings.app_host, port=settings.app_port, log_level=settings.log_level)
+    uvicorn.run(app, host=settings.app_host, port=settings.app_port, log_level=settings.log_level, forwarded_allow_ips=settings.app_trusted_proxy_ips)
 
 
 if __name__ == "__main__":

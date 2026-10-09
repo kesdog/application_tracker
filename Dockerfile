@@ -12,7 +12,9 @@ COPY pyproject.toml alembic.ini ./
 COPY backend ./backend
 COPY --from=frontend /src/frontend/dist ./frontend/dist
 RUN pip install --no-cache-dir .
-ENV APP_HOST=0.0.0.0 APP_PORT=8000 APP_DATA_DIR=/data APP_ALLOW_REMOTE_HUMAN=true
+RUN useradd --system --uid 10001 --create-home tracker && mkdir -p /data && chown tracker /data
+USER tracker
+ENV APP_HOST=0.0.0.0 APP_PORT=8000 APP_DATA_DIR=/data APP_ALLOW_REMOTE_HUMAN=false
 VOLUME ["/data"]
 EXPOSE 8000
 CMD ["application-tracker"]

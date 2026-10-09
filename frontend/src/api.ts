@@ -1,3 +1,5 @@
+import { expireHumanSession, withSessionHeaders } from './auth'
+
 export interface Health {
   status: 'ok'
   version: string
@@ -228,8 +230,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 8000)
   try {
-    const response = await fetch(path, { ...options, signal: controller.signal, cache: 'no-store' })
+    const response = await fetch(path, { ...withSessionHeaders(options), signal: controller.signal, cache: 'no-store' })
     if (!response.ok) {
+      if (response.status === 401) expireHumanSession()
       const body = await response.json().catch(() => null)
       const detail = body?.detail
       const message = Array.isArray(detail)

@@ -34,6 +34,8 @@ posting-browser = []
 application-tracker = "app.main:run"
 application-tracker-mcp = "app.mcp_server:run"
 application-tracker-desktop = "app.desktop:run"
+application-tracker-password = "app.human_auth:password_cli"
+application-tracker-backup = "app.backup:run"
 
 [tool.setuptools.packages.find]
 where = ["backend"]

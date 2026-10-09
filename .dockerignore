@@ -2,6 +2,11 @@
 .venv
 .run
 .env
+.env.*
+deploy/secrets
+work
+output
+backups
 data
 build
 frontend/node_modules

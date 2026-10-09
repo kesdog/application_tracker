@@ -72,7 +72,7 @@ def test_migrates_010_database_and_preserves_records_after_restart(tmp_path):
     with TestClient(application) as client:
         assert client.get("/api/applications").json() == [created]
         with application.state.engine.connect() as connection:
-            assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar_one() == "0016_prepared_followups"
+            assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar_one() == "0017_human_sessions"
             assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
 
 

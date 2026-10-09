@@ -343,3 +343,18 @@ class InvalidationEvent(Base):
     topic: Mapped[str] = mapped_column(String(80))
     application_id: Mapped[str | None] = mapped_column(String(36))
     created_at: Mapped[datetime] = mapped_column(default=utc_now)
+
+
+class HumanSession(Base):
+    __tablename__ = "human_sessions"
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    credential_fingerprint: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)
+    expires_at: Mapped[datetime] = mapped_column(index=True)
+
+
+class LoginAttempt(Base):
+    __tablename__ = "login_attempts"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    window_started_at: Mapped[datetime]
+    attempts: Mapped[int] = mapped_column(default=0)

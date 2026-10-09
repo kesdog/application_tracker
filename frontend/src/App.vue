@@ -5,6 +5,9 @@ import Button from 'primevue/button'
 import ToggleSwitch from 'primevue/toggleswitch'
 import { appearanceSaveError, setThemeMode, themeMode } from './settings/appearanceStore'
 import { navigationSaveError, sidebarCollapsed, toggleSidebar } from './settings/navigationPreferences'
+import { checkHumanSession, expireHumanSession } from './auth'
+const props = withDefaults(defineProps<{ hosted?: boolean }>(), { hosted: false })
+const emit = defineEmits<{ signout: [] }>()
 const Applications = defineAsyncComponent(() => import('./Applications.vue'))
 const AddApplication = defineAsyncComponent(() => import('./AddApplication.vue'))
 const Interviews = defineAsyncComponent(() => import('./Interviews.vue'))
@@ -38,6 +41,8 @@ function route() { hash.value = window.location.hash || '#/dashboard' }
 onMounted(() => {
   window.addEventListener('hashchange', route)
   events = new EventSource('/api/events')
+  events.addEventListener('auth.expired', expireHumanSession)
+  events.onerror = () => { if (props.hosted) void checkHumanSession() }
   for (const topic of ['application.updated', 'application.created', 'interview.updated', 'task.updated', 'followup.updated']) {
     events.addEventListener(topic, (event) => window.dispatchEvent(new CustomEvent('tracker:invalidate', { detail: { topic, ...JSON.parse((event as MessageEvent).data) } })))
   }
@@ -67,7 +72,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', route); events?.clo
       <nav class="settings-nav" aria-label="Export and settings"><a href="#/export" aria-label="Export" title="Export" :class="{ active: page === 'export' }" :aria-current="page === 'export' ? 'page' : undefined"><i class="pi pi-download" aria-hidden="true" /><span class="nav-label">Export</span></a><a href="#/settings" aria-label="Settings" title="Settings" :class="{ active: page === 'settings' }" :aria-current="page === 'settings' ? 'page' : undefined"><i class="pi pi-cog" aria-hidden="true" /><span class="nav-label">Settings</span></a></nav>
     </aside>
     <div class="workspace">
-      <header class="topbar"><Button type="button" class="sidebar-toggle" :icon="sidebarCollapsed ? 'pi pi-bars' : 'pi pi-angle-double-left'" severity="secondary" text :aria-label="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'" :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'" :aria-expanded="!sidebarCollapsed" aria-controls="workspace-sidebar" @click="toggleSidebar" /><div class="page-context"><span>Workspace</span><strong>{{ sectionTitle }}</strong></div><div class="theme-control"><label for="workspace-theme"><i :class="darkTheme ? 'pi pi-moon' : 'pi pi-sun'" aria-hidden="true" /><span>{{ darkTheme ? 'Dark · Midnight' : 'Light · Paper' }}</span></label><ToggleSwitch input-id="workspace-theme" v-model="darkTheme" aria-label="Dark theme" /></div></header>
+      <header class="topbar"><Button type="button" class="sidebar-toggle" :icon="sidebarCollapsed ? 'pi pi-bars' : 'pi pi-angle-double-left'" severity="secondary" text :aria-label="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'" :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'" :aria-expanded="!sidebarCollapsed" aria-controls="workspace-sidebar" @click="toggleSidebar" /><div class="page-context"><span>Workspace</span><strong>{{ sectionTitle }}</strong></div><div class="theme-control"><label for="workspace-theme"><i :class="darkTheme ? 'pi pi-moon' : 'pi pi-sun'" aria-hidden="true" /><span>{{ darkTheme ? 'Dark · Midnight' : 'Light · Paper' }}</span></label><ToggleSwitch input-id="workspace-theme" v-model="darkTheme" aria-label="Dark theme" /></div><Button v-if="hosted" type="button" severity="secondary" text @click="emit('signout')">Sign out</Button></header>
       <p v-if="appearanceSaveError || navigationSaveError" class="preference-notice at-message warning" role="status">{{ appearanceSaveError || navigationSaveError }}</p>
       <main ref="mainContent" id="main-content" tabindex="-1">
         <Dashboard v-if="page === 'dashboard'" />

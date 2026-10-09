@@ -1,6 +1,6 @@
 # Follow-up preparation, reminders, and optional AI execution
 
-Status: the first implementation increment is delivered in source. The manual workflow, settings, variable editor, queue, durable in-app reminders, and shared AI requests are implemented. Hosted authentication, phone installation/push delivery, and the unattended runner remain later phases. No mailbox is connected and no external automation has been created.
+Status: the manual workflow, settings, variable editor, queue, durable in-app reminders, and shared AI requests are delivered. Phase 5 now supplies hosted authentication, phone installation, HTTPS configuration and portable backups. Actual server provisioning and real-phone acceptance remain pending; phone push delivery and the unattended runner remain later phases. No mailbox is connected and no external automation has been created.
 
 ## Implementation progress — 9 October 2026
 
@@ -10,8 +10,8 @@ Status: the first implementation increment is delivered in source. The manual wo
 | 2 | Editable default template, highlighted variables, searchable picker and live preview implemented in General Settings. |
 | 3 | Atomic preparation on create/import, edit/copy/ready/sent, notes, actual-send correction, undo and successor preparation implemented. |
 | 4 | Dedicated paginated queue, exact message links, snooze/reschedule/pause/archive and persistent grouped in-app notices implemented. Push delivery attempts, retry state and digest delivery await Phase 6. |
-| 5 | Pending: hosting choice, human authentication, HTTPS deployment, installation and operational guidance. Existing local access protections remain in force. |
-| 6 | Pending: Web Push subscriptions, service worker, delivery/retry outbox and real-phone verification. No phone notifications are delivered by this increment. |
+| 5 | Implemented: separate human login/sessions, CSRF/origin checks, HTTPS-only hosted configuration, private Docker/Caddy stack, phone installation shell and portable database/document backups. Pending acceptance: server/domain provisioning, container execution and real-device installation. Local loopback operation remains available. |
+| 6 | Pending: Web Push subscriptions, push handlers, delivery/retry outbox and real-phone notification verification. The public offline service worker is ready; no phone notifications are delivered yet. |
 | 7 | Versioned Copy AI instructions plus authenticated REST/MCP get_followup_request and revise_followup implemented, including customization and revision conflicts. Mailbox result reconciliation remains future work. |
 | 8 | Deferred as planned: BSM-free unattended runner, leases and long polling. |
 
@@ -19,7 +19,15 @@ Verification covers legacy database preservation, deterministic rendering, immed
 
 The initial template is deterministic English text. Language and tone preferences guide manual edits and travel with AI requests; selecting French does not translate the template automatically. Saved messages retain their text until the user explicitly applies a refreshed-variable or latest-template preview. Reminder notices are currently in-app only, and the daily_digest setting is reserved for the future delivery phase.
 
-Final checks for this increment: 220 backend tests, 83 frontend tests, frontend type-check/production build, and browser verification of settings, immediate preparation, editing, Ready approval, copying, variable insertion/native undo and a 390-pixel viewport without horizontal overflow. Migration and application tests use isolated databases; no production data migration or hosting provisioning was performed during implementation.
+The first increment passed 220 backend tests and 83 frontend tests, with browser verification of settings, immediate preparation, editing, Ready approval, copying, variable insertion/native undo and a 390-pixel viewport without horizontal overflow. The app was subsequently restarted and its 152 applications and 150 prepared follow-ups were preserved through migration 0016. Phase 5 validation and restart results are recorded below. Hosting provisioning remains pending.
+
+### Phase 5 delivery
+
+Hosted routes fail closed without a valid password hash and public origin. Browser sessions are stored as hashes, expire after the configured lifetime, survive process restart and are invalidated by password changes/logout. Origin/CSRF checks cover all human writes, including multipart documents; reads, exports and live events require sign-in. Agent authentication and permissions remain separate. A revoked session closes its live event stream.
+
+The installable shell starts in Follow-ups, keeps deep links through login, and caches only public offline guidance/icons. Settings explains installation and online-only access. The Docker backend runs as a non-root user behind Caddy and persists data in a named volume. Backup/restore preserves messages and uploaded files, relocates Windows/Linux document paths, checks database integrity and refuses to overwrite existing data. [Deployment instructions](deploy/README.md) include password generation, updates, restore and server/phone acceptance checks.
+
+Phase 5 automated verification: 230 backend tests and 92 frontend tests, including login/logout/expiry/restart/password rotation, persistent rate limits, agent/human separation, forged origin/transport/write rejection, stream revocation, backup/restore across Windows/Linux paths, login deep links and cache privacy. The frontend type-check and production build pass. Browser checks verified hosted sign-in, a protected settings save, sign-out, and installation guidance at 390 pixels without horizontal overflow. The local app was backed up and restarted with migration 0017, retaining 152 applications and 150 follow-ups. Docker is unavailable on the development machine, so the container build and HTTPS stack must be exercised on the selected server. Real iPhone/Android acceptance and Web Push remain pending.
 
 ## Agreed outcome
 

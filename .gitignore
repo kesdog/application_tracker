@@ -13,4 +13,7 @@ frontend/dist/
 .run/
 work/
 output/playwright/
+deploy/secrets/
+deploy/hosted.env
+backups/
 build/

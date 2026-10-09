@@ -1,11 +1,59 @@
 services:
   tracker:
+    image: application-tracker:hosted
     build: .
-    ports:
-      - "127.0.0.1:8000:8000"
+    environment:
+      APP_MODE: hosted
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+      APP_ENV: production
+      APP_DATA_DIR: /data
+      APP_ALLOW_REMOTE_HUMAN: "false"
+      APP_PUBLIC_URL: https://${TRACKER_DOMAIN:?Set TRACKER_DOMAIN to your domain}
+      APP_PASSWORD_HASH_FILE: /run/secrets/tracker_password_hash
+      APP_TRUSTED_PROXY_IPS: 172.30.86.0/24
+    secrets:
+      - tracker_password_hash
     volumes:
       - tracker-data:/data
+    networks:
+      - tracker-private
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 45s
+      retries: 3
+  caddy:
+    image: caddy:2
+    environment:
+      TRACKER_DOMAIN: ${TRACKER_DOMAIN:?Set TRACKER_DOMAIN to your domain}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - tracker-private
+    depends_on:
+      tracker:
+        condition: service_healthy
+    restart: unless-stopped
+
+secrets:
+  tracker_password_hash:
+    file: ./deploy/secrets/password.hash
 
 volumes:
   tracker-data:
+  caddy-data:
+  caddy-config:
+networks:
+  tracker-private:
+    ipam:
+      config:
+        - subnet: 172.30.86.0/24

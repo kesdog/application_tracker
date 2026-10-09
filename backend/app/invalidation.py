@@ -12,12 +12,17 @@ def publish(session: Session, topic: str, application_id: str | None) -> None:
     session.commit()
 
 
-async def stream(engine, cursor: int | None = None):
+async def stream(engine, cursor: int | None = None, *, authorized=None):
+    if authorized is not None and not await asyncio.to_thread(authorized):
+        return
     if cursor is None:
         with Session(engine) as session:
             cursor = session.scalar(select(func.max(InvalidationEvent.id))) or 0
     yield ": connected\n\n"
     while True:
+        if authorized is not None and not await asyncio.to_thread(authorized):
+            yield 'event: auth.expired\ndata: {}\n\n'
+            return
         with Session(engine) as session:
             events = list(session.scalars(select(InvalidationEvent).where(InvalidationEvent.id > cursor).order_by(InvalidationEvent.id).limit(100)))
             for event in events:
