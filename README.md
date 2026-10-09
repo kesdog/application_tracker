@@ -315,11 +315,11 @@ The Docker Compose stack now targets hosted access: Caddy publishes HTTPS, the t
 
 ## Verify
 
+For feature segments and automatic selection from edited files, see [TESTING.md](TESTING.md).
+
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q
-.\.venv\Scripts\python.exe -m pip check
-pnpm --dir frontend test
-pnpm --dir frontend build
+.\.venv\Scripts\python.exe scripts/test.py --changed
+.\.venv\Scripts\python.exe scripts/test.py --full  # required before pushing
 ```
 
 The frontend build runs the Vue/TypeScript checker and creates `frontend/dist`. The backend then serves that build at its root URL. The automated suite covers phone normalization and rejection through human and agent paths, follow-up channels, reminder classification, local draft fallback, and explicit calendar download.
