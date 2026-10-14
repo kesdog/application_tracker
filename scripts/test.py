@@ -28,6 +28,9 @@ BACKEND_MODULES = {
     'dashboard_schemas': {'dashboard', 'agent'},
     'scheduler': {'dashboard', 'posting', 'system'},
     'followup_templates': BACKEND,
+    'followup_ai': {'followups', 'agent', 'activity', 'auth'},
+    'recipient_discovery': {'followups', 'agent', 'activity', 'auth', 'migrations', 'system'},
+    'recipient_research': {'followups', 'system'},
     'followup_reminders': {'followups', 'notifications', 'dashboard', 'agent'},
     'integrations': {'followups', 'interviews', 'notifications'},
     'human_auth': {'auth', 'notifications'},
@@ -151,6 +154,8 @@ def commands(backend, frontend, tooling=False, full=False):
         result.append((ROOT, [sys.executable, '-m', 'pip', 'check']))
     if backend or tooling:
         targets = [f'backend/tests/{name}' for name in sorted(backend)]
+        if 'followups' in backend:
+            targets.append('libs/portable-webtoolbox-embedded-v0.2/webtoolbox-embedded/tests')
         if tooling:
             targets.append('tests')
         # A fresh, ignored directory avoids inaccessible user temp folders and
@@ -196,6 +201,9 @@ def main(argv=None):
         print(f'[{cwd.relative_to(ROOT) if cwd != ROOT else "."}] {subprocess.list2cmdline(command)}', flush=True)
         if args.dry_run:
             continue
+        if '--basetemp' in command:
+            # A fresh checkout may not have the ignored .run directory yet.
+            Path(command[command.index('--basetemp') + 1]).parent.mkdir(parents=True, exist_ok=True)
         command[0] = shutil.which(command[0]) or command[0]
         try:
             result = subprocess.run(command, cwd=cwd)

@@ -43,7 +43,7 @@ onMounted(() => {
   events = new EventSource('/api/events')
   events.addEventListener('auth.expired', expireHumanSession)
   events.onerror = () => { if (props.hosted) void checkHumanSession() }
-  for (const topic of ['application.updated', 'application.created', 'interview.updated', 'task.updated', 'followup.updated']) {
+  for (const topic of ['application.updated', 'application.created', 'interview.updated', 'task.updated', 'followup.updated', 'recipient.updated']) {
     events.addEventListener(topic, (event) => window.dispatchEvent(new CustomEvent('tracker:invalidate', { detail: { topic, ...JSON.parse((event as MessageEvent).data) } })))
   }
 })

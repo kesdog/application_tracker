@@ -1,9 +1,11 @@
 import hashlib
 import hmac
 import secrets
+from datetime import timedelta
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
+from sqlalchemy import update
 
 from app.models import AgentCredential, utc_now
 
@@ -63,6 +65,7 @@ def regenerate(session: Session) -> AgentTokenCreated:
         session.add(credential)
     else:
         credential.token_hash = _hash(token)
+        credential.last_used_at = None
         credential.updated_at = utc_now()
     session.commit()
     return AgentTokenCreated(configured=True, permissions=PermissionSettings.model_validate(credential.permissions), token=token)
@@ -89,3 +92,17 @@ def authorized(session: Session, token: str | None, permission: str) -> bool:
 def token_valid(session: Session, token: str | None) -> bool:
     credential = session.get(AgentCredential, 1)
     return bool(credential and token and hmac.compare_digest(_hash(token), credential.token_hash))
+
+
+def mark_used(session: Session, fingerprint: str) -> None:
+    # Both REST and stdio MCP use the database, including across processes.
+    session.execute(update(AgentCredential).where(AgentCredential.token_hash == fingerprint).values(last_used_at=utc_now()))
+    session.commit()
+
+
+def draft_availability(session: Session) -> dict:
+    credential = session.get(AgentCredential, 1)
+    now = utc_now()
+    active = bool(credential and credential.last_used_at and now - timedelta(minutes=15) <= credential.last_used_at <= now)
+    permitted = bool(credential and all(credential.permissions.get(key, False) for key in ("read", "draft", "tasks")))
+    return {"active": active, "can_draft": active and permitted}

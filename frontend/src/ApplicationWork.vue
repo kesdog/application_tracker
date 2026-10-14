@@ -7,10 +7,11 @@ import InputText from 'primevue/inputtext'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { createFollowUp, createNote, createTask, getWork, updateNote, updateTask, type ApplicationWork, type FollowUpChannel, type Note, type NoteType, type Task } from './api'
 import Pagination from './Pagination.vue'
+import RecipientPicker from './components/followups/RecipientPicker.vue'
 import AppTag from './components/shared/AppTag.vue'
 import { followupStatusMeta, taskStatusMeta, urgencyMeta } from './presentation/taskPresentation'
 
-const props = defineProps<{ applicationId: string; phoneNumber: string | null }>()
+const props = defineProps<{ applicationId: string; phoneNumber: string | null; closed?: boolean }>()
 const emit = defineEmits<{ changed: [] }>()
 const work = ref<ApplicationWork | null>(null)
 const busy = ref(false)
@@ -18,6 +19,7 @@ const error = ref('')
 const notice = ref('')
 const noteTypes: NoteType[] = ['GENERAL', 'ASSESSMENT', 'EMAIL_DRAFT', 'INTERVIEW', 'AGENT']
 const noteForm = reactive({ id: '', content: '', type: 'GENERAL' as NoteType })
+const employerReply = ref(false)
 const taskForm = reactive({ title: '', description: '', due_at: '' })
 const followupForm = reactive({ due_at: '', template_reference: '', channel: 'EMAIL' as FollowUpChannel })
 const noteOpen = ref(false)
@@ -51,6 +53,7 @@ async function perform(action: () => Promise<void>, message: string) {
 }
 
 function editNote(note?: Note) {
+  employerReply.value = false
   Object.assign(noteForm, note ? { id: note.id, content: note.content, type: note.type } : { id: '', content: '', type: 'GENERAL' })
   noteOpen.value = true
 }
@@ -58,10 +61,12 @@ function editNote(note?: Note) {
 function saveNote() {
   return perform(async () => {
     const data = { content: noteForm.content, type: noteForm.type }
-    const note = noteForm.id ? await updateNote(props.applicationId, noteForm.id, data) : await createNote(props.applicationId, data)
+    const note = noteForm.id ? await updateNote(props.applicationId, noteForm.id, data) : await createNote(props.applicationId, { ...data, employer_reply: employerReply.value })
     if (noteForm.id) work.value!.notes = work.value!.notes.map(item => item.id === note.id ? note : item)
     else work.value!.notes.unshift(note)
     noteOpen.value = false
+    if (employerReply.value) work.value = await getWork(props.applicationId)
+    employerReply.value = false
     Object.assign(noteForm, { id: '', content: '', type: 'GENERAL' })
   }, 'Note saved.')
 }
@@ -103,11 +108,14 @@ onMounted(load)
     <p v-if="notice" class="at-message success" role="status">{{ notice }}</p>
     <p v-if="!work && busy" role="status">Loading notes, tasks, and follow-ups…</p>
     <template v-if="work">
+      <RecipientPicker :application-id="applicationId" :closed="closed" @changed="emit('changed'); load()" />
+      <p v-if="work.outcome_review?.needs_review" class="at-message warning" role="status">Possibly unsuccessful: {{ work.outcome_review.unanswered_sent_count }} follow-ups recorded without an employer reply. This application remains open. Record a reply below or review its outcome in application details.</p>
       <div class="actions"><Button v-if="!work.notes.length && !noteOpen" type="button" :disabled="busy" @click="editNote()">Add note</Button><Button v-if="!work.tasks.length && !taskOpen" type="button" :disabled="busy" @click="taskOpen = true">Add task</Button><Button v-if="!work.followups.length && !followupOpen" type="button" :disabled="busy" @click="followupOpen = true">Add follow-up</Button></div>
       <section v-if="work.notes.length || noteOpen" class="panel" aria-labelledby="notes-title">
         <div class="section-heading"><h3 id="notes-title">Notes <span v-if="work.notes.length">{{ work.notes.length }}</span></h3><Button v-if="!noteOpen" type="button" :disabled="busy" @click="editNote()">Add note</Button></div>
         <form v-if="noteOpen" @submit.prevent="saveNote">
           <fieldset :disabled="busy"><legend>{{ noteForm.id ? 'Edit note' : 'New note' }}</legend>
+            <label v-if="!noteForm.id"><input v-model="employerReply" type="checkbox" /> This records an employer reply (resets the unanswered follow-up count)</label>
             <label>Note type<Select class="at-form-control" aria-label="Note type" v-model="noteForm.type" :disabled="busy" :options="noteTypes.map(value => ({ value, label: value.replaceAll('_', ' ').toLowerCase() }))" option-label="label" option-value="value" option-disabled="disabled" /></label>
             <label>Note content<Textarea class="at-form-control" v-model="noteForm.content" required rows="4"></Textarea></label>
             <div class="actions"><Button class="primary" type="submit">Save note</Button><Button type="button" @click="noteOpen = false">Cancel note</Button></div>
@@ -156,6 +164,7 @@ onMounted(load)
           <p v-if="item.template_reference && item.template_reference !== 'Automatic follow-up reminder'" class="content">Template: {{ item.template_reference }}</p>
           <p v-if="item.channel !== 'EMAIL' && phoneNumber" class="meta">Call: <a :href="`tel:${phoneNumber}`">{{ phoneNumber }}</a></p>
           <p v-if="item.archived_at" class="muted">Archived</p>
+          <p v-if="item.channel !== 'PHONE'" class="meta">{{ item.recipient_email ? `To: ${item.recipient_email}` : 'Recipient needed' }}</p>
           <div class="actions"><Button as="a" :href="`#/followups/${applicationId}/${item.id}`">Review message and reminders</Button></div>
         </article>
         <Pagination v-if="work.followups.length > followupPageSize" v-model:page="followupPage" :total="work.followups.length" :page-size="followupPageSize" label="follow-ups" />

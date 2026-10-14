@@ -215,6 +215,34 @@ class FollowUp(Base):
     snoozed_until: Mapped[datetime | None]
     archived_at: Mapped[datetime | None]
     parent_followup_id: Mapped[str | None] = mapped_column(String(36))
+    recipient_email: Mapped[str | None] = mapped_column(String(320))
+    recipient_name: Mapped[str | None] = mapped_column(String(300))
+    recipient_source_url: Mapped[str | None] = mapped_column(String(2048))
+
+
+class RecipientDiscovery(Base):
+    __tablename__ = "recipient_discovery"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    application_id: Mapped[str] = mapped_column(ForeignKey("applications.id"), unique=True)
+    state: Mapped[str] = mapped_column(String(20), default="QUEUED", index=True)
+    context: Mapped[dict] = mapped_column(JSON, default=dict)
+    requested_at: Mapped[datetime] = mapped_column(default=utc_now)
+    started_at: Mapped[datetime | None]
+    completed_at: Mapped[datetime | None]
+    lease_until: Mapped[datetime | None]
+    lease_id: Mapped[str | None] = mapped_column(String(36))
+    attempts: Mapped[int] = mapped_column(default=0)
+    error: Mapped[str | None] = mapped_column(Text)
+    warnings: Mapped[list] = mapped_column(JSON, default=list)
+
+
+class RecipientCandidate(Base):
+    __tablename__ = "recipient_candidates"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    application_id: Mapped[str] = mapped_column(ForeignKey("applications.id"), index=True)
+    context: Mapped[dict] = mapped_column(JSON)
+    value: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)
 
 
 class GeneralSettings(Base):
@@ -318,6 +346,7 @@ class AgentCredential(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     token_hash: Mapped[str] = mapped_column(String(64))
     permissions: Mapped[dict] = mapped_column(JSON)
+    last_used_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(default=utc_now, onupdate=utc_now)
 

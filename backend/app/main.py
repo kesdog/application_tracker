@@ -4,7 +4,7 @@ import logging
 import threading
 from datetime import datetime
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
@@ -33,6 +33,8 @@ from app.work_schemas import FollowUpCreate, FollowUpRead, FollowUpUpdate, NoteC
 from app.schemas import ApplicationCreate, ApplicationFilters, ApplicationRead, ApplicationUpdate, ContactValidation, PostingCheckRead
 from sqlalchemy.orm import Session as DatabaseSession
 from app import followup_templates, followup_reminders, human_auth, push
+from app import followup_ai
+from app import recipient_discovery
 from sqlalchemy import select, func, or_
 
 
@@ -47,6 +49,7 @@ def create_app(
     mail_provider: integrations.MailProvider | None = None,
     calendar_provider: integrations.CalendarProvider | None = None,
     push_sender=None,
+    recipient_researcher=None,
 ) -> FastAPI:
     settings = settings or Settings()
     mail_provider = mail_provider or integrations.DisconnectedMailProvider()
@@ -62,6 +65,7 @@ def create_app(
         posting_task = None
         phone_push = None
         push_task = None
+        recipient_jobs = None
         try:
             migrate_database(engine)
             with Session(engine) as session:
@@ -76,8 +80,13 @@ def create_app(
             posting_task = asyncio.create_task(posting_checks.run())
             phone_push = push.PushScheduler(engine, settings, sender=push_sender)
             push_task = asyncio.create_task(phone_push.run())
+            recipient_jobs = recipient_discovery.RecipientScheduler(engine,settings,recipient_researcher)
+            application.state.recipient_jobs = recipient_jobs
+            recipient_jobs.start()
             yield
         finally:
+            if recipient_jobs:
+                await recipient_jobs.close()
             if phone_push is not None and push_task is not None:
                 phone_push.stop.set()
                 await push_task
@@ -215,6 +224,42 @@ def create_app(
     def template_variables():
         return followup_templates.variables()
 
+    @application.get("/api/followups/agent-status")
+    def followup_agent_status(session: Session = Depends(get_session)):
+        return agent_auth.draft_availability(session)
+
+    def require_recipient_toolbox():
+        if not application.state.recipient_jobs.available:
+            raise HTTPException(503,'Install the recipient discovery toolbox search extra before fetching recipients. Manual entry remains available.')
+
+    @application.get('/api/recipients/queue')
+    def recipient_queue(session: Session = Depends(get_session)):
+        return {**recipient_discovery.queue_state(session),'available':application.state.recipient_jobs.available}
+
+    @application.post('/api/recipients/queue-missing')
+    def fetch_missing_recipients(session: Session = Depends(get_session)):
+        require_recipient_toolbox()
+        return recipient_discovery.enqueue_missing(session)
+
+    @application.get('/api/applications/{application_id}/recipients')
+    def application_recipients(application_id: str,session: Session = Depends(get_session)):
+        return recipient_discovery.application_state(session,application_id)
+
+    @application.post('/api/applications/{application_id}/recipients/fetch')
+    def fetch_application_recipients(application_id: str,session: Session = Depends(get_session)):
+        require_recipient_toolbox()
+        return recipient_discovery.enqueue(session,application_id)
+
+    class RecipientChoice(BaseModel):
+        candidate_id: str
+        expected_revision: int
+
+    @application.post('/api/applications/{application_id}/followups/{item_id}/recipient',response_model=FollowUpRead)
+    def choose_recipient(application_id: str,item_id: str,data: RecipientChoice,session: Session = Depends(get_session)):
+        item=recipient_discovery.choose(session,application_id,item_id,data.candidate_id,data.expected_revision,settings)
+        invalidation.publish(session,'followup.updated',application_id)
+        return item
+
     @application.post("/api/followups/preview")
     def preview_template(data: followup_templates.PreviewInput, session: Session = Depends(get_session)):
         general = followup_templates.current_settings(session, settings)
@@ -230,9 +275,9 @@ def create_app(
 
     @application.get("/api/followups")
     def followup_queue(page: int = 1, page_size: int = 20, status: str = "", q: str = "", archived: bool = False,
-                       paused: bool | None = None, due: str = "", session: Session = Depends(get_session)):
+                       paused: bool | None = None, due: str = "", recipient: str = "", session: Session = Depends(get_session)):
         from app.models import FollowUp, Application, FollowUpStatus, utc_now
-        if page < 1 or not 1 <= page_size <= 100 or status not in ("", "PREPARED", "READY", "SENT") or due not in ("", "overdue", "upcoming"):
+        if page < 1 or not 1 <= page_size <= 100 or status not in ("", "PREPARED", "READY", "SENT") or due not in ("", "overdue", "upcoming") or recipient not in ('','missing','assigned'):
             raise HTTPException(422, "Invalid follow-up filter or pagination")
         query = select(FollowUp, Application).join(Application).where(Application.deleted_at.is_(None))
         query = query.where(FollowUp.archived_at.is_not(None) if archived else FollowUp.archived_at.is_(None))
@@ -246,6 +291,9 @@ def create_app(
             query = query.where(FollowUp.due_at < utc_now() if due == "overdue" else FollowUp.due_at >= utc_now())
         if q:
             query = query.where(or_(Application.company.contains(q, autoescape=True), Application.job_title.contains(q, autoescape=True)))
+        if recipient:
+            present=func.length(func.trim(func.coalesce(FollowUp.recipient_email,''))) > 0
+            query=query.where(FollowUp.channel != 'PHONE',present if recipient == 'assigned' else ~present)
         total = session.scalar(select(func.count()).select_from(query.subquery()))
         rows = session.execute(query.order_by(FollowUp.due_at, FollowUp.id).offset((page - 1) * page_size).limit(page_size)).all()
         return {"total": total, "page": page, "page_size": page_size, "items": [
@@ -482,6 +530,34 @@ def create_app(
     @application.get("/api/applications/{application_id}/followups/{item_id}/ai-request")
     def followup_ai_request(application_id: str, item_id: str, session: Session = Depends(get_session)):
         return work.ai_request(session, application_id, item_id, settings)
+
+    @application.get("/api/followups/reviews")
+    def followup_outcome_reviews(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100), session: Session = Depends(get_session)):
+        return work.outcome_reviews(session, settings, page, page_size)
+
+    @application.get("/api/applications/{application_id}/followups/{item_id}/ai-results")
+    def followup_ai_results(application_id: str, item_id: str, session: Session = Depends(get_session)):
+        return followup_ai.result_history(session, application_id, item_id)
+
+    @application.post("/api/applications/{application_id}/followups/{item_id}/ai-results")
+    def import_followup_ai_result(application_id: str, item_id: str, data: followup_ai.FollowUpResult, session: Session = Depends(get_session)):
+        from app.models import ActorType
+        result = followup_ai.report(session, application_id, item_id, data, settings, actor_type=ActorType.HUMAN, actor_reference="manual-ai-import")
+        invalidation.publish(session, "followup.updated", application_id)
+        return result
+
+    @application.get("/api/applications/{application_id}/followups/{item_id}/rendered-message")
+    def rendered_followup(application_id: str, item_id: str, session: Session = Depends(get_session)):
+        return work.resolved_message(session, application_id, item_id, settings)
+
+    class DraftTaskRequest(BaseModel):
+        expected_revision: int
+
+    @application.post("/api/applications/{application_id}/followups/{item_id}/draft-task", response_model=TaskRead)
+    def queue_followup_draft(application_id: str, item_id: str, data: DraftTaskRequest, session: Session = Depends(get_session)):
+        task = work.queue_draft_task(session, application_id, item_id, settings, data.expected_revision)
+        invalidation.publish(session, "task.updated", application_id)
+        return task
 
     @application.post("/api/applications/{application_id}/followups/{item_id}/draft", response_model=integrations.DraftResult)
     def draft_followup(application_id: str, item_id: str, data: integrations.DraftRequest, session: Session = Depends(get_session)):

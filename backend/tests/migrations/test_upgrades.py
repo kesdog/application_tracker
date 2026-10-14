@@ -110,3 +110,21 @@ def test_migration_preserves_legacy_followups_drafts_and_child_records(tmp_path,
         assert work['notes'][0]['content'] == 'Legacy draft'
     with TestClient(create_app(config_settings)) as client:
         assert client.get('/api/applications/old/work').json() == work
+
+
+def test_recipient_upgrade_preserves_workflow_and_copies_existing_contacts(tmp_path, legacy_database):
+    with legacy_database('0019_agent_last_used') as connection:
+        connection.execute(text("INSERT INTO applications (id, job_title, company, date_applied, email_reference, contact_email, contact_name) VALUES ('old', 'Engineer', 'Example', '2026-10-01', 'Mail 1', 'hr@example.com', 'Recruiter')"))
+        for index,state in enumerate(('PREPARED','READY','SENT'),1):
+            connection.execute(text("INSERT INTO followups (id,application_id,sequence_number,due_at,status,sent_at,subject,body,revision,approved_revision,prepared_at,updated_at) VALUES (:id,'old',:seq,'2026-10-08 09:00:00',:state,:sent,'Saved subject','Saved body',4,:approved,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"),
+                {'id':f'old-{index}','seq':index,'state':state,'sent':'2026-10-09 10:00:00' if state=='SENT' else None,'approved':4 if state=='READY' else None})
+    settings=Settings(app_data_dir=tmp_path,_env_file=None)
+    with TestClient(create_app(settings)) as client:
+        all_rows=client.get('/api/applications/old/work').json()['followups']
+        rows=[r for r in all_rows if r['id'].startswith('old-')]
+        assert [r['status'] for r in rows] == ['PREPARED','READY','SENT']
+        assert all(r['recipient_email']=='hr@example.com' and r['recipient_name']=='Recruiter' for r in rows)
+        assert all(r['body']=='Saved body' and r['revision']==4 for r in rows)
+        assert rows[1]['approved_revision']==4 and rows[2]['sent_at']=='2026-10-09T10:00:00Z'
+    with TestClient(create_app(settings)) as client:
+        assert client.get('/api/applications/old/work').json()['followups']==all_rows

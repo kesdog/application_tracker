@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app import __version__, activity, agent_auth, agent_context, applications, confirmation_links, confirmation_details, dashboard, integrations, interviews, invalidation, posting_service, posting_review, work
 from app.posting_checker import PostingChecker, render_with_playwright
 from app import agent_idempotency
+from app import followup_ai
 from app.agent_schemas import AgentApplicationCreate, AgentApplicationUpdate, AgentListRequest
 from app.contract_types import CONTRACT_OPTIONS
 from app.config import Settings
@@ -23,7 +24,7 @@ PERMISSION_FOR = {
     "get_interview_context": "read", "create_application": "create", "update_application": "edit",
     "create_timeline_entry": "edit", "update_timeline_entry": "edit", "check_posting_status": "edit",
     "create_note": "draft", "create_followup": "draft", "mark_followup_sent": "draft",
-    "draft_followup": "draft", "get_followup_request": "read", "revise_followup": "draft",
+    "draft_followup": "draft", "get_followup_request": "read", "revise_followup": "draft", "report_followup_result": "draft",
     "create_task": "tasks", "complete_task": "tasks", "create_interview": "interviews",
     "update_interview": "interviews",
 }
@@ -38,6 +39,8 @@ def invoke(
 ) -> dict | list:
     if operation not in PERMISSION_FOR:
         raise KeyError(operation)
+    if token_fingerprint:
+        agent_auth.mark_used(session, token_fingerprint)
     args = dict(args)
     key = args.pop("idempotency_key", None)
     if key is not None and (not isinstance(key, str) or not key.strip() or len(key) > 200):
@@ -49,18 +52,19 @@ def invoke(
         if replay is not None:
             return replay
         try:
-            result = _invoke(session, settings, operation, args, mail_provider=mail_provider, calendar_provider=calendar_provider)
+            result = _invoke(session, settings, operation, args, mail_provider=mail_provider, calendar_provider=calendar_provider, token_fingerprint=token_fingerprint)
             agent_idempotency.complete(session, record, result)
             return result
         except Exception:
             agent_idempotency.abandon(session, record)
             raise
-    return _invoke(session, settings, operation, args, mail_provider=mail_provider, calendar_provider=calendar_provider)
+    return _invoke(session, settings, operation, args, mail_provider=mail_provider, calendar_provider=calendar_provider, token_fingerprint=token_fingerprint)
 
 
 def _invoke(
     session: Session, settings: Settings, operation: str, args: dict, *,
     mail_provider: integrations.MailProvider | None = None, calendar_provider: integrations.CalendarProvider | None = None,
+    token_fingerprint: str | None = None,
 ) -> dict | list:
     application_id = args.get("application_id")
     actor = {"actor_type": ActorType.AGENT, "actor_reference": "agent-token"}
@@ -153,6 +157,11 @@ def _invoke(
             raise ValueError("This operation only revises message content and instructions")
         item = work.update_followup(session, application_id, args["followup_id"], changes, settings=settings, **actor)
         result = FollowUpRead.model_validate(item).model_dump(mode="json")
+        topic = "followup.updated"
+    elif operation == "report_followup_result":
+        result = followup_ai.report(session, application_id, args["followup_id"],
+            followup_ai.FollowUpResult.model_validate(args["result"]), settings,
+            actor_type=ActorType.AGENT, actor_reference=f"agent:{token_fingerprint[:16]}" if token_fingerprint else "agent-token")
         topic = "followup.updated"
     elif operation == "create_note":
         item = work.create_note(session, application_id, NoteCreate.model_validate(args["note"]), **actor)

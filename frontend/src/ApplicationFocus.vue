@@ -16,6 +16,7 @@ import AppTag from './components/shared/AppTag.vue'
 import { postingStatusMeta, remotePolicyMeta, statusOptions, outcomeOptions } from './presentation/applicationPresentation'
 import { nextApplicationAction } from './presentation/nextAction'
 import ApplicationWork from './ApplicationWork.vue'
+import BusyIndicator from './components/shared/BusyIndicator.vue'
 import ApplicationInterviews from './ApplicationInterviews.vue'
 import ApplicationTimeline from './ApplicationTimeline.vue'
 import ApplicationDocuments from './ApplicationDocuments.vue'
@@ -136,6 +137,7 @@ async function workChanged() {
 }
 
 function onInvalidation(event: Event) {
+  if ((event as CustomEvent).detail.topic === 'recipient.updated') return
   const changedId = (event as CustomEvent<{ application_id: string | null }>).detail.application_id
   if (changedId !== props.id) return
   void load()
@@ -149,7 +151,7 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
 <template>
   <section aria-labelledby="focus-title">
     <a v-if="!draft" class="back" href="#/applications">← All applications</a>
-    <p v-if="loading" role="status">Loading application…</p>
+    <BusyIndicator v-if="loading" label="Loading application…" />
     <div v-else-if="loadError" role="alert"><p class="at-message error">{{ loadError }}</p><Button type="button" @click="load">Try again</Button></div>
     <template v-else-if="application">
       <div class="focus-heading"><div><p class="eyebrow">{{ application.company }}<template v-if="application.location"> · {{ application.location }}</template><template v-if="application.remote_policy"> · {{ remotePolicyMeta[application.remote_policy]?.label ?? application.remote_policy }}</template></p><h2 id="focus-title">{{ application.job_title }}</h2><div class="badges"><ApplicationStatusTag :status="application.status" /><ApplicationOutcomeTag v-if="application.outcome" :outcome="application.outcome" /></div></div><div v-if="!draft" class="header-actions"><Button type="button" @click="edit">Edit application</Button><Button type="button" severity="danger" outlined :disabled="saving" @click="confirmDelete">Delete application</Button></div></div>
@@ -230,7 +232,7 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
         <PostingReview :application="application" @changed="postingChanged" />
         <ApplicationDocuments :key="`documents-${contentVersion}`" :application-id="application.id" @changed="timelineVersion++" />
         <ApplicationInterviews :key="`interviews-${contentVersion}`" :application-id="application.id" @changed="workChanged" />
-        <ApplicationWork :key="`work-${contentVersion}`" :application-id="application.id" :phone-number="application.phone_number" @changed="workChanged" />
+        <ApplicationWork :key="`work-${contentVersion}`" :application-id="application.id" :phone-number="application.phone_number" :closed="application.status === 'CLOSED'" @changed="workChanged" />
         <ApplicationTimeline :key="timelineVersion" :application-id="application.id" @undone="handleUndo" />
       </template>
     </template>

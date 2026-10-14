@@ -34,8 +34,11 @@ def test_application_created_and_status_change_appear_in_timeline(client):
     assert client.patch(path(application), json={"status": "INTERVIEW"}).status_code == 200
     timeline = client.get(path(application) + "/timeline").json()
     assert timeline["undo_available"] is True
-    assert timeline["events"][0]["event_type"] == "STATUS_CHANGED"
-    assert "SUBMITTED to INTERVIEW" in timeline["events"][0]["summary"]
+    # Automatic follow-up events can share the clock tick; UUID tie ordering is
+    # not evidence that a status change is absent or older.
+    changed = next(event for event in timeline["events"] if event["event_type"] == "STATUS_CHANGED")
+    assert "SUBMITTED to INTERVIEW" in changed["summary"]
+    assert changed["created_at"] >= created["created_at"]
 
 
 def test_manual_timeline_entries_keep_the_email_time_and_can_be_edited(client):

@@ -69,6 +69,8 @@ def draft_followup(
     if item.status == FollowUpStatus.SENT or item.archived_at:
         raise InvalidApplication("Reopen the follow-up before drafting")
     if provider.is_connected():
+        if not item.recipient_email:
+            raise InvalidApplication('Choose a recipient before creating a mailbox draft')
         reference = provider.create_draft(application, item, data.content)
         result = DraftResult(location="MAILBOX", note_id=None, message_reference=reference, message="Draft placed in the connected mailbox. Nothing was sent.")
     else:

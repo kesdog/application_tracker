@@ -1,0 +1,9 @@
+{
+  "name": "Public recruitment contacts",
+  "content_selector": "main, article, body",
+  "fields": {
+    "emails": {"selector": "a[href^='mailto:']", "attribute": "href", "pattern": "^mailto:([^?]+)", "all": true, "max_items": 20},
+    "phones": {"selector": "a[href^='tel:']", "attribute": "href", "pattern": "^tel:(.+)", "all": true, "max_items": 20},
+    "contact_links": {"selector": "a[href*='contact'], a[href*='recrut'], a[href*='career'], a[href*='emploi']", "attribute": "href", "absolute_url": true, "all": true, "max_items": 15}
+  }
+}

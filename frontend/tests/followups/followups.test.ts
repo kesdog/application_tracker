@@ -7,7 +7,7 @@ import FollowUpEditor from '../../src/FollowUpEditor.vue'
 import FollowUps from '../../src/FollowUps.vue'
 import * as api from '../../src/api'
 
-vi.mock('../../src/api', async original => ({ ...await original<typeof import('../../src/api')>(), getTemplateVariables: vi.fn(), updateFollowUp: vi.fn(), getFollowUpAIRequest: vi.fn(), getFollowUps: vi.fn(), getFollowUpNotices: vi.fn(), getWork: vi.fn(), getApplication: vi.fn(), readFollowUpNotice: vi.fn() }))
+vi.mock('../../src/api', async original => ({ ...await original<typeof import('../../src/api')>(), getRecipientState: vi.fn(), getRecipientQueue: vi.fn(), getOutcomeReviews: vi.fn(), getFollowUpAIResults: vi.fn(), createNote: vi.fn(), getFollowUpAgentStatus: vi.fn(), getRenderedFollowUp: vi.fn(), queueFollowUpDraft: vi.fn(), getTemplateVariables: vi.fn(), updateFollowUp: vi.fn(), getFollowUpAIRequest: vi.fn(), getFollowUps: vi.fn(), getFollowUpNotices: vi.fn(), getWork: vi.fn(), getApplication: vi.fn(), readFollowUpNotice: vi.fn() }))
 enableAutoUnmount(afterEach)
 const global = { plugins: [[PrimeVue, { unstyled: true }] as [typeof PrimeVue, { unstyled: boolean }]] }
 const variables = [{ key: 'company_name', label: 'Company name', group: 'Application', aliases: [] }, { key: 'position_name', label: 'Position name', group: 'Application', aliases: [] }]
@@ -21,8 +21,14 @@ beforeEach(() => {
   vi.mocked(api.updateFollowUp).mockResolvedValue(item)
   vi.mocked(api.getFollowUps).mockResolvedValue({ items: [{ ...item, application: app }], total: 1, page: 1, page_size: 20 })
   vi.mocked(api.getFollowUpNotices).mockResolvedValue([])
+  vi.mocked(api.getOutcomeReviews).mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
+  vi.mocked(api.getFollowUpAIResults).mockResolvedValue([])
+  vi.mocked(api.getRecipientState).mockResolvedValue({ job: null, candidates: [], missing_followups: 0, followups: [] })
+  vi.mocked(api.getRecipientQueue).mockResolvedValue({ queued: 0, running: 0, failed: 0, missing_followups: 0, concurrency_limit: 5, available: true })
   vi.mocked(api.getWork).mockResolvedValue({ followups: [item], notes: [], tasks: [], followup_delay_days: 7, max_followup_suggestions: 2 })
   vi.mocked(api.getApplication).mockResolvedValue(app)
+  vi.mocked(api.getFollowUpAgentStatus).mockResolvedValue({ active: false, can_draft: false })
+  vi.mocked(api.getRenderedFollowUp).mockResolvedValue({ subject: { text: item.subject, missing: [], unknown: [] }, body: { text: item.body, missing: [], unknown: [] }, variables: {}, revision: item.revision })
   window.location.hash = '#/followups'
 })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
@@ -48,7 +54,7 @@ it('requires saving edits before approval and includes the loaded revision when 
   const wrapper = mount(FollowUpEditor, { props: { item, application: app }, global })
   await flushPromises()
   await wrapper.get('textarea[aria-label="Follow-up message"]').setValue('Updated message')
-  expect(button(wrapper, 'Mark ready').attributes('disabled')).toBeDefined()
+  expect(button(wrapper, 'Write to draft').attributes('disabled')).toBeDefined()
   await button(wrapper, 'Reschedule').trigger('click')
   expect(api.updateFollowUp).not.toHaveBeenCalled()
   expect(wrapper.text()).toContain('Save your message edits')
@@ -109,4 +115,70 @@ it('groups due notices and dismisses only the notices', async () => {
   await flushPromises()
   expect(api.readFollowUpNotice).toHaveBeenCalledWith('notice-1')
   expect(api.updateFollowUp).not.toHaveBeenCalled()
+})
+
+it('autocompletes a typed variable at the caret and preserves surrounding text', async () => {
+  const wrapper = mount(TemplateField, { props: { modelValue: 'Hi {comp!', label: 'Message', variables } })
+  const input = wrapper.get('textarea')
+  input.element.setSelectionRange(8, 8)
+  await input.trigger('input')
+  expect(wrapper.findAll('[role="option"]')).toHaveLength(1)
+  expect(wrapper.get('[role="option"]').text()).toContain('company_name')
+  await input.trigger('keydown', { key: 'Enter' })
+  expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['Hi {company_name}!'])
+  expect(wrapper.find('[role="listbox"]').exists()).toBe(false)
+})
+
+it('dismisses inline suggestions with Escape and closes them after a completed variable', async () => {
+  const wrapper = mount(TemplateField, { props: { modelValue: '{', label: 'Message', variables } })
+  const input = wrapper.get('textarea')
+  input.element.setSelectionRange(1, 1)
+  await input.trigger('input')
+  expect(wrapper.findAll('[role="option"]')).toHaveLength(2)
+  await input.trigger('keydown', { key: 'Escape' })
+  expect(wrapper.find('[role="listbox"]').exists()).toBe(false)
+  await input.setValue('{company_name}')
+  expect(wrapper.find('[role="listbox"]').exists()).toBe(false)
+})
+
+it('disables draft requests without an active permitted agent and hides removed controls', async () => {
+  const wrapper = mount(FollowUpEditor, { props: { item, application: app }, global })
+  await flushPromises()
+  expect(button(wrapper, 'Write to draft').attributes('disabled')).toBeDefined()
+  expect(wrapper.text()).not.toContain('Tone')
+  expect(wrapper.text()).not.toContain('Sent or completed at')
+  expect(wrapper.find('input[placeholder="Choose or type a language"]').exists()).toBe(true)
+  expect(api.queueFollowUpDraft).not.toHaveBeenCalled()
+})
+
+it('queues an agent task once with the saved revision and never marks ready', async () => {
+  vi.mocked(api.getFollowUpAgentStatus).mockResolvedValue({ active: true, can_draft: true })
+  vi.mocked(api.queueFollowUpDraft).mockResolvedValue({ id: 'task-1' } as api.Task)
+  const wrapper = mount(FollowUpEditor, { props: { item: { ...item, recipient_email: 'recruiter@example.com' }, application: app }, global })
+  await flushPromises()
+  await button(wrapper, 'Write to draft').trigger('click')
+  await flushPromises()
+  expect(api.queueFollowUpDraft).toHaveBeenCalledWith(app.id, item.id, item.revision)
+  expect(api.updateFollowUp).not.toHaveBeenCalled()
+  expect(button(wrapper, 'Write to draft').attributes('disabled')).toBeDefined()
+  await wrapper.setProps({ item: { ...item, id: 'followup-2', sequence_number: 2, recipient_email: 'recruiter@example.com' } })
+  expect(button(wrapper, 'Write to draft').attributes('disabled')).toBeUndefined()
+})
+
+it('copies resolved values and refuses unresolved variables', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+  const tagged = { ...item, body: 'Hello {company_name}' }
+  vi.mocked(api.getRenderedFollowUp).mockResolvedValue({ subject: { text: item.subject, missing: [], unknown: [] }, body: { text: 'Hello Example', missing: [], unknown: [] }, variables: {}, revision: item.revision })
+  const wrapper = mount(FollowUpEditor, { props: { item: tagged, application: app }, global })
+  await flushPromises()
+  await button(wrapper, 'Copy message').trigger('click')
+  await flushPromises()
+  expect(writeText).toHaveBeenCalledWith('Hello Example')
+  vi.mocked(api.getRenderedFollowUp).mockResolvedValue({ subject: { text: item.subject, missing: [], unknown: [] }, body: { text: '{contact_name}', missing: ['contact_name'], unknown: [] }, variables: {}, revision: item.revision })
+  writeText.mockClear()
+  await button(wrapper, 'Copy message').trigger('click')
+  await flushPromises()
+  expect(writeText).not.toHaveBeenCalled()
+  expect(wrapper.text()).toContain('contact_name')
 })

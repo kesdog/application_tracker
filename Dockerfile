@@ -10,8 +10,9 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY pyproject.toml alembic.ini ./
 COPY backend ./backend
+COPY libs/portable-webtoolbox-embedded-v0.2/webtoolbox-embedded ./libs/webtoolbox
 COPY --from=frontend /src/frontend/dist ./frontend/dist
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir . './libs/webtoolbox[search]'
 RUN useradd --system --uid 10001 --create-home tracker && mkdir -p /data && chown tracker /data
 USER tracker
 ENV APP_HOST=0.0.0.0 APP_PORT=8000 APP_DATA_DIR=/data APP_ALLOW_REMOTE_HUMAN=false

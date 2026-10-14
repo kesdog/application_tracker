@@ -1,0 +1,9 @@
+{
+  "name": "News/article template",
+  "content_selector": "article, main",
+  "fields": {
+    "title": {"selector": "h1"},
+    "published": {"selector": "time[datetime]", "attribute": "datetime"},
+    "canonical": {"selector": "link[rel='canonical']", "attribute": "href", "absolute_url": true}
+  }
+}

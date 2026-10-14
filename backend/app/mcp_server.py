@@ -23,6 +23,7 @@ from app.agent_schemas import AgentApplicationCreate, AgentApplicationFilters, A
 from app.posting_review import PostingReviewCreate
 from app.interview_schemas import InterviewCreate, InterviewUpdate
 from app.work_schemas import FollowUpCreate, FollowUpUpdate, NoteCreate, TaskCreate
+from app.followup_ai import FollowUpResult
 
 
 _request_token: ContextVar[str | None] = ContextVar("mcp_request_token", default=None)
@@ -173,6 +174,11 @@ def create_mcp_server(settings: Settings | None = None, token: str | None = None
     def revise_followup(application_id: str, followup_id: str, changes: FollowUpUpdate) -> dict:
         """Revise content with expected_revision. Never sends or marks ready. Stale results are rejected."""
         return call("revise_followup", {"application_id": application_id, "followup_id": followup_id, "changes": changes.model_dump(mode="json", exclude_unset=True)})
+
+    @server.tool()
+    def report_followup_result(application_id: str, followup_id: str, result: FollowUpResult) -> dict:
+        """Report a revision, explicitly requested mailbox draft, skip, clarification or failure. Never sends or approves."""
+        return call("report_followup_result", {"application_id": application_id, "followup_id": followup_id, "result": result.model_dump(mode="json")})
 
     @server.tool()
     def draft_followup(application_id: str, followup_id: str, content: str) -> dict:

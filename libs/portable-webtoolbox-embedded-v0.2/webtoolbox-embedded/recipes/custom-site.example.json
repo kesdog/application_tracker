@@ -1,0 +1,10 @@
+{
+  "name": "Change three CSS selectors for a new website",
+  "scope": "main",
+  "content_selector": "main",
+  "fields": {
+    "title": {"selector": "h1"},
+    "company": {"selector": ".employer-name"},
+    "job_links": {"selector": "a.job-link", "attribute": "href", "absolute_url": true, "all": true, "max_items": 10}
+  }
+}

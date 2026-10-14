@@ -70,7 +70,7 @@ export interface ApplicationFilters {
 }
 
 export type NoteType = 'GENERAL' | 'ASSESSMENT' | 'EMAIL_DRAFT' | 'INTERVIEW' | 'AGENT'
-export interface NoteInput { content: string; type: NoteType }
+export interface NoteInput { content: string; type: NoteType; employer_reply?: boolean }
 export interface Note extends NoteInput { id: string; application_id: string; created_by: string; created_at: string; updated_at: string }
 export interface TaskInput { title: string; description: string | null; due_at: string | null }
 export interface Task extends TaskInput { id: string; application_id: string; status: 'PENDING' | 'COMPLETED' | 'CANCELLED'; completed_at: string | null }
@@ -82,20 +82,25 @@ export interface FollowUp extends FollowUpInput {
   subject: string; body: string; instructions: string; customization: Customization; revision: number; approved_revision: number | null
   template_snapshot: Record<string, unknown>; variable_snapshot: Record<string, string>; prepared_at: string | null; updated_at: string
   snoozed_until: string | null; archived_at: string | null
+  recipient_email?: string | null; recipient_name?: string | null; recipient_source_url?: string | null
 }
-export interface FollowUpChanges { subject?: string; body?: string; instructions?: string; customization?: Customization; expected_revision?: number; status?: FollowUp['status']; sent_at?: string | null; due_at?: string; snoozed_until?: string | null; archived?: boolean }
+export interface FollowUpChanges { recipient_email?: string | null; recipient_name?: string | null; recipient_source_url?: string | null; subject?: string; body?: string; instructions?: string; customization?: Customization; expected_revision?: number; status?: FollowUp['status']; sent_at?: string | null; due_at?: string; snoozed_until?: string | null; archived?: boolean }
 export interface TemplateVariable { key: string; label: string; group: string; aliases: string[] }
 export interface GeneralSettings {
   subject_template: string; body_template: string; signature: string; language: string; tone: string; instructions: string
   followup_delay_days: number; max_followup_suggestions: number; timezone: string; reminder_time: string
   notifications_enabled: boolean; quiet_start: string; quiet_end: string; daily_digest: boolean; revision: number
+  unsuccessful_review_after: number
 }
 export interface RenderedTemplate { text: string; missing: string[]; unknown: string[] }
 export interface TemplatePreview { subject: RenderedTemplate; body: RenderedTemplate; variables: Record<string, string> }
 export interface MessageProposal { subject: RenderedTemplate; body: RenderedTemplate; expected_revision: number }
 export interface FollowUpRow extends FollowUp { application: Application }
 export interface FollowUpPage { items: FollowUpRow[]; total: number; page: number; page_size: number }
-export interface ApplicationWork { notes: Note[]; tasks: Task[]; followups: FollowUp[]; followup_delay_days: number; max_followup_suggestions: number }
+export interface OutcomeReview { threshold: number; unanswered_sent_count: number; last_reply_at: string | null; needs_review: boolean }
+export interface OutcomeReviewPage { items: (OutcomeReview & { application: ApplicationSummary })[]; total: number; page: number; page_size: number }
+export interface FollowUpAIResult { operation_id: string; expected_revision: number; status: 'revised_message' | 'mailbox_draft_created' | 'skipped' | 'needs_clarification' | 'failure'; agent_name: string; details: string; draft_reference: string | null; accepted_revision: number; recorded_at: string; reported_by: string }
+export interface ApplicationWork { notes: Note[]; tasks: Task[]; followups: FollowUp[]; followup_delay_days: number; max_followup_suggestions: number; outcome_review?: OutcomeReview }
 
 export type InterviewType = 'PHONE' | 'HR' | 'TECHNICAL' | 'ONSITE' | 'FINAL' | 'OTHER'
 export interface InterviewInput {
@@ -194,6 +199,9 @@ export function saveGeneralSettings(data: GeneralSettings): Promise<GeneralSetti
   return request('/api/settings/general', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...values, expected_revision: revision }) })
 }
 export const getTemplateVariables = (): Promise<TemplateVariable[]> => request('/api/followups/variables')
+export const getFollowUpAgentStatus = (): Promise<{ active: boolean; can_draft: boolean }> => request('/api/followups/agent-status')
+export const getRenderedFollowUp = (id: string, followupId: string): Promise<TemplatePreview & { revision: number }> => request(`/api/applications/${encodeURIComponent(id)}/followups/${encodeURIComponent(followupId)}/rendered-message`)
+export const queueFollowUpDraft = (id: string, followupId: string, revision: number): Promise<Task> => request(`/api/applications/${encodeURIComponent(id)}/followups/${encodeURIComponent(followupId)}/draft-task`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expected_revision: revision }) })
 export const previewTemplate = (data: { subject: string; body: string; application_id?: string; customization?: Customization }): Promise<TemplatePreview> => request('/api/followups/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
 export const getFollowUps = (query = ''): Promise<FollowUpPage> => request('/api/followups' + query)
 export interface FollowUpNotice { id: string; followup: FollowUp; application: Pick<Application, 'id' | 'company' | 'job_title'> }
@@ -202,6 +210,19 @@ export const readFollowUpNotice = (id: string): Promise<{ read: boolean }> => re
 export const proposeFollowUp = (appId: string, id: string, latest: boolean): Promise<MessageProposal> => request(`/api/applications/${encodeURIComponent(appId)}/followups/${encodeURIComponent(id)}/proposal?latest=${latest}`)
 export const applyFollowUpTemplate = (appId: string, id: string, expected_revision: number, latest: boolean): Promise<FollowUp> => request(`/api/applications/${encodeURIComponent(appId)}/followups/${encodeURIComponent(id)}/apply-template`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expected_revision, latest }) })
 export const getFollowUpAIRequest = (appId: string, id: string): Promise<Record<string, unknown>> => request(`/api/applications/${encodeURIComponent(appId)}/followups/${encodeURIComponent(id)}/ai-request`)
+export const getOutcomeReviews = (page = 1): Promise<OutcomeReviewPage> => request(`/api/followups/reviews?page=${page}&page_size=20`)
+export interface RecipientJob { id: string; state: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'NO_RESULTS' | 'FAILED' | 'CANCELLED'; attempts: number; error: string | null; warnings: string[] }
+export interface RecipientCandidate { id: string; name: string | null; email: string | null; kind: 'recruiter_hr' | 'technical_lead' | 'general_contact'; role: string | null; source_url: string; evidence: string; company_match: string; vacancy_match: string; email_status: string; stale: boolean; context_current: boolean }
+export interface RecipientFollowUp { id: string; sequence_number: number; revision: number; recipient_email: string | null; recipient_name: string | null }
+export interface RecipientState { job: RecipientJob | null; candidates: RecipientCandidate[]; missing_followups: number; followups: RecipientFollowUp[] }
+export interface RecipientQueue { queued: number; running: number; failed: number; missing_followups: number; concurrency_limit: number; available: boolean }
+export const getRecipientState = (id: string): Promise<RecipientState> => request(`/api/applications/${encodeURIComponent(id)}/recipients`)
+export const fetchRecipients = (id: string): Promise<RecipientJob> => request(`/api/applications/${encodeURIComponent(id)}/recipients/fetch`, { method: 'POST' })
+export const getRecipientQueue = (): Promise<RecipientQueue> => request('/api/recipients/queue')
+export const fetchMissingRecipients = (): Promise<{ queued: number; applications: number; concurrency_limit: number }> => request('/api/recipients/queue-missing', { method: 'POST' })
+export const chooseRecipient = (appId: string, followupId: string, candidateId: string, revision: number): Promise<FollowUp> => request(`/api/applications/${encodeURIComponent(appId)}/followups/${encodeURIComponent(followupId)}/recipient`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ candidate_id: candidateId, expected_revision: revision }) })
+export const getFollowUpAIResults = (appId: string, id: string): Promise<FollowUpAIResult[]> => request(`/api/applications/${encodeURIComponent(appId)}/followups/${encodeURIComponent(id)}/ai-results`)
+export const importFollowUpAIResult = (appId: string, id: string, result: Record<string, unknown>): Promise<FollowUpAIResult> => request(`/api/applications/${encodeURIComponent(appId)}/followups/${encodeURIComponent(id)}/ai-results`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(result) })
 
 export function listApplicationInterviews(applicationId: string): Promise<Interview[]> {
   return request(`/api/applications/${encodeURIComponent(applicationId)}/interviews`)

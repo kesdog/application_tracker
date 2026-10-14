@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Annotated
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, EmailStr, Field, HttpUrl, field_validator, model_validator
 
 from app.models import FollowUpChannel, FollowUpStatus, NoteType, TaskStatus
 from app.followup_templates import Customization
@@ -29,6 +29,7 @@ class Input(BaseModel):
 class NoteCreate(Input):
     content: Content
     type: NoteType = NoteType.GENERAL
+    employer_reply: bool = False
 
 
 class NoteUpdate(Input):
@@ -60,6 +61,17 @@ class FollowUpCreate(Input):
 
 
 class FollowUpUpdate(Input):
+    recipient_email: EmailStr | None = None
+    recipient_name: str | None = Field(default=None, max_length=300)
+    recipient_source_url: str | None = Field(default=None,max_length=2048)
+
+    @field_validator('recipient_source_url',mode='before')
+    @classmethod
+    def source_string(cls, value):
+        value=HttpUrl(value) if value else None
+        if value and (value.username or value.password):
+            raise ValueError('Recipient source URLs cannot contain credentials')
+        return str(value) if value else None
     due_at: AwareDatetime | None = None
     template_reference: str | None = Field(default=None, max_length=2048)
     status: FollowUpStatus | None = None
@@ -117,6 +129,9 @@ class TaskRead(Read):
 
 
 class FollowUpRead(Read):
+    recipient_email: str | None = None
+    recipient_name: str | None = None
+    recipient_source_url: str | None = None
     sequence_number: int
     due_at: datetime
     sent_at: datetime | None
@@ -144,3 +159,4 @@ class WorkRead(BaseModel):
     followups: list[FollowUpRead]
     followup_delay_days: int
     max_followup_suggestions: int
+    outcome_review: dict = Field(default_factory=dict)

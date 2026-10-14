@@ -14,6 +14,9 @@ def test_feature_selection_includes_backend_consumers():
     back, front, tooling = runner.select(['backend/app/push.py', 'backend/app/exports.py'], graph={})
     assert back == {'notifications', 'documents', 'applications', 'dashboard'}
     assert front == set() and not tooling
+    assert runner.select(['backend/app/recipient_discovery.py'], graph={})[0] == {'followups', 'agent', 'activity', 'auth', 'migrations', 'system'}
+    assert runner.select(['backend/app/recipient_research.py'], graph={})[0] == {'followups', 'system'}
+    assert runner.select(['backend/app/followup_ai.py'], graph={})[0] == {'followups', 'agent', 'activity', 'auth'}
 
 
 def test_frontend_import_graph_tracks_transitive_components_and_raw_assets():
@@ -53,7 +56,8 @@ def test_full_gate_order_and_failure_propagation():
     commands = runner.commands(runner.BACKEND, runner.FRONTEND, tooling=True, full=True)
     assert commands[0][1] == ['pnpm', 'build']
     assert commands[1][1][-2:] == ['pip', 'check']
-    assert 'tests' in commands[2][1] and len(commands[2][1]) == 9 + len(runner.BACKEND)
+    assert 'tests' in commands[2][1] and len(commands[2][1]) == 10 + len(runner.BACKEND)
+    assert 'libs/portable-webtoolbox-embedded-v0.2/webtoolbox-embedded/tests' in commands[2][1]
     temp = Path(commands[2][1][commands[2][1].index('--basetemp') + 1])
     assert temp.is_relative_to(runner.ROOT / '.run')
     assert temp != Path(runner.commands({'system'}, set())[0][1][7])
@@ -62,3 +66,12 @@ def test_full_gate_order_and_failure_propagation():
         run.return_value.returncode = 7
         assert runner.main(['--segment', 'notifications']) == 7
         assert run.call_count == 1
+
+
+def test_fresh_checkout_creates_test_parent_only_when_running(tmp_path):
+    with patch.object(runner,'ROOT',tmp_path),patch.object(runner.subprocess,'run') as run,patch.object(runner.shutil,'which',return_value='python'):
+        run.return_value.returncode=0
+        assert runner.main(['--segment','tooling','--dry-run'])==0
+        assert not (tmp_path/'.run').exists()
+        assert runner.main(['--segment','tooling'])==0
+        assert (tmp_path/'.run').is_dir()

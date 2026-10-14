@@ -37,6 +37,7 @@ class GeneralSettingsInput(BaseModel):
     instructions: str = Field(default="", max_length=12000)
     followup_delay_days: int = Field(default=7, ge=0, le=3650)
     max_followup_suggestions: int = Field(default=2, ge=0, le=100)
+    unsuccessful_review_after: int = Field(default=3, ge=0, le=100)
     timezone: str = "Europe/Paris"
     reminder_time: str = "09:00"
     notifications_enabled: bool = True
@@ -83,7 +84,8 @@ def current_settings(session: Session, settings: Settings | None = None) -> dict
         record = GeneralSettings(id=1, values=values, revision=1)
         session.add(record)
         session.flush()
-    return {**record.values, "revision": record.revision}
+    defaults = GeneralSettingsInput().model_dump(exclude={"expected_revision"})
+    return {**defaults, **record.values, "revision": record.revision}
 
 
 def normalize(template: str) -> str:
@@ -190,6 +192,12 @@ def render(template: str, values: dict) -> dict:
 
 
 def prepare(session: Session, application: Application, item: FollowUp, settings: Settings, *, refresh=False):
+    if item.prepared_at is None and not item.recipient_email and item.channel.value != 'PHONE':
+        previous = session.scalar(select(FollowUp).where(FollowUp.application_id == application.id,
+            FollowUp.id != item.id,FollowUp.recipient_email.is_not(None)).order_by(FollowUp.sequence_number.desc()).limit(1))
+        item.recipient_email = application.contact_email or (previous.recipient_email if previous else None)
+        item.recipient_name = application.contact_name if application.contact_email else previous.recipient_name if previous else None
+        item.recipient_source_url = previous.recipient_source_url if previous and not application.contact_email else None
     general = current_settings(session, settings)
     values = context_values(session, application, item, general)
     snapshot = item.template_snapshot if refresh and item.template_snapshot else general
