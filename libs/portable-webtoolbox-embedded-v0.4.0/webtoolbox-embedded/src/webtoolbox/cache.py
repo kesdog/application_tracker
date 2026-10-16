@@ -35,6 +35,8 @@ class SQLiteCache:
             return None
         obj = json.loads(row[0])
         obj["cached"] = True
+        obj["cache_age_seconds"] = max(0, int(time.time() - row[1]))
+        obj["fetched_at"] = row[1]
         obj["stale"] = row[2] <= time.time()
         return obj
 

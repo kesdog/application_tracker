@@ -212,7 +212,12 @@ export const applyFollowUpTemplate = (appId: string, id: string, expected_revisi
 export const getFollowUpAIRequest = (appId: string, id: string): Promise<Record<string, unknown>> => request(`/api/applications/${encodeURIComponent(appId)}/followups/${encodeURIComponent(id)}/ai-request`)
 export const getOutcomeReviews = (page = 1): Promise<OutcomeReviewPage> => request(`/api/followups/reviews?page=${page}&page_size=20`)
 export interface RecipientJob { id: string; state: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'NO_RESULTS' | 'FAILED' | 'CANCELLED'; attempts: number; error: string | null; warnings: string[] }
-export interface RecipientCandidate { id: string; name: string | null; email: string | null; kind: 'recruiter_hr' | 'technical_lead' | 'general_contact'; role: string | null; source_url: string; evidence: string; company_match: string; vacancy_match: string; email_status: string; stale: boolean; context_current: boolean }
+export interface RecipientCandidate { id: string; name: string | null; email: string | null; kind: 'recruiter_hr' | 'technical_lead' | 'general_contact'; role: string | null; source_url: string; evidence: string; company_match: string; vacancy_match: string; email_status: string; stale: boolean; context_current: boolean; excluded?: boolean;
+  contact_priority?: { category: string; score: number; recommended_action: string; outreach_eligible: boolean };
+  profile_urls?: { url: string; label: string }[];
+  emails?: { email: string; purpose: string; exclusion_reason?: string | null }[];
+  deliverability?: string; personal_ownership?: string;
+}
 export interface RecipientFollowUp { id: string; sequence_number: number; revision: number; recipient_email: string | null; recipient_name: string | null }
 export interface RecipientState { job: RecipientJob | null; candidates: RecipientCandidate[]; missing_followups: number; followups: RecipientFollowUp[] }
 export interface RecipientQueue { queued: number; running: number; failed: number; missing_followups: number; concurrency_limit: number; available: boolean }

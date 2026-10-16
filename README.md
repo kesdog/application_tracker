@@ -183,10 +183,10 @@ In **Follow-ups**, filter by **Recipient needed/assigned** or select **Fetch mis
 
 Review Recruiter/HR, Technical lead and General company contact candidates, their source and evidence, then choose a published address for a particular follow-up or enter one manually. People without a public address remain informational choices. Vacancy responsibility is unconfirmed unless separately evidenced. The adapter rejects search ads, known contact-data brokers, credential-bearing URLs, irrelevant employer pages and media/privacy/support/sales inboxes. It extracts both mailto links and visible-text addresses, and skips blocked pages without bypassing access controls. Failed/no-result searches leave manual entry available.
 
-The embedded toolbox is vendored under `libs/portable-webtoolbox-embedded-v0.2/webtoolbox-embedded`. Install its search extra for local execution:
+The embedded toolbox is vendored under `libs/portable-webtoolbox-embedded-v0.4.0/webtoolbox-embedded`. Version 0.4.0 supplies ranked, source-backed contact records and explicit search/access diagnostics. The tracker keeps its durable five-job queue and manual recipient approval. General inboxes remain fallbacks, unknown employer/vacancy ownership stays visible, and failed or blocked research can be retried. Install its search extra for local execution:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -e './libs/portable-webtoolbox-embedded-v0.2/webtoolbox-embedded[search,dev]'
+.\.venv\Scripts\python.exe -m pip install -e './libs/portable-webtoolbox-embedded-v0.4.0/webtoolbox-embedded[search,dev]'
 ```
 
 Docker installs the search extra, and the Windows bundle collects its runtime modules. Browser rendering is optional and not part of this integration. The project follow-up/full gates include the toolbox's offline tests. No search starts at application creation: clicking a fetch button authorizes public company/role research, while mailbox data, application dates and tokens are not sent to search providers. The local cache is stored in the tracker data directory.

@@ -902,3 +902,14 @@ V1 is complete when all of the following work without directly manipulating the 
 - analytics/conversion funnels
 - document versioning
 - multi-user support
+
+
+# Recipient discovery toolbox 0.4 integration (2026-10-16)
+
+- Replace the vendored 0.2 package with 0.4.0; update installation, Docker and test paths.
+- Reuse bounded provider fallback, structured static contact extraction, provenance and cross-page ranking. Keep the tracker-owned queue at five simultaneous jobs, with host pacing inside the toolbox.
+- Preserve published email evidence, scoped people/profile links and independent employer, purpose, deliverability and vacancy assessments. Never infer an address or auto-select/send.
+- Include a saved public job URL in discovery context so explicit vacancy evidence is usable and edits invalidate old results.
+- Surface provider errors, blocked pages, JS rendering needs, stale cache and whole-record truncation as limitations; incomplete searches without contacts are retryable failures rather than conclusive empty results.
+- Show recruitment versus general fallback categories and verification requirements in the recipient picker.
+- Validate offline toolbox fixtures, adapter regressions and queue/revision/selection behavior; run the full gate before delivery. Run a separate live batch on the ten applications immediately after the previous batch, at most five at once, retaining a local evidence report. Closed records are research only. Verify runtime health after restart.

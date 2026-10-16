@@ -12,7 +12,7 @@ from app.config import Settings
 from app.main import create_app
 from app import recipient_discovery as discovery
 from app.models import FollowUp, RecipientCandidate, RecipientDiscovery, utc_now
-from app.recipient_research import extract_candidates, matches_company, usable_url
+from app.recipient_research import adapt_candidate, matches_company, usable_url
 
 
 def application(client,**changes):
@@ -155,13 +155,23 @@ def test_research_filters_ads_brokers_wrong_company_and_extracts_text_emails_wit
     assert not usable_url('https://user:password@example.com/contact')
     assert matches_company('Powens',{'url':'https://careers.powens.com/','title':'Careers','snippet':''})
     assert not matches_company('Finaxys',{'url':'https://unrelated.org/','title':'Other firm','snippet':'Recruitment'})
-    page={'url':'https://example.com/contact','fields':{'emails':['media@example.com']},'text':'Write to recrutement@example.com\nJustine Michel, Chief People Officer\nDamien Mat, Lead Software Engineer'}
-    candidates=extract_candidates(page,'Example','domain_name')
-    assert len(candidates) == 3
-    assert candidates[0]['email'] == 'recrutement@example.com' and candidates[0]['kind'] == 'recruiter_hr'
-    assert candidates[1]['name'] == 'Justine Michel' and candidates[1]['email'] is None
-    assert candidates[2]['name'] == 'Damien Mat' and candidates[2]['kind'] == 'technical_lead'
-    assert all(c['vacancy_match'] == 'unconfirmed' for c in candidates)
+    from webtoolbox.contacts import extract_contacts, assess_employer
+    from webtoolbox import merge_and_rank
+    html = """<p>Write to recrutement@example.com</p><p>media@example.com</p>
+    <div class="person"><h3>Justine Michel</h3><p class="role">Chief People Officer</p></div>
+    <div class="person"><h3>Damien Mat</h3><p class="role">Lead Software Engineer</p></div>"""
+    raw = [assess_employer(c, 'Example') for c in extract_contacts(html, 'https://example.com/contact')]
+    candidates = [adapt_candidate(c) for c in merge_and_rank(raw)]
+    useful = [c for c in candidates if not c['excluded']]
+    assert len(useful) == 3
+    by_name = {c['name']: c for c in useful}
+    assert by_name['Justine Michel']['email'] is None
+    assert by_name[None]['email'] == 'recrutement@example.com' and by_name[None]['kind'] == 'recruiter_hr'
+    assert by_name['Damien Mat']['kind'] == 'technical_lead'
+    assert all(c['vacancy_match'] == 'unknown' and c['company_match'] == 'unknown' for c in useful)
+    assert all(c['deliverability'] == 'not_checked' for c in useful)
+    assert next(c for c in candidates if c['email'] == 'media@example.com')['excluded']
+
 
 
 def test_shutdown_requeues_inflight_work_and_restart_finishes_it(tmp_path):
@@ -198,3 +208,34 @@ def test_queued_closed_job_never_runs_and_missing_recipient_blocks_mailbox_work(
     client.patch(f"/api/applications/{app['id']}",json={'status':'CLOSED','outcome':'UNSUCCESSFUL'})
     assert discovery.claim(client.app.state.engine) is None
     assert client.get(f"/api/applications/{app['id']}/recipients").json()['job']['state'] == 'CANCELLED'
+
+
+def test_vacancy_url_changes_invalidate_research_and_failed_diagnostics_are_visible(client):
+    pause(client)
+    app=application(client,job_url='https://example.com/jobs/1')
+    client.post(f"/api/applications/{app['id']}/recipients/fetch")
+    claimed=discovery.claim(client.app.state.engine)
+    assert claimed['context']['job_url'] == 'https://example.com/jobs/1'
+    client.patch(f"/api/applications/{app['id']}",json={'job_url':'https://example.com/jobs/2'})
+    discovery.complete(client.app.state.engine,claimed,{'candidates':[],'outcome':'NO_RESULTS'})
+    assert client.get(f"/api/applications/{app['id']}/recipients").json()['job']['state'] == 'CANCELLED'
+    client.post(f"/api/applications/{app['id']}/recipients/fetch")
+    claimed=discovery.claim(client.app.state.engine)
+    discovery.complete(client.app.state.engine,claimed,{'candidates':[],'outcome':'FAILED',
+        'error':'Research incomplete. Retry.', 'warnings':['Provider rate_limited']})
+    job=client.get(f"/api/applications/{app['id']}/recipients").json()['job']
+    assert job['state'] == 'FAILED' and job['error'] == 'Research incomplete. Retry.'
+    assert job['warnings'] == ['Provider rate_limited']
+
+
+def test_saved_candidates_are_presented_in_toolbox_priority_order(client):
+    pause(client)
+    app=application(client)
+    client.post(f"/api/applications/{app['id']}/recipients/fetch")
+    claimed=discovery.claim(client.app.state.engine)
+    candidates=[{'email':'general@example.com','contact_priority':{'score':120}},
+        {'email':'jobs@example.com','contact_priority':{'score':300}},
+        {'name':'Named Recruiter','email':None,'contact_priority':{'score':400}}]
+    discovery.complete(client.app.state.engine,claimed,{'candidates':candidates,'outcome':'COMPLETED'})
+    saved=client.get(f"/api/applications/{app['id']}/recipients").json()['candidates']
+    assert [c['contact_priority']['score'] for c in saved] == [400,300,120]

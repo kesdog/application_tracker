@@ -23,6 +23,10 @@ class Settings:
     max_crawl_pages: int = 3
     max_tokens: int = 1000
     concurrent_fetches: int = 2
+    per_host_concurrency: int = 1
+    max_search_attempts: int = 6
+    search_deadline_seconds: float = 45.0
+    provider_cooldown_seconds: float = 60.0
     background_concurrency: int = 2
     max_pending_jobs: int = 100
     completed_job_history: int = 100

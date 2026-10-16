@@ -82,3 +82,19 @@ it('queues all missing jobs once and displays the five-at-a-time progress',async
  await flushPromises()
  expect(api.getFollowUps).toHaveBeenLastCalledWith(expect.stringContaining('recipient=missing'))
 })
+
+it('shows ranked categories, vacancy evidence and profile leads without implying verified delivery',async()=>{
+ vi.mocked(api.getRecipientState).mockResolvedValue({...state,candidates:[
+  {...candidate,kind:'general_contact',contact_priority:{category:'general_company_mailbox',score:120,recommended_action:'verify_recruitment_purpose',outreach_eligible:false}},
+  {...candidate,id:'named',name:'Jane Recruiter',email:null,vacancy_match:'published_for_vacancy',profile_urls:[{url:'https://example.com/profile/jane',label:'Jane profile'}],contact_priority:{category:'named_recruiter',score:400,recommended_action:'find_contact_method',outreach_eligible:false}},
+ ]})
+ const wrapper=mount(RecipientPicker,{props:{applicationId:'app-1'},global})
+ await flushPromises()
+ expect(wrapper.text()).toContain('General mailbox · verify recruitment purpose')
+ expect(wrapper.text()).toContain('Named recruiter')
+ expect(wrapper.text()).toContain('Source names this contact for the vacancy')
+ expect(wrapper.text()).toContain('Employer identity needs verification')
+ expect(wrapper.text()).toContain('deliverability has not been checked')
+ expect(wrapper.findAll('a').some(a=>a.attributes('href')==='https://example.com/profile/jane')).toBe(true)
+ expect(api.chooseRecipient).not.toHaveBeenCalled()
+})

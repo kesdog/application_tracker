@@ -92,7 +92,10 @@ def test_undo_restores_application_field_and_cannot_repeat(client):
     restored = client.get(path(application)).json()
     assert restored["status"] == "SUBMITTED" and restored["location"] is None
     timeline = client.get(path(application) + "/timeline").json()
-    assert timeline["events"][0]["event_type"] == "UNDO"
+    # Clock ties are ordered by UUID, so the undo need not be the first row.
+    undo_events = [event for event in timeline["events"] if event["event_type"] == "UNDO"]
+    assert len(undo_events) == 1
+    assert undo_events[0]["metadata"]["audit_id"] == undone.json()["audit_id"]
     assert timeline["undo_available"] is False
     assert client.post(path(application) + "/undo").status_code == 409
 

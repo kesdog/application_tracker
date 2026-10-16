@@ -18,7 +18,7 @@ ACTIVE=('QUEUED','RUNNING')
 
 
 def context(application):
-    return {'company':application.company,'job_title':application.job_title}
+    return {'company':application.company,'job_title':application.job_title,'job_url':application.job_url}
 
 
 def eligible(application):
@@ -78,7 +78,9 @@ def job_read(job):
 
 def application_state(session,application_id):
     app=get_application(session,application_id)
-    candidates=session.scalars(select(RecipientCandidate).where(RecipientCandidate.application_id == application_id).order_by(RecipientCandidate.created_at,RecipientCandidate.id))
+    candidates=list(session.scalars(select(RecipientCandidate).where(RecipientCandidate.application_id == application_id)))
+    candidates.sort(key=lambda c: (-c.value.get('contact_priority',{}).get('score',0),
+        not bool(c.value.get('email')), c.value.get('name') or c.value.get('email') or '', c.id))
     followups=session.scalars(select(FollowUp).where(FollowUp.application_id == application_id,FollowUp.channel != FollowUpChannel.PHONE,
         FollowUp.status != FollowUpStatus.SENT,FollowUp.archived_at.is_(None)).order_by(FollowUp.sequence_number))
     return {'job':job_read(session.scalar(select(RecipientDiscovery).where(RecipientDiscovery.application_id == application_id))),
@@ -145,6 +147,7 @@ def complete(engine,claimed,result=None,error=None,requeue=False):
             job.error=error[:500]
         else:
             job.state=result.get('outcome','COMPLETED')
+            job.error=result.get('error')
             job.warnings=result.get('warnings',[])[:20]
             session.execute(delete(RecipientCandidate).where(RecipientCandidate.application_id == job.application_id))
             for value in result.get('candidates',[])[:30]:
@@ -164,6 +167,8 @@ def choose(session,application_id,followup_id,candidate_id,revision,settings):
         raise ApplicationNotFound('Recipient candidate not found for this application')
     if candidate.context != context(app):
         raise RevisionConflict('The job changed since discovery. Fetch recipients again.')
+    if candidate.value.get('excluded'):
+        raise InvalidApplication('This contact has conflicting or unsuitable evidence. Choose another recipient.')
     if not candidate.value.get('email'):
         raise InvalidApplication('No published email was found for this person. Enter a confirmed address manually.')
     if not eligible(app):

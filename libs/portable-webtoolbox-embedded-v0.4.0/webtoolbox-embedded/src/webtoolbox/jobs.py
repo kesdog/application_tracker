@@ -15,6 +15,7 @@ class JobHandle:
     operation: str
     _task: asyncio.Task[dict[str, Any]] | None = field(default=None, repr=False)
     _state: str = "queued"
+    _partial: dict[str, Any] | None = field(default=None, repr=False)
 
     @property
     def status(self) -> str:
@@ -34,6 +35,11 @@ class JobHandle:
         if self._task is None:
             raise RuntimeError("Job was not scheduled")
         return await self._task
+
+    @property
+    def partial(self) -> dict[str, Any] | None:
+        # Host applications can persist last completed evidence after cancellation.
+        return self._partial
 
     @property
     def error(self) -> str | None:

@@ -155,7 +155,7 @@ def commands(backend, frontend, tooling=False, full=False):
     if backend or tooling:
         targets = [f'backend/tests/{name}' for name in sorted(backend)]
         if 'followups' in backend:
-            targets.append('libs/portable-webtoolbox-embedded-v0.2/webtoolbox-embedded/tests')
+            targets.append('libs/portable-webtoolbox-embedded-v0.4.0/webtoolbox-embedded/tests')
         if tooling:
             targets.append('tests')
         # A fresh, ignored directory avoids inaccessible user temp folders and

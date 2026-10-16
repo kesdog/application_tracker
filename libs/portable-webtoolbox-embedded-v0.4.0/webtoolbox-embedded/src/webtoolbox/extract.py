@@ -53,7 +53,8 @@ def extract_fields(html: str, recipe: dict[str, Any], base_url: str) -> dict[str
                 match = re.search(pattern, value)
                 value = match.group(1) if match and match.lastindex else (match.group(0) if match else "")
             if value and value not in values:
-                values.append(value[:1000])
+                # Preserve complete extracted values; output budgeting omits whole fields.
+                values.append(value)
         output[name] = values if spec.get("all", False) else (values[0] if values else None)
     return output
 
@@ -70,7 +71,16 @@ def compact_text(text: str, query: str = "", max_chars: int = 2500) -> str:
         # Preserve meaningful local context by giving matching lines priority.
         if any(sum(t in value.lower() for t in terms) for _, value in ranked):
             unique = [value for _, value in ranked]
-    return "\n".join(unique)[:max(0, max_chars)]
+    # Stop at record boundaries; cutting a line could create an incomplete URL/email.
+    retained: list[str] = []
+    remaining = max(0, max_chars)
+    for line in unique:
+        needed = len(line) + (1 if retained else 0)
+        if needed > remaining:
+            continue
+        retained.append(line)
+        remaining -= needed
+    return "\n".join(retained)
 
 
 def approx_tokens(text: str) -> int:
