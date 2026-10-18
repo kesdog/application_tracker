@@ -152,12 +152,12 @@ def test_background_workers_process_five_at_a_time_and_drain_queue(tmp_path):
 def test_research_filters_ads_brokers_wrong_company_and_extracts_text_emails_without_ownership_guess():
     assert not usable_url('https://www.bing.com/aclick?x=1')
     assert not usable_url('https://rocketreach.co/person')
-    assert not usable_url('https://user:password@example.com/contact')
+    assert not usable_url('https://user:password@employer.test/contact')
     assert matches_company('Powens',{'url':'https://careers.powens.com/','title':'Careers','snippet':''})
     assert not matches_company('Finaxys',{'url':'https://unrelated.org/','title':'Other firm','snippet':'Recruitment'})
     from webtoolbox.contacts import extract_contacts, assess_employer
     from webtoolbox import merge_and_rank
-    html = """<p>Write to recrutement@example.com</p><p>media@example.com</p>
+    html = """<p>Write to recrutement@employer.test</p><p>media@employer.test</p>
     <div class="person"><h3>Justine Michel</h3><p class="role">Chief People Officer</p></div>
     <div class="person"><h3>Damien Mat</h3><p class="role">Lead Software Engineer</p></div>"""
     raw = [assess_employer(c, 'Example') for c in extract_contacts(html, 'https://example.com/contact')]
@@ -166,11 +166,11 @@ def test_research_filters_ads_brokers_wrong_company_and_extracts_text_emails_wit
     assert len(useful) == 3
     by_name = {c['name']: c for c in useful}
     assert by_name['Justine Michel']['email'] is None
-    assert by_name[None]['email'] == 'recrutement@example.com' and by_name[None]['kind'] == 'recruiter_hr'
+    assert by_name[None]['email'] == 'recrutement@employer.test' and by_name[None]['kind'] == 'recruiter_hr'
     assert by_name['Damien Mat']['kind'] == 'technical_lead'
     assert all(c['vacancy_match'] == 'unknown' and c['company_match'] == 'unknown' for c in useful)
     assert all(c['deliverability'] == 'not_checked' for c in useful)
-    assert next(c for c in candidates if c['email'] == 'media@example.com')['excluded']
+    assert next(c for c in candidates if c['email'] == 'media@employer.test')['excluded']
 
 
 
@@ -239,3 +239,22 @@ def test_saved_candidates_are_presented_in_toolbox_priority_order(client):
     discovery.complete(client.app.state.engine,claimed,{'candidates':candidates,'outcome':'COMPLETED'})
     saved=client.get(f"/api/applications/{app['id']}/recipients").json()['candidates']
     assert [c['contact_priority']['score'] for c in saved] == [400,300,120]
+
+
+def test_conflicting_region_or_stale_evidence_cannot_be_selected_and_location_edits_invalidate(client):
+    pause(client)
+    app=application(client,location='France')
+    item=followup(client,app)
+    client.post(f"/api/applications/{app['id']}/recipients/fetch")
+    claimed=discovery.claim(client.app.state.engine)
+    assert claimed['context']['location'] == 'France'
+    discovery.complete(client.app.state.engine,claimed,{'outcome':'COMPLETED','candidates':[
+        {'email':'old@employer.test','stale':True,'source_url':'https://example.com'},
+        {'email':'other@employer.test','fit':{'region':{'state':'mismatch'}},'source_url':'https://example.com'}]})
+    state=client.get(f"/api/applications/{app['id']}/recipients").json()
+    for candidate in state['candidates']:
+        response=client.post(f"/api/applications/{app['id']}/followups/{item['id']}/recipient",
+            json={'candidate_id':candidate['id'],'expected_revision':item['revision']})
+        assert response.status_code == 422
+    client.patch(f"/api/applications/{app['id']}",json={'location':'USA'})
+    assert not any(c['context_current'] for c in client.get(f"/api/applications/{app['id']}/recipients").json()['candidates'])

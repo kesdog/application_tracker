@@ -6,6 +6,7 @@ from app import __version__, activity, agent_auth, agent_context, applications, 
 from app.posting_checker import PostingChecker, render_with_playwright
 from app import agent_idempotency
 from app import followup_ai
+from app import recipient_discovery, recipient_reports
 from app.agent_schemas import AgentApplicationCreate, AgentApplicationUpdate, AgentListRequest
 from app.contract_types import CONTRACT_OPTIONS
 from app.config import Settings
@@ -18,6 +19,9 @@ from app.dashboard_schemas import DashboardRead
 
 
 PERMISSION_FOR = {
+    "get_recipient_settings": "read", "update_recipient_settings": "edit",
+    "get_recipient_research": "read", "queue_recipient_research": "edit",
+    "list_recipient_page_reports": "read", "get_recipient_page_report": "read",
     "extract_confirmation_details": "read", "get_posting_review": "read", "record_posting_review": "edit",
     "list_applications": "read", "search_applications": "read", "get_application": "read", "get_application_context": "read", "get_tracker_info": "read",
     "find_possible_duplicates": "read", "extract_confirmation_posting_link": "read", "get_application_timeline": "read", "get_upcoming_items": "read",
@@ -70,7 +74,25 @@ def _invoke(
     actor = {"actor_type": ActorType.AGENT, "actor_reference": "agent-token"}
     topic = None
 
-    if operation == "get_tracker_info":
+    if operation == "get_recipient_settings":
+        result = recipient_reports.research_settings(session)
+        session.commit()
+    elif operation == "update_recipient_settings":
+        result = recipient_reports.update_settings(session, recipient_reports.ResearchSettingsUpdate.model_validate(args))
+        topic = 'settings.updated'
+    elif operation == "get_recipient_research":
+        result = recipient_discovery.application_state(session, application_id)
+        session.commit()
+    elif operation == "queue_recipient_research":
+        request = recipient_reports.ResearchRequest.model_validate({k: v for k, v in args.items() if k != 'application_id'})
+        result = recipient_discovery.enqueue(session, application_id, request.refresh_pages)
+        topic = 'recipient.updated'
+    elif operation == "list_recipient_page_reports":
+        query = recipient_reports.ReportQuery.model_validate(args)
+        result = recipient_reports.list_reports(session, **query.model_dump())
+    elif operation == "get_recipient_page_report":
+        result = recipient_reports.get_report(session, args['report_id'], application_id)
+    elif operation == "get_tracker_info":
         session.execute(text("SELECT 1"))
         result = {
             "application_version": __version__, "mcp_transport": settings.mcp_transport,
@@ -86,6 +108,10 @@ def _invoke(
                 "application_date_source": "Use the verified applied date, otherwise the original confirmation email date.",
                 "missing_job_url_requires_email_reference": True,
                 "closed_attention_takes_precedence": True,
+                "recipient_research": {"default_page_limit": 6, "page_limit_range": [1,100],
+                    "application_override": "recipient_page_limit (null inherits general settings)",
+                    "budget": "new page fetches per run; saved reports reused until explicit refresh",
+                    "queue_requires_running_backend": True},
             },
         }
     elif operation in {"list_applications", "search_applications"}:

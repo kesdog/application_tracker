@@ -1,0 +1,51 @@
+{
+  "contact_recruitment": [
+    "recrut",
+    "recruit",
+    "candidat",
+    "postul",
+    "talent",
+    "career",
+    "rh",
+    "embauch"
+  ],
+  "recruiter_titles": [
+    "recruteur",
+    "recruteuse",
+    "talent acquisition",
+    "chargé de recrutement",
+    "chargée de recrutement",
+    "chief people officer",
+    "hr business partner"
+  ],
+  "contact_queries": [
+    "{company} {role} recrutement contact RH",
+    "{company} equipe RH contact",
+    "site:{domain} recrutement candidature contact",
+    "{company} équipe talent acquisition"
+  ],
+  "job_queries": [
+    "{company} {title} {location} alternance offre",
+    "{company} {title} postuler offre emploi"
+  ],
+  "keywords": {
+    "required": [],
+    "preferred": {
+      "alternance": 10,
+      "python": 9,
+      "fastapi": 6,
+      "full stack": 6,
+      "toulouse": 8
+    },
+    "excluded": [
+      "stage uniquement",
+      "commercial"
+    ],
+    "synonyms": {
+      "alternance": [
+        "apprentissage",
+        "apprenti"
+      ]
+    }
+  }
+}

@@ -67,7 +67,7 @@ it('shows outcome review even when there are no unsent follow-ups', async () => 
 })
 
 it('saves the adjustable review threshold in general settings', async () => {
-  const settings: api.GeneralSettings = { subject_template: 'Hello', body_template: 'Message', signature: 'Alex', language: 'English', tone: 'Friendly', instructions: '', followup_delay_days: 7, max_followup_suggestions: 2, unsuccessful_review_after: 3, timezone: 'Europe/Paris', reminder_time: '09:00', notifications_enabled: true, quiet_start: '20:00', quiet_end: '08:00', daily_digest: true, revision: 1 }
+  const settings: api.GeneralSettings = { subject_template: 'Hello', body_template: 'Message', signature: 'Alex', language: 'English', tone: 'Friendly', instructions: '', followup_delay_days: 7, max_followup_suggestions: 2, unsuccessful_review_after: 3, recipient_page_limit: 6, timezone: 'Europe/Paris', reminder_time: '09:00', notifications_enabled: true, quiet_start: '20:00', quiet_end: '08:00', daily_digest: true, revision: 1 }
   vi.mocked(api.getGeneralSettings).mockResolvedValue(settings)
   vi.mocked(api.getTemplateVariables).mockResolvedValue([])
   vi.mocked(api.listApplications).mockResolvedValue([])
@@ -78,8 +78,10 @@ it('saves the adjustable review threshold in general settings', async () => {
   const label = wrapper.findAll('label').find(l => l.text().includes('Review as possibly unsuccessful'))!
   expect(label.get('input').element.value).toBe('3')
   await label.get('input').setValue('5')
+  const pageLimit = wrapper.findAll('label').find(l => l.text().includes('Recipient research: new pages'))!
+  await pageLimit.get('input').setValue('12')
   await wrapper.get('form').trigger('submit')
   await flushPromises()
-  expect(api.saveGeneralSettings).toHaveBeenCalledWith(expect.objectContaining({ unsuccessful_review_after: 5 }))
+  expect(api.saveGeneralSettings).toHaveBeenCalledWith(expect.objectContaining({ unsuccessful_review_after: 5, recipient_page_limit: 12 }))
   expect(wrapper.text()).toContain('application stays open')
 })

@@ -1,0 +1,12 @@
+{
+  "job_queries": [
+    "site:careers.capgemini.com \"{company}\" {title}",
+    "site:careers.capgemini.com {title} recrutement emploi careers"
+  ],
+  "keywords": {
+    "required": [],
+    "preferred": {},
+    "excluded": [],
+    "synonyms": {}
+  }
+}

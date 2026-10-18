@@ -183,15 +183,27 @@ In **Follow-ups**, filter by **Recipient needed/assigned** or select **Fetch mis
 
 Review Recruiter/HR, Technical lead and General company contact candidates, their source and evidence, then choose a published address for a particular follow-up or enter one manually. People without a public address remain informational choices. Vacancy responsibility is unconfirmed unless separately evidenced. The adapter rejects search ads, known contact-data brokers, credential-bearing URLs, irrelevant employer pages and media/privacy/support/sales inboxes. It extracts both mailto links and visible-text addresses, and skips blocked pages without bypassing access controls. Failed/no-result searches leave manual entry available.
 
-The embedded toolbox is vendored under `libs/portable-webtoolbox-embedded-v0.4.0/webtoolbox-embedded`. Version 0.4.0 supplies ranked, source-backed contact records and explicit search/access diagnostics. The tracker keeps its durable five-job queue and manual recipient approval. General inboxes remain fallbacks, unknown employer/vacancy ownership stays visible, and failed or blocked research can be retried. Install its search extra for local execution:
+The embedded toolbox is vendored under `libs/portable-webtoolbox-embedded-v0.7.0/webtoolbox-embedded`. Version 0.7.0 supplies ranked, source-backed contact records and explicit search/access diagnostics. The tracker keeps its durable five-job queue and manual recipient approval. General inboxes remain fallbacks, unknown employer/vacancy ownership stays visible, and failed or blocked research can be retried. Install its search extra for local execution:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -e './libs/portable-webtoolbox-embedded-v0.4.0/webtoolbox-embedded[search,dev]'
+.\.venv\Scripts\python.exe -m pip install -e './libs/portable-webtoolbox-embedded-v0.7.0/webtoolbox-embedded[search,dev]'
 ```
 
 Docker installs the search extra, and the Windows bundle collects its runtime modules. Browser rendering is optional and not part of this integration. The project follow-up/full gates include the toolbox's offline tests. No search starts at application creation: clicking a fetch button authorizes public company/role research, while mailbox data, application dates and tokens are not sent to search providers. The local cache is stored in the tracker data directory.
 
 Human routes: `GET /api/recipients/queue`, `POST /api/recipients/queue-missing`, `GET /api/applications/{id}/recipients`, `POST /api/applications/{id}/recipients/fetch`, and `POST /api/applications/{id}/followups/{followup_id}/recipient` with `candidate_id` and `expected_revision`. These routes use the existing hosted session/CSRF protection. Recipient selection follows the message revision and audit rules.
+
+**Recipient page budgets and saved reports:** General Settings defaults to **6 new pages per application research run**, adjustable from 1 to 100. Override this in an application's recipient panel (`recipient_page_limit`); clearing the override restores the general default. Queued jobs resolve their limit when starting; running jobs retain their starting limit. The 110-second research deadline still applies, including search and report reuse, so raising the budget does not guarantee every page will be reached.
+
+Each page attempt immediately saves a derived report in `tracker.sqlite3`: a bounded summary, contact records and supporting excerpts, follow-on links, fetch time and failure/rendering/truncation outcomes. Complete page bodies and HTML are not saved in this store. Known normalized URLs and redirect targets share reports across applications. Database page leases prevent simultaneous requests for the same known URL; an unseen redirect alias can only be recognized after its first fetch. Normal retries reuse reports, including blocked/empty pages, and continue the saved link frontier without spending the new-fetch budget on prior pages. Reports older than seven days require review, without automatically refetching. **Refresh saved pages** explicitly permits refetching within the budget; unrefreshed reports remain older evidence for manual review.
+
+Open **Saved recipient page reports** in General Settings for all reports, or an application's recipient panel for its history. Evidence does not establish employer identity, vacancy ownership or deliverability. Reused contacts are assessed against the current application; vacancy-specific claims do not transfer to a different saved posting.
+
+On startup, the former `recipient-web-cache.sqlite3` cache is converted offline to derived reports where possible, with known candidate sources associated with their applications. The old file remains untouched and inactive. New search responses use `recipient-search-cache.sqlite3`; raw HTML stays only in bounded memory during extraction. The main database backup contains the derived reports and application associations.
+
+Human report routes: `GET /api/recipients/pages?application_id={id}&page=1&page_size=20` (omit the application for all reports), and `GET /api/recipients/pages/{report_id}?application_id={id}`. Fetch accepts optional JSON `{"refresh_pages": true}`; omitting it reuses reports. Application create/update accepts `recipient_page_limit: 1..100` or `null`.
+
+Matching REST agent operations (`/api/agent/tools/`) and MCP tools: `get_recipient_settings`, `update_recipient_settings`, `get_recipient_research`, `queue_recipient_research`, `list_recipient_page_reports`, `get_recipient_page_report`. Reads require read permission; updates/queueing require edit permission. Global updates take `recipient_page_limit` plus `expected_revision` and preserve other settings. Per-application overrides use `update_application`. Queueing takes `application_id` and optional `refresh_pages`; the tracker backend must be running to execute jobs. These tools do not send messages.
 
 | Endpoint | Behavior |
 | --- | --- |
@@ -361,3 +373,5 @@ Manual checks:
 
 The 0.9 agent-token flow remains available but has not been activated in the user's database. The Python test client emits one upstream deprecation warning from Starlette; tests pass.
 
+
+The v0.7 job-posting evaluation and bound company-site profiles are documented in [the benchmark report](docs/toolbox-v0.7/report.md). These profiles are opt-in library inputs; recipient research retains its existing workflow. The vendored cooldown regression disables search explicitly so its mocked seed-page test stays offline. Remaining upstream matching limitations are recorded in the report.

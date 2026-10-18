@@ -1,0 +1,12 @@
+{
+  "job_queries": [
+    "site:intm.com \"{company}\" {title}",
+    "site:intm.com {title} recrutement emploi careers"
+  ],
+  "keywords": {
+    "required": [],
+    "preferred": {},
+    "excluded": [],
+    "synonyms": {}
+  }
+}

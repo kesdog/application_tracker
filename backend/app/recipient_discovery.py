@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app import invalidation, work
 from app.applications import ApplicationNotFound, InvalidApplication, get_application
 from app.followup_templates import RevisionConflict
+from app.recipient_reports import PageReports, research_settings
 from app.models import Application, ApplicationStatus, FollowUp, FollowUpChannel, FollowUpStatus, RecipientCandidate, RecipientDiscovery, utc_now
 from app.work_schemas import FollowUpUpdate
 
@@ -18,7 +19,7 @@ ACTIVE=('QUEUED','RUNNING')
 
 
 def context(application):
-    return {'company':application.company,'job_title':application.job_title,'job_url':application.job_url}
+    return {'company':application.company,'job_title':application.job_title,'job_url':application.job_url,'location':application.location}
 
 
 def eligible(application):
@@ -31,7 +32,7 @@ def missing_query():
         FollowUp.channel != FollowUpChannel.PHONE,func.length(func.trim(func.coalesce(FollowUp.recipient_email,''))) == 0)
 
 
-def queue_locked(session,application):
+def queue_locked(session,application,refresh_pages=False):
     job=session.scalar(select(RecipientDiscovery).where(RecipientDiscovery.application_id == application.id))
     if job and job.state in ACTIVE:
         return job,False
@@ -43,15 +44,18 @@ def queue_locked(session,application):
     job.requested_at=utc_now()
     job.started_at=job.completed_at=job.lease_until=job.lease_id=job.error=None
     job.warnings=[]
+    job.page_limit=application.recipient_page_limit or research_settings(session)['recipient_page_limit']
+    job.refresh_pages=refresh_pages
+    job.page_counts={}
     return job,True
 
 
-def enqueue(session,application_id):
+def enqueue(session,application_id,refresh_pages=False):
     session.execute(text('BEGIN IMMEDIATE'))
     application=get_application(session,application_id)
     if not eligible(application):
         raise InvalidApplication('Recipient searches require an open application')
-    job,_=queue_locked(session,application)
+    job,_=queue_locked(session,application,refresh_pages)
     session.commit()
     return job_read(job)
 
@@ -73,7 +77,8 @@ def job_read(job):
     return {'id':job.id,'state':job.state,'requested_at':job.requested_at.replace(tzinfo=timezone.utc),
         'started_at':job.started_at.replace(tzinfo=timezone.utc) if job.started_at else None,
         'completed_at':job.completed_at.replace(tzinfo=timezone.utc) if job.completed_at else None,
-        'attempts':job.attempts,'error':job.error,'warnings':job.warnings}
+        'attempts':job.attempts,'error':job.error,'warnings':job.warnings,
+        'page_limit':job.page_limit,'refresh_pages':job.refresh_pages,'page_counts':job.page_counts}
 
 
 def application_state(session,application_id):
@@ -84,6 +89,9 @@ def application_state(session,application_id):
     followups=session.scalars(select(FollowUp).where(FollowUp.application_id == application_id,FollowUp.channel != FollowUpChannel.PHONE,
         FollowUp.status != FollowUpStatus.SENT,FollowUp.archived_at.is_(None)).order_by(FollowUp.sequence_number))
     return {'job':job_read(session.scalar(select(RecipientDiscovery).where(RecipientDiscovery.application_id == application_id))),
+        'page_limit': app.recipient_page_limit or research_settings(session)['recipient_page_limit'],
+        'page_limit_override': app.recipient_page_limit,
+        'default_page_limit': research_settings(session)['recipient_page_limit'],
         'followups':[{'id':f.id,'sequence_number':f.sequence_number,'revision':f.revision,'recipient_email':f.recipient_email,'recipient_name':f.recipient_name} for f in followups],
         'candidates':[{'id':c.id,**c.value,'context_current':c.context == context(app)} for c in candidates],
         'missing_followups':session.scalar(select(func.count()).select_from(missing_query().where(FollowUp.application_id == application_id).subquery())) or 0}
@@ -122,7 +130,9 @@ def claim(engine,stopping=None):
             job.lease_until=now+timedelta(seconds=180)
             job.started_at=now
             job.attempts+=1
-            result={'id':job.id,'lease_id':job.lease_id,'application_id':job.application_id,'context':dict(job.context)}
+            job.page_limit=app.recipient_page_limit or research_settings(session)['recipient_page_limit']
+            result={'id':job.id,'lease_id':job.lease_id,'application_id':job.application_id,'context':dict(job.context),
+                'page_limit':job.page_limit,'refresh_after':job.requested_at.isoformat() if job.refresh_pages else None}
             session.commit()
             invalidation.publish(session,'recipient.updated',job.application_id)
             return result
@@ -149,6 +159,7 @@ def complete(engine,claimed,result=None,error=None,requeue=False):
             job.state=result.get('outcome','COMPLETED')
             job.error=result.get('error')
             job.warnings=result.get('warnings',[])[:20]
+            job.page_counts={k:result.get('diagnostics',{}).get(k,0) for k in ('fetched_pages','reused_pages')}
             session.execute(delete(RecipientCandidate).where(RecipientCandidate.application_id == job.application_id))
             for value in result.get('candidates',[])[:30]:
                 session.add(RecipientCandidate(application_id=job.application_id,context=dict(job.context),value=value))
@@ -169,6 +180,9 @@ def choose(session,application_id,followup_id,candidate_id,revision,settings):
         raise RevisionConflict('The job changed since discovery. Fetch recipients again.')
     if candidate.value.get('excluded'):
         raise InvalidApplication('This contact has conflicting or unsuitable evidence. Choose another recipient.')
+    if candidate.value.get('requires_review') or candidate.value.get('stale') or any(
+            candidate.value.get('fit',{}).get(d,{}).get('state') == 'mismatch' for d in ('region','sector')):
+        raise InvalidApplication('Refresh stale evidence or verify region/team fit and enter a confirmed recipient manually.')
     if not candidate.value.get('email'):
         raise InvalidApplication('No published email was found for this person. Enter a confirmed address manually.')
     if not eligible(app):
@@ -189,7 +203,9 @@ class RecipientScheduler:
         if researcher is None:
             try:
                 from app.recipient_research import PublicRecipientResearch
-                self.researcher=PublicRecipientResearch(settings.app_data_dir/'recipient-web-cache.sqlite3')
+                reports=PageReports(engine)
+                reports.import_legacy(settings.app_data_dir/'recipient-web-cache.sqlite3')
+                self.researcher=PublicRecipientResearch(settings.app_data_dir/'recipient-search-cache.sqlite3',reports)
             except ImportError:
                 self.available=False
 
@@ -224,7 +240,9 @@ class RecipientScheduler:
                     pass
                 continue
             try:
-                result=await asyncio.wait_for(self.researcher.discover(claimed['context']),timeout=120)
+                research_context={**claimed['context'],'application_id':claimed['application_id'],
+                    'page_limit':claimed['page_limit'],'refresh_after':claimed['refresh_after']}
+                result=await asyncio.wait_for(self.researcher.discover(research_context),timeout=120)
                 await asyncio.to_thread(complete,self.engine,claimed,result)
             except asyncio.CancelledError:
                 await asyncio.to_thread(complete,self.engine,claimed,requeue=True)

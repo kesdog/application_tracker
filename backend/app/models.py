@@ -96,6 +96,7 @@ class Application(Base):
     posting_check_method: Mapped[str | None] = mapped_column(String(32))
     posting_check_reason: Mapped[str | None] = mapped_column(String(500))
     posting_check_failures: Mapped[int] = mapped_column(default=0, server_default="0")
+    recipient_page_limit: Mapped[int | None]
     followup_delay_days: Mapped[int | None]
     max_followup_suggestions: Mapped[int | None]
     followup_instructions: Mapped[str] = mapped_column(Text, default="", server_default="")
@@ -234,6 +235,28 @@ class RecipientDiscovery(Base):
     attempts: Mapped[int] = mapped_column(default=0)
     error: Mapped[str | None] = mapped_column(Text)
     warnings: Mapped[list] = mapped_column(JSON, default=list)
+    page_limit: Mapped[int] = mapped_column(default=6)
+    refresh_pages: Mapped[bool] = mapped_column(Boolean, default=False)
+    page_counts: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class RecipientPageReport(Base):
+    __tablename__ = "recipient_page_reports"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    url: Mapped[str] = mapped_column(String(2048), unique=True)
+    resolved_url: Mapped[str | None] = mapped_column(String(2048), index=True)
+    report: Mapped[dict | None] = mapped_column(JSON)
+    fetched_at: Mapped[datetime | None]
+    lease_id: Mapped[str | None] = mapped_column(String(36))
+    lease_until: Mapped[datetime | None]
+
+
+class RecipientPageUse(Base):
+    __tablename__ = "recipient_page_uses"
+    application_id: Mapped[str] = mapped_column(ForeignKey("applications.id"), primary_key=True)
+    report_id: Mapped[str] = mapped_column(ForeignKey("recipient_page_reports.id"), primary_key=True)
+    context: Mapped[dict] = mapped_column(JSON)
+    used_at: Mapped[datetime] = mapped_column(default=utc_now)
 
 
 class RecipientCandidate(Base):

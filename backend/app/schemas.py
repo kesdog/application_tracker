@@ -32,6 +32,7 @@ class ApplicationCreate(BaseModel):
     source: ShortText | None = None
     description: str | None = None
     requirements: str | None = None
+    recipient_page_limit: int | None = Field(default=None, ge=1, le=100)
     followup_delay_days: int | None = Field(default=None, ge=0, le=3650)
     max_followup_suggestions: int | None = Field(default=None, ge=0, le=100)
     followup_instructions: str = Field(default="", max_length=12000)
@@ -43,7 +44,7 @@ class ApplicationCreate(BaseModel):
     def valid_customization(cls, value):
         return Customization.model_validate(value).model_dump(exclude_none=True)
 
-    @field_validator("followup_delay_days", "max_followup_suggestions", mode="before")
+    @field_validator("followup_delay_days", "max_followup_suggestions", "recipient_page_limit", mode="before")
     @classmethod
     def blank_override(cls, value):
         return None if value == "" else value

@@ -1,0 +1,12 @@
+{
+  "job_queries": [
+    "site:jobs.lever.co/sfeir \"{company}\" {title}",
+    "site:jobs.lever.co/sfeir {title} recrutement emploi careers"
+  ],
+  "keywords": {
+    "required": [],
+    "preferred": {},
+    "excluded": [],
+    "synonyms": {}
+  }
+}

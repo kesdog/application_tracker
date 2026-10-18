@@ -43,5 +43,6 @@ application-tracker-push-key = "app.push_keys:run"
 where = ["backend"]
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
 testpaths = ["backend/tests", "tests"]
 pythonpath = ["backend"]

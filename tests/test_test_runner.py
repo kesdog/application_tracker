@@ -16,6 +16,7 @@ def test_feature_selection_includes_backend_consumers():
     assert front == set() and not tooling
     assert runner.select(['backend/app/recipient_discovery.py'], graph={})[0] == {'followups', 'agent', 'activity', 'auth', 'migrations', 'system'}
     assert runner.select(['backend/app/recipient_research.py'], graph={})[0] == {'followups', 'system'}
+    assert runner.select(['backend/app/recipient_reports.py'], graph={})[0] == {'followups', 'agent', 'auth', 'migrations', 'system'}
     assert runner.select(['backend/app/followup_ai.py'], graph={})[0] == {'followups', 'agent', 'activity', 'auth'}
 
 
@@ -57,7 +58,7 @@ def test_full_gate_order_and_failure_propagation():
     assert commands[0][1] == ['pnpm', 'build']
     assert commands[1][1][-2:] == ['pip', 'check']
     assert 'tests' in commands[2][1] and len(commands[2][1]) == 10 + len(runner.BACKEND)
-    assert 'libs/portable-webtoolbox-embedded-v0.4.0/webtoolbox-embedded/tests' in commands[2][1]
+    assert 'libs/portable-webtoolbox-embedded-v0.7.0/webtoolbox-embedded/tests' in commands[2][1]
     temp = Path(commands[2][1][commands[2][1].index('--basetemp') + 1])
     assert temp.is_relative_to(runner.ROOT / '.run')
     assert temp != Path(runner.commands({'system'}, set())[0][1][7])

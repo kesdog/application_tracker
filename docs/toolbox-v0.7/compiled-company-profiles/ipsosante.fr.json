@@ -1,0 +1,12 @@
+{
+  "job_queries": [
+    "site:ipsosante.fr \"{company}\" {title}",
+    "site:ipsosante.fr {title} recrutement emploi careers"
+  ],
+  "keywords": {
+    "required": [],
+    "preferred": {},
+    "excluded": [],
+    "synonyms": {}
+  }
+}

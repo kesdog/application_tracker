@@ -1,0 +1,27 @@
+{
+  "kind": "Template envelope: bind company_scope before passing keyword_profile to v0.7",
+  "company_scope_examples": [
+    "careers.capgemini.com",
+    "ipsosante.fr",
+    "jobs.lever.co/theodo"
+  ],
+  "keyword_profile": {
+    "job_queries": [
+      "site:__COMPANY_SCOPE__ \"{company}\" {title}",
+      "site:__COMPANY_SCOPE__ {title} recrutement emploi careers"
+    ],
+    "keywords": {
+      "required": [],
+      "preferred": {},
+      "excluded": [],
+      "synonyms": {}
+    }
+  },
+  "discover_job_options": {
+    "search_title": "short query title; retain full title separately",
+    "keyword_mode": "rank",
+    "pages": 3
+  },
+  "scope_policy": "Filter candidate and resolved URLs by host and optional company path; allow verified ATS transitions only as an explicit separate scope",
+  "native_limitation": "Do not pass the envelope to load_profile. Native discover_job currently omits {domain}; compiled-company-profiles contains valid bound profiles."
+}

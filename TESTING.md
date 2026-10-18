@@ -66,7 +66,15 @@ pnpm --dir frontend test tests/api/requests.test.ts
 
 ## How automatic selection works
 
-The follow-ups segment also runs the vendored toolbox's offline extraction, cache, URL-safety and background-job tests. The dev environment requires the toolbox search/dev extras and pytest-asyncio. App-owned discovery tests cover duplicate queue requests, the global five-job limit, lease recovery, stale results, recipient selection and manual fallback; network calls use controlled research fixtures.
+The follow-ups segment also runs the vendored toolbox's offline extraction, cache, URL-safety and background-job tests. The dev environment requires the toolbox search/dev extras and pytest-asyncio. Root pytest configuration uses asyncio auto mode so unmarked async vendor tests also run in the combined suite. App-owned discovery tests cover duplicate queue requests, the global five-job limit, lease recovery, stale results, recipient selection and manual fallback; network calls use controlled research fixtures.
+
+Recipient report coverage verifies global/per-application budgets, inheritance,
+settings conflicts, REST/MCP permissions, populated migrations, derived-only
+storage, cross-application/restart reuse, URL aliases, concurrent deduplication,
+cancellation recovery, incremental saves, explicit refresh and saved link
+frontiers. Legacy-cache conversion is offline; cache tests ensure raw HTML never
+enters the replacement persistent search cache. Frontend cases cover controls,
+refresh, lazy/scoped report inspection, pagination and safe text rendering.
 
 Backend selection uses the reviewed consumer map in `scripts/test.py`.
 Application services/schemas, work, activity, templates, models, database,

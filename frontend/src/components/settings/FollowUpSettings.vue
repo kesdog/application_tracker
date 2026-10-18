@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import Button from 'primevue/button'
 import TemplateField from '../shared/TemplateField.vue'
+import RecipientPageReports from '../followups/RecipientPageReports.vue'
 import { getGeneralSettings, saveGeneralSettings, getTemplateVariables, previewTemplate, listApplications, type GeneralSettings, type TemplateVariable, type TemplatePreview, type Application } from '../../api'
 const settings = ref<GeneralSettings | null>(null)
 const variables = ref<TemplateVariable[]>([])
@@ -53,9 +54,11 @@ onUnmounted(() => { clearTimeout(previewTimer); previewVersion++ })
       <div class="grid"><label>Delay after application or confirmed send (calendar days)<input v-model.number="settings.followup_delay_days" type="number" min="0" max="3650" required /></label><label>Automatic follow-up limit<input v-model.number="settings.max_followup_suggestions" type="number" min="0" max="100" required /></label><label>Timezone<input v-model="settings.timezone" required placeholder="Europe/Paris" /></label><label>Reminder time<input v-model="settings.reminder_time" type="time" required /></label></div>
       <details><summary>Reminder preferences</summary><label class="check"><input v-model="settings.notifications_enabled" type="checkbox" /> Enable scheduled notices</label><label class="check"><input v-model="settings.daily_digest" type="checkbox" /> One daily phone digest at or after the reminder time</label><p class="hint">With digest off, newly due reminders are grouped on each scan. Quiet hours defer reminders. Phone delivery requires an enabled device.</p><div class="grid"><label>Quiet hours start<input v-model="settings.quiet_start" type="time" required /></label><label>Quiet hours end<input v-model="settings.quiet_end" type="time" required /></label></div></details>
       <label>Review as possibly unsuccessful after this many unanswered follow-ups<input v-model.number="settings.unsuccessful_review_after" type="number" min="0" max="100" required /></label><p class="hint">Default: 3. Counts actual sends or completed calls since the last recorded employer reply. The application stays open for your review. Set 0 to disable. This is separate from the automatic follow-up limit; add another follow-up manually or raise that limit if needed.</p>
+      <label>Recipient research: new pages per application run<input v-model.number="settings.recipient_page_limit" type="number" min="1" max="100" required /></label><p class="hint">Default: 6. Saved page reports are reused without spending this limit. Override it on an application's recipient panel. A run also has a time limit, so it may fetch fewer pages.</p>
       <div class="actions"><Button type="submit" :disabled="busy">Save general settings</Button><Button type="button" severity="secondary" :disabled="busy" @click="showPreview">Update preview</Button></div>
       <div class="preview"><div class="actions"><label>Preview with<select v-model="selected" @change="showPreview"><option value="">Sample application</option><option v-for="app in applications" :key="app.id" :value="app.id">{{ app.company }} · {{ app.job_title }}</option></select></label></div><template v-if="preview"><strong>{{ preview.subject.text }}</strong><pre>{{ preview.body.text }}</pre><p v-if="unresolved.length" class="at-message warning">Fill or remove these variables on the individual message before marking ready: {{ unresolved.map(v => '{' + v + '}').join(', ') }}</p></template></div>
     </fieldset></form>
+    <RecipientPageReports />
   </section>
 </template>
 

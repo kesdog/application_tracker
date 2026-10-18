@@ -4,7 +4,7 @@ import logging
 import threading
 from datetime import datetime
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, Response, UploadFile
+from fastapi import Body, Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
@@ -22,6 +22,7 @@ from app import documents
 from app import exports
 from app import interviews
 from app import work
+from app import recipient_reports
 from app import agent_auth, agent_errors, agent_ops, integrations, invalidation, posting_service, posting_review, scheduler
 from app.posting_checker import PostingChecker, render_with_playwright
 from app.interview_schemas import InterviewContext, InterviewCreate, InterviewListItem, InterviewRead, InterviewUpdate, TaskListItem
@@ -246,9 +247,17 @@ def create_app(
         return recipient_discovery.application_state(session,application_id)
 
     @application.post('/api/applications/{application_id}/recipients/fetch')
-    def fetch_application_recipients(application_id: str,session: Session = Depends(get_session)):
+    def fetch_application_recipients(application_id: str,data: recipient_reports.ResearchRequest = Body(default=recipient_reports.ResearchRequest()),session: Session = Depends(get_session)):
         require_recipient_toolbox()
-        return recipient_discovery.enqueue(session,application_id)
+        return recipient_discovery.enqueue(session,application_id,data.refresh_pages)
+
+    @application.get('/api/recipients/pages')
+    def recipient_page_reports(application_id: str | None = None, page: int = Query(1,ge=1), page_size: int = Query(20,ge=1,le=100), session: Session = Depends(get_session)):
+        return recipient_reports.list_reports(session,application_id,page,page_size)
+
+    @application.get('/api/recipients/pages/{report_id}')
+    def recipient_page_report(report_id: str, application_id: str | None = None, session: Session = Depends(get_session)):
+        return recipient_reports.get_report(session,report_id,application_id)
 
     class RecipientChoice(BaseModel):
         candidate_id: str

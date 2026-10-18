@@ -31,6 +31,7 @@ BACKEND_MODULES = {
     'followup_ai': {'followups', 'agent', 'activity', 'auth'},
     'recipient_discovery': {'followups', 'agent', 'activity', 'auth', 'migrations', 'system'},
     'recipient_research': {'followups', 'system'},
+    'recipient_reports': {'followups', 'agent', 'auth', 'migrations', 'system'},
     'followup_reminders': {'followups', 'notifications', 'dashboard', 'agent'},
     'integrations': {'followups', 'interviews', 'notifications'},
     'human_auth': {'auth', 'notifications'},
@@ -155,7 +156,7 @@ def commands(backend, frontend, tooling=False, full=False):
     if backend or tooling:
         targets = [f'backend/tests/{name}' for name in sorted(backend)]
         if 'followups' in backend:
-            targets.append('libs/portable-webtoolbox-embedded-v0.4.0/webtoolbox-embedded/tests')
+            targets.append('libs/portable-webtoolbox-embedded-v0.7.0/webtoolbox-embedded/tests')
         if tooling:
             targets.append('tests')
         # A fresh, ignored directory avoids inaccessible user temp folders and

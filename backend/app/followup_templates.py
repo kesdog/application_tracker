@@ -38,6 +38,7 @@ class GeneralSettingsInput(BaseModel):
     followup_delay_days: int = Field(default=7, ge=0, le=3650)
     max_followup_suggestions: int = Field(default=2, ge=0, le=100)
     unsuccessful_review_after: int = Field(default=3, ge=0, le=100)
+    recipient_page_limit: int = Field(default=6, ge=1, le=100)
     timezone: str = "Europe/Paris"
     reminder_time: str = "09:00"
     notifications_enabled: bool = True

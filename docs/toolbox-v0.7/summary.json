@@ -1,0 +1,89 @@
+{
+  "toolbox": "0.7.0",
+  "date": "2026-10-18",
+  "comparison_applications": 10,
+  "comparison_api_calls": 100,
+  "v06_fitted_originals": 2,
+  "v07_fitted_originals": 4,
+  "v07_fitted_likely_originals": 1,
+  "v06_stock_originals": 2,
+  "v07_stock_originals": 2,
+  "v06_stock_page_calls": 15,
+  "v07_stock_page_calls": 41,
+  "v06_fitted_page_calls": 14,
+  "v07_fitted_page_calls": 12,
+  "shipped_suite": {
+    "passed": 124,
+    "failed": 1,
+    "failure": "test_rate_limited_host_defers_sibling_not_observed_429; unmocked live search"
+  },
+  "guarded_suite": {
+    "passed": 125,
+    "failed": 0,
+    "guard": "experiment-only default-empty unmocked search provider"
+  },
+  "company_reference_pages": 8,
+  "company_scopes": 6,
+  "company_query_observations": 40,
+  "company_query_outcomes": {
+    "empty": 21,
+    "results": 19
+  },
+  "company_plan_combinations": 85,
+  "company_api_calls": 96,
+  "company_selected_plan": {
+    "families": [
+      "short_company",
+      "short_hiring"
+    ],
+    "tuning": {
+      "selected": 6,
+      "retrieved": 6,
+      "queries": 9
+    },
+    "holdout": {
+      "selected": 1,
+      "retrieved": 1,
+      "queries": 4
+    }
+  },
+  "company_budget_study": [
+    {
+      "cap": 3,
+      "reference_urls_retrieved": 7,
+      "references_returned": 6,
+      "references_likely": 6,
+      "inspected_pages": 24,
+      "queries": 13
+    },
+    {
+      "cap": 6,
+      "reference_urls_retrieved": 7,
+      "references_returned": 6,
+      "references_likely": 6,
+      "inspected_pages": 41,
+      "queries": 13
+    },
+    {
+      "cap": 12,
+      "reference_urls_retrieved": 7,
+      "references_returned": 6,
+      "references_likely": 6,
+      "inspected_pages": 47,
+      "queries": 16
+    }
+  ],
+  "new_page_observations": 94,
+  "new_page_outcomes": {
+    "access_blocked": 22,
+    "results": 52,
+    "posting_unavailable": 16,
+    "upstream_error": 4
+  },
+  "snapshot_hashes": {
+    "live-pages": "4edcb4eece7325900bd3919468181e42c54964cb2a716db15c160b504df4a5e8",
+    "company-search": "60652607bcb3d3ace008b149e8638a4bb07454faade69b57f12262be9f211993"
+  },
+  "compiled_profile_count": 6,
+  "product_source_changed": false
+}

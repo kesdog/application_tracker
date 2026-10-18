@@ -81,6 +81,36 @@ def create_mcp_server(settings: Settings | None = None, token: str | None = None
         return call("get_tracker_info", {})
 
     @server.tool()
+    def get_recipient_settings() -> dict:
+        """Read the global new-page budget and settings revision. Cached reports cost no fetches."""
+        return call('get_recipient_settings', {})
+
+    @server.tool()
+    def update_recipient_settings(recipient_page_limit: int, expected_revision: int) -> dict:
+        """Set the global page budget (1–100), preserving other settings. Requires edit permission and the current settings revision."""
+        return call('update_recipient_settings', {'recipient_page_limit': recipient_page_limit, 'expected_revision': expected_revision})
+
+    @server.tool()
+    def get_recipient_research(application_id: str) -> dict:
+        """Read candidates, job state and effective budget. Set a per-job recipient_page_limit via update_application; null restores the default."""
+        return call('get_recipient_research', {'application_id': application_id})
+
+    @server.tool()
+    def queue_recipient_research(application_id: str, refresh_pages: bool = False) -> dict:
+        """Queue public recipient research (max five concurrent jobs). Reuse saved reports by default; refresh_pages explicitly permits fetching them again. Requires the tracker backend running. Never sends email."""
+        return call('queue_recipient_research', {'application_id': application_id, 'refresh_pages': refresh_pages})
+
+    @server.tool()
+    def list_recipient_page_reports(application_id: str | None = None, page: int = 1, page_size: int = 20) -> dict:
+        """List saved page summaries, optionally scoped to a job. Reports include timestamps and failures; page_size max 100."""
+        return call('list_recipient_page_reports', {'application_id': application_id, 'page': page, 'page_size': page_size})
+
+    @server.tool()
+    def get_recipient_page_report(report_id: str, application_id: str | None = None) -> dict:
+        """Read saved extracted contact evidence, links and outcomes. Contains no complete page or HTML. Research must reassess employer and vacancy fit before use."""
+        return call('get_recipient_page_report', {'report_id': report_id, 'application_id': application_id})
+
+    @server.tool()
     def list_applications(limit: int = 25, cursor: str | None = None) -> dict:
         """Return compact pages with contract, posting/email references and overdue follow-up state. CLOSED takes precedence over OVERDUE. Use next_cursor for another page."""
         return call("list_applications", {"limit": limit, "cursor": cursor})

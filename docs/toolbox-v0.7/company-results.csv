@@ -1,0 +1,9 @@
+﻿case,company,scope,split,title,search_title,reference_url,reference_retrieved,reference_returned,reference_likely,reference_seed_returned,queries,page_attempts
+ipso-django,ipso santé,ipsosante.fr,holdout,développeur·euse web full stack Django / Vue.js (CDI),développeur Django Vue.js,https://pro.ipsosante.fr/fr/rejoignez-nous/developpeur-euse/developpeur-web-fullstack/,True,False,False,False,2,3
+intm-java,INTM,intm.com,tuning,Développeur Java/JEE H/F,développeur Java JEE,https://intm.com/project/developpeur-java-jee-h-f/,True,True,True,True,2,3
+spinalcom-smart-building,SPINALCOM,spinalcom.com,tuning,CDI- Ingénieur Smart Building,ingénieur smart building,https://www.spinalcom.com/rejoignez-nous/cdi-ingenieur-smart-building-2/,True,True,True,True,2,3
+capgemini-net,Capgemini,careers.capgemini.com,tuning,Développeuse / Développeur C# .NET,développeur C# .NET,https://careers.capgemini.com/job/Issy-les-Moulineaux-Développeuse-Développeur-C-_NET/1200124201/,True,True,True,True,2,3
+capgemini-react,Capgemini,careers.capgemini.com,tuning,Développeuse / Développeur C# .NET et React,développeur C# .NET React,https://careers.capgemini.com/job/Nantes-Développeuse-Développeur-C-_NET-et-React/1370140233/,True,True,True,True,1,3
+sfeir-python,SFEIR,jobs.lever.co/sfeir,holdout,Software Engineer Python / FastAPI,Software Engineer Python FastAPI,https://jobs.lever.co/sfeir/196a47f2-7f02-4dab-91ae-1d40e496853f,False,False,False,True,2,3
+theodo-cdi,Theodo,jobs.lever.co/theodo,tuning,Software Engineer Fullstack Secteur Public - CDI Paris - Theodo GovTech,Software Engineer Fullstack Secteur Public,https://jobs.lever.co/theodo/86f6912f-70aa-4b62-8933-da41e85c61e7,True,True,True,True,1,3
+theodo-stage,Theodo,jobs.lever.co/theodo,tuning,Software Engineer Fullstack - Stage de fin d’études Paris - Secteur Public - Theodo GovTech,Software Engineer Fullstack stage secteur public,https://jobs.lever.co/theodo/1c3bcaf0-0c5b-4728-943a-c7e79c9af035,True,True,True,True,1,3

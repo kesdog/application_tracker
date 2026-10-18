@@ -33,6 +33,7 @@ export interface ApplicationCreate {
   description?: string | null
   requirements?: string | null
   followup_delay_days?: number | null
+  recipient_page_limit?: number | null
   max_followup_suggestions?: number | null
   followup_instructions?: string
   followup_customization?: Customization
@@ -91,6 +92,7 @@ export interface GeneralSettings {
   followup_delay_days: number; max_followup_suggestions: number; timezone: string; reminder_time: string
   notifications_enabled: boolean; quiet_start: string; quiet_end: string; daily_digest: boolean; revision: number
   unsuccessful_review_after: number
+  recipient_page_limit: number
 }
 export interface RenderedTemplate { text: string; missing: string[]; unknown: string[] }
 export interface TemplatePreview { subject: RenderedTemplate; body: RenderedTemplate; variables: Record<string, string> }
@@ -211,18 +213,25 @@ export const proposeFollowUp = (appId: string, id: string, latest: boolean): Pro
 export const applyFollowUpTemplate = (appId: string, id: string, expected_revision: number, latest: boolean): Promise<FollowUp> => request(`/api/applications/${encodeURIComponent(appId)}/followups/${encodeURIComponent(id)}/apply-template`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expected_revision, latest }) })
 export const getFollowUpAIRequest = (appId: string, id: string): Promise<Record<string, unknown>> => request(`/api/applications/${encodeURIComponent(appId)}/followups/${encodeURIComponent(id)}/ai-request`)
 export const getOutcomeReviews = (page = 1): Promise<OutcomeReviewPage> => request(`/api/followups/reviews?page=${page}&page_size=20`)
-export interface RecipientJob { id: string; state: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'NO_RESULTS' | 'FAILED' | 'CANCELLED'; attempts: number; error: string | null; warnings: string[] }
+export interface RecipientJob { id: string; state: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'NO_RESULTS' | 'FAILED' | 'CANCELLED'; attempts: number; error: string | null; warnings: string[]; page_limit?: number; refresh_pages?: boolean; page_counts?: { fetched_pages?: number; reused_pages?: number } }
 export interface RecipientCandidate { id: string; name: string | null; email: string | null; kind: 'recruiter_hr' | 'technical_lead' | 'general_contact'; role: string | null; source_url: string; evidence: string; company_match: string; vacancy_match: string; email_status: string; stale: boolean; context_current: boolean; excluded?: boolean;
   contact_priority?: { category: string; score: number; recommended_action: string; outreach_eligible: boolean };
   profile_urls?: { url: string; label: string }[];
   emails?: { email: string; purpose: string; exclusion_reason?: string | null }[];
-  deliverability?: string; personal_ownership?: string;
+  deliverability?: string; personal_ownership?: string; requires_review?: boolean;
+  source_region?: string; source_sector?: string;
+  fit?: { region?: { state: string; requested?: string | null; observed?: string | null }; sector?: { state: string; requested?: string | null; observed?: string | null } };
 }
 export interface RecipientFollowUp { id: string; sequence_number: number; revision: number; recipient_email: string | null; recipient_name: string | null }
-export interface RecipientState { job: RecipientJob | null; candidates: RecipientCandidate[]; missing_followups: number; followups: RecipientFollowUp[] }
+export interface RecipientState { job: RecipientJob | null; candidates: RecipientCandidate[]; missing_followups: number; followups: RecipientFollowUp[]; page_limit?: number; page_limit_override?: number | null; default_page_limit?: number }
 export interface RecipientQueue { queued: number; running: number; failed: number; missing_followups: number; concurrency_limit: number; available: boolean }
 export const getRecipientState = (id: string): Promise<RecipientState> => request(`/api/applications/${encodeURIComponent(id)}/recipients`)
-export const fetchRecipients = (id: string): Promise<RecipientJob> => request(`/api/applications/${encodeURIComponent(id)}/recipients/fetch`, { method: 'POST' })
+export const fetchRecipients = (id: string, refreshPages = false): Promise<RecipientJob> => request(`/api/applications/${encodeURIComponent(id)}/recipients/fetch`, { method: 'POST', ...(refreshPages ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_pages: true }) } : {}) })
+export interface RecipientPageSummary { id: string; url: string; resolved_url: string | null; title: string; outcome: string; fetched_at: string | null; stale: boolean; candidate_count: number }
+export interface RecipientPageDetail extends RecipientPageSummary { report: { summary: string; candidates: Array<{ name?: string | null; email?: string | null; role?: string | null; purpose?: string; exclusion_reason?: string | null }>; contact_links: string[]; error?: string; rendering_signals?: string[] } }
+export interface RecipientPageList { items: RecipientPageSummary[]; total: number; page: number; page_size: number }
+export const getRecipientPages = (applicationId?: string, page = 1): Promise<RecipientPageList> => request('/api/recipients/pages?' + new URLSearchParams({ ...(applicationId ? { application_id: applicationId } : {}), page: String(page), page_size: '10' }))
+export const getRecipientPage = (id: string, applicationId?: string): Promise<RecipientPageDetail> => request('/api/recipients/pages/' + encodeURIComponent(id) + (applicationId ? '?' + new URLSearchParams({ application_id: applicationId }) : ''))
 export const getRecipientQueue = (): Promise<RecipientQueue> => request('/api/recipients/queue')
 export const fetchMissingRecipients = (): Promise<{ queued: number; applications: number; concurrency_limit: number }> => request('/api/recipients/queue-missing', { method: 'POST' })
 export const chooseRecipient = (appId: string, followupId: string, candidateId: string, revision: number): Promise<FollowUp> => request(`/api/applications/${encodeURIComponent(appId)}/followups/${encodeURIComponent(followupId)}/recipient`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ candidate_id: candidateId, expected_revision: revision }) })

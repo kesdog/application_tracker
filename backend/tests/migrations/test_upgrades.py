@@ -128,3 +128,16 @@ def test_recipient_upgrade_preserves_workflow_and_copies_existing_contacts(tmp_p
         assert rows[1]['approved_revision']==4 and rows[2]['sent_at']=='2026-10-09T10:00:00Z'
     with TestClient(create_app(settings)) as client:
         assert client.get('/api/applications/old/work').json()['followups']==all_rows
+
+
+def test_page_report_upgrade_preserves_discovery_and_candidate_evidence(tmp_path, legacy_database):
+    with legacy_database('0020_recipient_discovery') as connection:
+        connection.exec_driver_sql("INSERT INTO applications (id,job_title,company,date_applied,email_reference) VALUES ('existing','Engineer','Example','2026-10-01','Mail')")
+        connection.exec_driver_sql("INSERT INTO recipient_discovery (id,application_id,state,context,requested_at,attempts,warnings) VALUES ('job','existing','COMPLETED','{}',CURRENT_TIMESTAMP,2,'[]')")
+        connection.exec_driver_sql("INSERT INTO recipient_candidates (id,application_id,context,value,created_at) VALUES ('candidate','existing','{}','{\"email\":\"jobs@example.com\"}',CURRENT_TIMESTAMP)")
+    with TestClient(create_app(Settings(app_data_dir=tmp_path,_env_file=None))) as client:
+        state = client.get('/api/applications/existing/recipients').json()
+        assert state['job']['attempts'] == 2 and state['job']['page_limit'] == 6 and not state['job']['refresh_pages']
+        assert state['candidates'][0]['email'] == 'jobs@example.com'
+        assert client.get('/api/applications/existing').json()['recipient_page_limit'] is None
+        assert client.get('/api/recipients/pages').json()['total'] == 0

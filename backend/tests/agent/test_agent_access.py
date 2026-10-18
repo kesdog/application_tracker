@@ -29,6 +29,58 @@ def agent_call(client, token, operation, payload=None):
     return client.post(f"/api/agent/tools/{operation}", json=payload or {}, headers=headers)
 
 
+def test_recipient_settings_overrides_and_queue_are_shared_by_rest_and_mcp(setup):
+    client, app, settings = setup
+    client.portal.call(app.state.recipient_jobs.close)
+    token = client.post('/api/settings/agent/token').json()['token']
+    permissions = {'read': True, 'create': True, 'edit': True, 'draft': False, 'tasks': False, 'interviews': False}
+    client.put('/api/settings/agent/permissions', json=permissions)
+    original = client.get('/api/settings/general').json()
+    assert original['recipient_page_limit'] == 6
+    get = agent_call(client, token, 'get_recipient_settings').json()
+    update = {'recipient_page_limit': 12, 'expected_revision': get['revision']}
+    assert agent_call(client, token, 'update_recipient_settings', update).status_code == 200
+    assert agent_call(client, token, 'update_recipient_settings', {**update, 'recipient_page_limit': 15}).status_code == 409
+    current = client.get('/api/settings/general').json()
+    assert current['subject_template'] == original['subject_template'] and current['recipient_page_limit'] == 12
+    created = client.post('/api/applications', json=draft()).json()
+    app_id = created['id']
+    assert created['recipient_page_limit'] is None
+    assert client.get(f'/api/applications/{app_id}/recipients').json()['page_limit'] == 12
+    server = create_mcp_server(settings, token)
+    asyncio.run(server.call_tool('update_application', {'application_id': app_id, 'changes': {'recipient_page_limit': 3}}))
+    research = json.loads(asyncio.run(server.call_tool('get_recipient_research', {'application_id': app_id}))[0].text)
+    assert research['page_limit'] == 3 and research['default_page_limit'] == 12
+    queued = agent_call(client, token, 'queue_recipient_research', {'application_id': app_id, 'refresh_pages': True})
+    assert queued.status_code == 200 and queued.json()['refresh_pages'] and queued.json()['page_limit'] == 3
+    assert client.patch(f'/api/applications/{app_id}', json={'recipient_page_limit': None}).json()['recipient_page_limit'] is None
+    from app.recipient_discovery import claim
+    assert claim(app.state.engine)['page_limit'] == 12  # A queued job uses settings at start.
+    for value in (0, 101, 2.5):
+        assert client.patch(f'/api/applications/{app_id}', json={'recipient_page_limit': value}).status_code == 422
+        assert client.put('/api/settings/general', json={**{k:v for k,v in current.items() if k != 'revision'}, 'recipient_page_limit': value}).status_code == 422
+    tools = {t.name for t in asyncio.run(server.list_tools())}
+    assert {'get_recipient_settings', 'update_recipient_settings', 'get_recipient_research',
+        'queue_recipient_research', 'list_recipient_page_reports', 'get_recipient_page_report'} <= tools
+    assert json.loads(asyncio.run(server.call_tool('list_recipient_page_reports', {'application_id': app_id}))[0].text)['total'] == 0
+    from app.recipient_reports import PageReports
+    async def blocked_page(): return {'url':'https://example.com/contact', 'outcome':'blocked'}
+    asyncio.run(PageReports(app.state.engine).page(app_id, 'https://example.com/contact', {}, blocked_page))
+    reports = agent_call(client, token, 'list_recipient_page_reports', {'application_id': app_id}).json()
+    report_id = reports['items'][0]['id']
+    assert json.loads(asyncio.run(server.call_tool('get_recipient_page_report', {'report_id': report_id, 'application_id': app_id}))[0].text)['report']['outcome'] == 'blocked'
+    permissions['edit'] = False
+    client.put('/api/settings/agent/permissions', json=permissions)
+    for operation, payload in [('update_recipient_settings', update), ('queue_recipient_research', {'application_id': app_id})]:
+        assert agent_call(client, token, operation, payload).status_code == 403
+        with pytest.raises(ToolError, match='PERMISSION_DENIED'):
+            asyncio.run(server.call_tool(operation, payload))
+    permissions['read'] = False
+    client.put('/api/settings/agent/permissions', json=permissions)
+    for operation in ('get_recipient_settings', 'get_recipient_research', 'list_recipient_page_reports', 'get_recipient_page_report'):
+        assert agent_call(client, token, operation, {'application_id': app_id, 'report_id': 'missing'}).status_code == 403
+
+
 def draft(company="Agent Example"):
     return {"job_title": "Engineer", "company": company, "date_applied": "2026-09-25", "job_url": "https://example.com/job"}
 

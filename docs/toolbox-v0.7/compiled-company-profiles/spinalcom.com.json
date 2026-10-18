@@ -1,0 +1,12 @@
+{
+  "job_queries": [
+    "site:spinalcom.com \"{company}\" {title}",
+    "site:spinalcom.com {title} recrutement emploi careers"
+  ],
+  "keywords": {
+    "required": [],
+    "preferred": {},
+    "excluded": [],
+    "synonyms": {}
+  }
+}

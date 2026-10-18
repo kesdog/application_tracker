@@ -913,3 +913,30 @@ V1 is complete when all of the following work without directly manipulating the 
 - Surface provider errors, blocked pages, JS rendering needs, stale cache and whole-record truncation as limitations; incomplete searches without contacts are retryable failures rather than conclusive empty results.
 - Show recruitment versus general fallback categories and verification requirements in the recipient picker.
 - Validate offline toolbox fixtures, adapter regressions and queue/revision/selection behavior; run the full gate before delivery. Run a separate live batch on the ten applications immediately after the previous batch, at most five at once, retaining a local evidence report. Closed records are research only. Verify runtime health after restart.
+
+
+# Recipient discovery toolbox 0.5 integration (2026-10-17)
+
+- Upgrade the bundled library and installation/Docker/test paths to 0.5.0; keep the five-job durable queue and manual recipient approval.
+- Use contact-aware fallback, purpose-aware link ranking/locale deduplication, library placeholder/purpose classification, multilingual HR ranking and per-source freshness. Retain tracker employer filtering and the saved-posting seed.
+- Carry saved application location into local relevance assessments; never guess a missing region, employer industry or known official domain. Show observed source region/sector and mismatch warnings independently of employer/vacancy ownership. Stale/mismatched candidates require refresh or manually confirmed entry.
+- Keep the new posting discovery/status API available through the bundled library; do not replace the tracker's posting lifecycle or automatically overwrite source URLs in this recipient-focused phase.
+- Run feature regressions, all 0.5 offline fixtures, production build and the full gate. Compare live results on the same prior ten applications, no more than five jobs at once; record source quality, provider outcomes and limits separately from raw counts. Replay stored pages with both versions to isolate extraction changes from search variability.
+- Back up before activation, restart and verify API/UI plus unchanged application/follow-up content. Preserve unrelated navigation/count work in scoped delivery.
+
+# Recipient page controls and reusable reports (2026-10-17)
+
+- Add a general recipient page budget (default 6; range 1–100) and a nullable per-application override through human and agent contracts. Resolve queued limits at claim time; retain running limits.
+- Add General Settings and application controls, an explicit refresh action, fetched/reused counts and paginated saved-report views. Keep five concurrent jobs and the research deadline.
+- Persist derived reports after each attempt: normalized request/final URL, summary, contact/evidence records, links, timestamp and outcome. Reuse across applications and restarts, retaining failed/empty results. Reassess findings for the current application.
+- Use expiring database page leases; release cancellation leases and preserve partial evidence. Continue saved link frontiers on later runs. Refresh is explicit; flag older evidence for review.
+- Convert the legacy cache offline without editing toolbox source or deleting the old file. Persist search responses in the replacement cache; hold raw HTML briefly in bounded memory.
+- Expose permission-checked REST/MCP settings, queue, state and report hooks, preserving settings revisions and per-application validation.
+- Verify budgets/inheritance, conflicts, permissions, REST/MCP parity, populated migrations, derived-only storage, cross-application/restart reuse, concurrency, cancellation, explicit refresh, legacy import and UI behavior. Run the full staged gate, back up, restart and inspect the UI/data. Keep delivery staged locally; preserve unrelated navigation/count edits.
+
+# Toolbox v0.7 publication (2026-10-18)
+
+- Publish the supplied v0.7 library, prior recipient page controls/reports and their tests; update Docker, local installation and full-gate paths. Preserve unrelated navigation and follow-up UI changes locally.
+- Include the curated posting benchmark, limitations and six opt-in bound company-site profiles. Raw caches, HTML and private tracker inventories remain local. Profile adoption in the tracker is a later implementation step.
+- Isolate the vendored seed-only cooldown test with an empty job-query profile; leave production matching behavior as supplied.
+- Validate the exact staged snapshot with the full gate before committing and pushing to main. Publication does not restart or deploy the tracker.

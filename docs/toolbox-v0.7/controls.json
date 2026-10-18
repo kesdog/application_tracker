@@ -1,0 +1,359 @@
+{
+  "theodo_internship": {
+    "page_contract": "Stage de fin d&#39;études",
+    "without_contract": {
+      "score": 95,
+      "status": "likely_match",
+      "evidence": [
+        "title_tokens_match",
+        "employer_schema_match",
+        "location_match"
+      ],
+      "hard_conflicts": [],
+      "employer_identity": "confirmed_by_page"
+    },
+    "with_cdi": {
+      "score": 29,
+      "status": "unresolved",
+      "evidence": [
+        "title_tokens_match",
+        "employer_schema_match",
+        "location_match",
+        "contract_mismatch"
+      ],
+      "hard_conflicts": [
+        "contract_mismatch"
+      ],
+      "employer_identity": "confirmed_by_page"
+    }
+  },
+  "theodo_cdi_candidate": {
+    "page_contract": "CDI",
+    "without_contract": {
+      "score": 95,
+      "status": "likely_match",
+      "evidence": [
+        "title_tokens_match",
+        "employer_schema_match",
+        "location_match"
+      ],
+      "hard_conflicts": [],
+      "employer_identity": "confirmed_by_page"
+    },
+    "with_cdi": {
+      "score": 100,
+      "status": "likely_match",
+      "evidence": [
+        "title_tokens_match",
+        "employer_schema_match",
+        "location_match",
+        "contract_match"
+      ],
+      "hard_conflicts": [],
+      "employer_identity": "confirmed_by_page"
+    }
+  },
+  "capgemini_nantes": {
+    "location": "nantes",
+    "location_evidence": "url_slug",
+    "match": {
+      "score": 29,
+      "status": "unresolved",
+      "evidence": [
+        "title_tokens_match",
+        "employer_missing",
+        "location_mismatch"
+      ],
+      "hard_conflicts": [
+        "location_mismatch"
+      ],
+      "employer_identity": "unverified"
+    }
+  },
+  "sfeir_apply_form": {
+    "route": {
+      "kind": "application",
+      "reason": "ats_application_form"
+    }
+  },
+  "seniority": {
+    "match": {
+      "score": 95,
+      "status": "likely_match",
+      "evidence": [
+        "title_tokens_match",
+        "employer_schema_match",
+        "location_match"
+      ],
+      "hard_conflicts": [],
+      "employer_identity": "confirmed_by_page"
+    },
+    "observed_title": "Senior Python Developer"
+  },
+  "preferred_order": {
+    "search_order": [
+      "https://acme.example/jobs/python-developer-12345",
+      "https://acme.example/jobs/java-developer-12345"
+    ],
+    "inspected_order": [
+      "https://acme.example/jobs/java-developer-12345"
+    ],
+    "answer": {
+      "schema_version": "1.1",
+      "company": "Acme",
+      "title": "Python Developer",
+      "search_title": "Python Developer",
+      "location": "",
+      "contract_type": "",
+      "reference": "",
+      "employer_context": null,
+      "completion": "partial",
+      "matches": [
+        {
+          "posting_url": "https://acme.example/jobs/java-developer-12345",
+          "original_url": "https://acme.example/jobs/java-developer-12345",
+          "posting_identity": {
+            "source_platform": "other",
+            "source_id": "",
+            "id_type": "url",
+            "canonical_url": "https://acme.example/jobs/java-developer-12345"
+          },
+          "declared_canonical_url": null,
+          "schema_posting_url": null,
+          "redirected_from": null,
+          "platform": "other",
+          "route": {
+            "kind": "specific",
+            "reason": "generic_job_detail_route"
+          },
+          "title": "Java Developer",
+          "company": "Acme",
+          "publisher": "",
+          "employer_evidence": "schema",
+          "location": "Paris",
+          "location_evidence": "schema",
+          "identifier": "",
+          "match": {
+            "score": 55,
+            "status": "possible_match",
+            "evidence": [
+              "partial_title_match",
+              "employer_schema_match"
+            ],
+            "hard_conflicts": [],
+            "employer_identity": "confirmed_by_page"
+          },
+          "posting_status": "LIVE",
+          "status_reason": "application_link_visible",
+          "status_confidence": "medium",
+          "application_url": "https://acme.example/apply/now",
+          "application_links": [
+            {
+              "url": "https://acme.example/apply/now",
+              "label": "Apply now",
+              "source": "html_link",
+              "requires_login": false,
+              "priority": 85,
+              "posting_url": "https://acme.example/jobs/java-developer-12345",
+              "relation": "published_on_posting"
+            }
+          ],
+          "cached": true,
+          "source": "unknown",
+          "instance_equivalence": "unverified"
+        }
+      ],
+      "application_destinations": [],
+      "search_attempts": [
+        {
+          "stage": "search",
+          "query": "ranking",
+          "provider": "synthetic",
+          "outcome": "results",
+          "raw_count": 2,
+          "usable_count": 2,
+          "keyword_omitted": 0,
+          "returned_count": 2,
+          "cache_state": null
+        }
+      ],
+      "route_rejections": [],
+      "route_rejection_count": 0,
+      "eligible_route_count": 2,
+      "inspected_page_count": 1,
+      "query_count": 1,
+      "query_budget": 1,
+      "untried_queries": 0,
+      "query_stop_reason": "eligible_route_cap",
+      "keyword_mode": "rank",
+      "requested_page_cap": 1,
+      "effective_page_cap": 1,
+      "page_budget_setting": "max_job_discovery_pages",
+      "unvisited_candidates": 1,
+      "stop_reason": "page_limit",
+      "truncation": {
+        "omitted_records": 0,
+        "omitted_fields": 0,
+        "omitted_text_chars": 0,
+        "reasons": []
+      },
+      "approx_output_tokens": 560
+    }
+  },
+  "category_fallback": {
+    "queries": [
+      "first query",
+      "second query"
+    ],
+    "pages": [
+      "https://acme.example/jobs/python-developer-12345"
+    ],
+    "answer": {
+      "schema_version": "1.1",
+      "company": "Acme",
+      "title": "Python Developer",
+      "search_title": "Python Developer",
+      "location": "",
+      "contract_type": "",
+      "reference": "",
+      "employer_context": null,
+      "completion": "complete",
+      "matches": [
+        {
+          "posting_url": "https://acme.example/jobs/python-developer-12345",
+          "original_url": "https://acme.example/jobs/python-developer-12345",
+          "posting_identity": {
+            "source_platform": "other",
+            "source_id": "",
+            "id_type": "url",
+            "canonical_url": "https://acme.example/jobs/python-developer-12345"
+          },
+          "declared_canonical_url": null,
+          "schema_posting_url": null,
+          "redirected_from": null,
+          "platform": "other",
+          "route": {
+            "kind": "specific",
+            "reason": "generic_job_detail_route"
+          },
+          "title": "Python Developer",
+          "company": "Acme",
+          "publisher": "",
+          "employer_evidence": "schema",
+          "location": "Paris",
+          "location_evidence": "schema",
+          "identifier": "",
+          "match": {
+            "score": 80,
+            "status": "likely_match",
+            "evidence": [
+              "title_tokens_match",
+              "employer_schema_match"
+            ],
+            "hard_conflicts": [],
+            "employer_identity": "confirmed_by_page"
+          },
+          "posting_status": "LIVE",
+          "status_reason": "application_link_visible",
+          "status_confidence": "medium",
+          "application_url": "https://acme.example/apply/now",
+          "application_links": [
+            {
+              "url": "https://acme.example/apply/now",
+              "label": "Apply now",
+              "source": "html_link",
+              "requires_login": false,
+              "priority": 85,
+              "posting_url": "https://acme.example/jobs/python-developer-12345",
+              "relation": "published_on_posting"
+            }
+          ],
+          "cached": true,
+          "source": "unknown",
+          "instance_equivalence": "unverified"
+        }
+      ],
+      "application_destinations": [],
+      "search_attempts": [
+        {
+          "stage": "search",
+          "query": "first query",
+          "provider": "synthetic",
+          "outcome": "results",
+          "raw_count": 7,
+          "usable_count": 7,
+          "keyword_omitted": 0,
+          "returned_count": 7,
+          "cache_state": null
+        },
+        {
+          "stage": "search",
+          "query": "second query",
+          "provider": "synthetic",
+          "outcome": "results",
+          "raw_count": 1,
+          "usable_count": 1,
+          "keyword_omitted": 0,
+          "returned_count": 1,
+          "cache_state": null
+        }
+      ],
+      "route_rejections": [
+        {
+          "url": "https://acme.example/jobs/search?page=0",
+          "reason": "search_or_category_route"
+        },
+        {
+          "url": "https://acme.example/jobs/search?page=1",
+          "reason": "search_or_category_route"
+        },
+        {
+          "url": "https://acme.example/jobs/search?page=2",
+          "reason": "search_or_category_route"
+        },
+        {
+          "url": "https://acme.example/jobs/search?page=3",
+          "reason": "search_or_category_route"
+        },
+        {
+          "url": "https://acme.example/jobs/search?page=4",
+          "reason": "search_or_category_route"
+        },
+        {
+          "url": "https://acme.example/jobs/search?page=5",
+          "reason": "search_or_category_route"
+        },
+        {
+          "url": "https://acme.example/jobs/search?page=6",
+          "reason": "search_or_category_route"
+        }
+      ],
+      "route_rejection_count": 7,
+      "eligible_route_count": 1,
+      "inspected_page_count": 1,
+      "query_count": 2,
+      "query_budget": 2,
+      "untried_queries": 0,
+      "query_stop_reason": "eligible_route_cap",
+      "keyword_mode": "rank",
+      "requested_page_cap": 1,
+      "effective_page_cap": 1,
+      "page_budget_setting": "max_job_discovery_pages",
+      "unvisited_candidates": 0,
+      "stop_reason": "eligible_route_cap",
+      "truncation": {
+        "omitted_records": 0,
+        "omitted_fields": 0,
+        "omitted_text_chars": 0,
+        "reasons": []
+      },
+      "approx_output_tokens": 770
+    }
+  },
+  "domain_placeholder": {
+    "queries": [],
+    "query_count": 0,
+    "query_budget": 0,
+    "stop_reason": "no_query_forms"
+  }
+}

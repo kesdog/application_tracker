@@ -3,9 +3,10 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import RecipientPicker from '../../src/components/followups/RecipientPicker.vue'
+import RecipientPageReports from '../../src/components/followups/RecipientPageReports.vue'
 import FollowUps from '../../src/FollowUps.vue'
 import * as api from '../../src/api'
-vi.mock('../../src/api',async original => ({...await original<typeof import('../../src/api')>(),getRecipientState:vi.fn(),fetchRecipients:vi.fn(),chooseRecipient:vi.fn(),updateFollowUp:vi.fn(),getRecipientQueue:vi.fn(),fetchMissingRecipients:vi.fn(),getFollowUps:vi.fn(),getFollowUpNotices:vi.fn(),getOutcomeReviews:vi.fn()}))
+vi.mock('../../src/api',async original => ({...await original<typeof import('../../src/api')>(),getRecipientState:vi.fn(),fetchRecipients:vi.fn(),chooseRecipient:vi.fn(),updateApplication:vi.fn(),getRecipientPages:vi.fn(),getRecipientPage:vi.fn(),updateFollowUp:vi.fn(),getRecipientQueue:vi.fn(),fetchMissingRecipients:vi.fn(),getFollowUps:vi.fn(),getFollowUpNotices:vi.fn(),getOutcomeReviews:vi.fn()}))
 enableAutoUnmount(afterEach)
 const global = { plugins: [[PrimeVue, { unstyled: true }] as [typeof PrimeVue, { unstyled: boolean }]] }
 const followup:api.RecipientFollowUp={id:'followup-1',sequence_number:1,revision:2,recipient_email:null,recipient_name:null}
@@ -20,7 +21,61 @@ beforeEach(()=>{
  vi.mocked(api.getFollowUps).mockResolvedValue({items:[],total:0,page:1,page_size:20})
  vi.mocked(api.getFollowUpNotices).mockResolvedValue([])
  vi.mocked(api.getOutcomeReviews).mockResolvedValue({items:[],total:0,page:1,page_size:20})
+ vi.mocked(api.getRecipientPages).mockResolvedValue({items:[],total:0,page:1,page_size:10})
  window.location.hash='#/followups'
+})
+
+it('saves per-application budgets, restores inheritance and explicitly requests page refresh',async()=>{
+ vi.mocked(api.getRecipientState).mockResolvedValue({...state,page_limit:12,default_page_limit:12,page_limit_override:null})
+ const wrapper=mount(RecipientPicker,{props:{applicationId:'app-1'},global})
+ await flushPromises()
+ expect(wrapper.text()).toContain('Effective limit: 12')
+ const inherit=wrapper.get('input[type="checkbox"]')
+ const limit=wrapper.get('input[type="number"]')
+ expect(limit.attributes('disabled')).toBeDefined()
+ await inherit.setValue(false)
+ await limit.setValue('0')
+ expect(button(wrapper,'Save page limit').attributes('disabled')).toBeDefined()
+ await limit.setValue('9')
+ expect(button(wrapper,'Fetch recipients').attributes('disabled')).toBeDefined()
+ vi.mocked(api.updateApplication).mockResolvedValue({} as api.Application)
+ vi.mocked(api.getRecipientState).mockResolvedValue({...state,page_limit:9,default_page_limit:12,page_limit_override:9})
+ await button(wrapper,'Save page limit').trigger('click')
+ await flushPromises()
+ expect(api.updateApplication).toHaveBeenLastCalledWith('app-1',{recipient_page_limit:9})
+ await inherit.setValue(true)
+ vi.mocked(api.getRecipientState).mockResolvedValue({...state,page_limit:12,default_page_limit:12,page_limit_override:null})
+ await button(wrapper,'Save page limit').trigger('click')
+ await flushPromises()
+ expect(api.updateApplication).toHaveBeenLastCalledWith('app-1',{recipient_page_limit:null})
+ await button(wrapper,'Refresh saved pages').trigger('click')
+ await flushPromises()
+ expect(api.fetchRecipients).toHaveBeenCalledWith('app-1',true)
+})
+
+it('loads scoped page reports on demand with source age, failures, safe rendering and pagination',async()=>{
+ const page:api.RecipientPageSummary={id:'report-1',url:'https://example.com/contact',resolved_url:null,title:'Example <script>notice</script>',outcome:'blocked',fetched_at:'2026-10-01T10:00:00Z',stale:true,candidate_count:1}
+ vi.mocked(api.getRecipientPages).mockResolvedValue({items:[page],total:11,page:1,page_size:10})
+ vi.mocked(api.getRecipientPage).mockResolvedValue({...page,report:{summary:'<img src=x onerror=alert(1)>',error:'Forbidden',candidates:[{email:'jobs@example.com',exclusion_reason:'privacy'}],contact_links:[]}})
+ const wrapper=mount(RecipientPageReports,{props:{applicationId:'app-1'},global})
+ expect(api.getRecipientPages).not.toHaveBeenCalled()
+ const details=wrapper.get('details')
+ ;(details.element as HTMLDetailsElement).open=true
+ await details.trigger('toggle')
+ await flushPromises()
+ expect(api.getRecipientPages).toHaveBeenCalledWith('app-1',1)
+ expect(wrapper.text()).toContain('blocked')
+ expect(wrapper.text()).toContain('Older evidence')
+ expect(wrapper.get('a').attributes('href')).toBe(page.url)
+ await button(wrapper,'Read report').trigger('click')
+ await flushPromises()
+ expect(api.getRecipientPage).toHaveBeenCalledWith('report-1','app-1')
+ expect(wrapper.text()).toContain('Excluded: privacy')
+ expect(wrapper.find('img').exists()).toBe(false)
+ expect(wrapper.find('script').exists()).toBe(false)
+ await button(wrapper,'Next reports').trigger('click')
+ await flushPromises()
+ expect(api.getRecipientPages).toHaveBeenLastCalledWith('app-1',2)
 })
 afterEach(()=>{vi.useRealTimers();vi.restoreAllMocks()})
 
@@ -96,5 +151,18 @@ it('shows ranked categories, vacancy evidence and profile leads without implying
  expect(wrapper.text()).toContain('Employer identity needs verification')
  expect(wrapper.text()).toContain('deliverability has not been checked')
  expect(wrapper.findAll('a').some(a=>a.attributes('href')==='https://example.com/profile/jane')).toBe(true)
+ expect(api.chooseRecipient).not.toHaveBeenCalled()
+})
+
+it('shows source context and blocks choosing stale or region-conflicting leads',async()=>{
+ vi.mocked(api.getRecipientState).mockResolvedValue({...state,candidates:[
+  {...candidate,requires_review:true,source_region:'USA',fit:{region:{state:'mismatch',requested:'France',observed:'USA'}}},
+  {...candidate,id:'stale',stale:true},
+ ]})
+ const wrapper=mount(RecipientPicker,{props:{applicationId:'app-1'},global})
+ await flushPromises()
+ expect(wrapper.text()).toContain('Source context: USA')
+ expect(wrapper.text()).toContain('verify the region and team')
+ for (const action of wrapper.findAll('button').filter(b=>b.text()==='Use this recipient')) expect(action.attributes('disabled')).toBeDefined()
  expect(api.chooseRecipient).not.toHaveBeenCalled()
 })

@@ -1,0 +1,12 @@
+{
+  "job_queries": [
+    "site:jobs.lever.co/theodo \"{company}\" {title}",
+    "site:jobs.lever.co/theodo {title} recrutement emploi careers"
+  ],
+  "keywords": {
+    "required": [],
+    "preferred": {},
+    "excluded": [],
+    "synonyms": {}
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "job_queries": [
+    "site:iscod.fr/offres-emploi-en-alternance/ \"{title}\" {location}",
+    "site:hellowork.com/fr-fr/emplois/ \"{title}\" {location}",
+    "site:free-work.com \"{title}\" {location}",
+    "site:linkedin.com/jobs/view/ \"{company}\" \"{title}\"",
+    "site:jobs.lever.co \"{company}\" \"{title}\"",
+    "{company} \"{title}\" {location} postuler emploi"
+  ],
+  "keywords": {
+    "required": [],
+    "preferred": {"alternance": 8, "developpeur": 5, "python": 5},
+    "excluded": [],
+    "synonyms": {}
+  }
+}
