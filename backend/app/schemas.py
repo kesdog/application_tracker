@@ -126,6 +126,7 @@ class ApplicationRead(ApplicationCreate):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    revision: int = 1
     status: ApplicationStatus
     outcome: ApplicationOutcome | None
     posting_status: PostingStatus
@@ -162,6 +163,7 @@ class PostingCheckRead(BaseModel):
 
 
 class ApplicationUpdate(ApplicationCreate):
+    expected_revision: int | None = Field(default=None, ge=1, strict=True)
     followup_instructions: str | None = Field(default=None, max_length=12000)
     followup_customization: dict | None = None
     followup_paused: bool | None = None

@@ -5,7 +5,7 @@ import Button from 'primevue/button'
 import ToggleSwitch from 'primevue/toggleswitch'
 import { appearanceSaveError, setThemeMode, themeMode } from './settings/appearanceStore'
 import { navigationSaveError, sidebarCollapsed, toggleSidebar } from './settings/navigationPreferences'
-import { checkHumanSession, expireHumanSession } from './auth'
+import { browserSession, workspaceLogin } from './auth'
 const props = withDefaults(defineProps<{ hosted?: boolean }>(), { hosted: false })
 const emit = defineEmits<{ signout: [] }>()
 const Applications = defineAsyncComponent(() => import('./Applications.vue'))
@@ -41,8 +41,8 @@ function route() { hash.value = window.location.hash || '#/dashboard' }
 onMounted(() => {
   window.addEventListener('hashchange', route)
   events = new EventSource('/api/events')
-  events.addEventListener('auth.expired', expireHumanSession)
-  events.onerror = () => { if (props.hosted) void checkHumanSession() }
+  events.addEventListener('auth.expired', () => browserSession.expire())
+  events.onerror = () => { if (props.hosted) void workspaceLogin.check() }
   for (const topic of ['application.updated', 'application.created', 'interview.updated', 'task.updated', 'followup.updated', 'recipient.updated']) {
     events.addEventListener(topic, (event) => window.dispatchEvent(new CustomEvent('tracker:invalidate', { detail: { topic, ...JSON.parse((event as MessageEvent).data) } })))
   }

@@ -58,3 +58,11 @@ typing-inspection==0.4.4
 typing_extensions==4.16.0
 tzdata==2026.5
 uvicorn==0.53.0
+google-auth==2.62.0
+jaraco.classes==3.4.0
+jaraco.context==6.1.2
+jaraco.functools==4.6.0
+keyring==25.7.0
+more-itertools==11.2.1
+pyasn1==0.6.4
+pyasn1-modules==0.4.2

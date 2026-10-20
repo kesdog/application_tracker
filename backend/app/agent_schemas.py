@@ -33,6 +33,7 @@ class AgentApplicationCreate(ApplicationCreate):
 
 
 class AgentApplicationUpdate(ApplicationUpdate):
+    expected_revision: int = Field(ge=1, strict=True, description="Revision returned by get_application. A stale edit returns REVISION_CONFLICT; read and review before retrying.")
     contract_type: AgentContract = Field(default=None, description=CONTRACT_HINT)
     date_applied: AgentDate | None = None
 
@@ -75,6 +76,7 @@ class CompactApplicationRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    revision: int
     job_title: str
     company: str
     intermediary: str | None = None

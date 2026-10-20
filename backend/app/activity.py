@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.activity_schemas import TimelineEntryCreate, TimelineEntryUpdate
 from app.models import ActorType, Application, AuditEntry, FollowUp, Interview, Note, Task, TimelineEvent, utc_now
+from app.agent_call_context import current_call
 
 
 class UndoUnavailable(ValueError):
@@ -35,7 +36,7 @@ def record_event(
         actor_type=actor_type,
         actor_reference=actor_reference,
         summary=summary,
-        event_metadata=jsonable_encoder(metadata or {}),
+        event_metadata=jsonable_encoder({**(metadata or {}), **({'agent_call': current_call.get()} if current_call.get() else {})}),
         created_at=occurred_at or utc_now(),
     )
     session.add(event)
@@ -65,6 +66,8 @@ def record_audit(
         new_value=jsonable_encoder(new) if new is not None else None,
         actor_type=actor_type,
         actor_reference=actor_reference,
+        request_id=current_call.get()['request_id'] if current_call.get() else None,
+        client_label=current_call.get()['client_label'] if current_call.get() else None,
         reversible=reversible,
     )
     session.add(entry)

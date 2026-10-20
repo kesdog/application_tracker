@@ -1,7 +1,6 @@
 from contextlib import asynccontextmanager
 import asyncio
 import logging
-import threading
 from datetime import datetime
 
 from fastapi import Body, Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, Response, UploadFile
@@ -36,6 +35,8 @@ from sqlalchemy.orm import Session as DatabaseSession
 from app import followup_templates, followup_reminders, human_auth, push
 from app import followup_ai
 from app import recipient_discovery
+from app import google_connection
+from sqlalchemy.orm.exc import StaleDataError
 from sqlalchemy import select, func, or_
 
 
@@ -51,9 +52,15 @@ def create_app(
     calendar_provider: integrations.CalendarProvider | None = None,
     push_sender=None,
     recipient_researcher=None,
+    google_store=None,
+    google_transport=None,
+    google_verifier=None,
 ) -> FastAPI:
     settings = settings or Settings()
-    mail_provider = mail_provider or integrations.DisconnectedMailProvider()
+    access_logger = logging.getLogger('uvicorn.access')
+    if not any(isinstance(item, google_connection.CallbackLogFilter) for item in access_logger.filters):
+        access_logger.addFilter(google_connection.CallbackLogFilter())
+    supplied_mail_provider = mail_provider
     calendar_provider = calendar_provider or integrations.DisconnectedCalendarProvider()
 
     @asynccontextmanager
@@ -69,6 +76,15 @@ def create_app(
         recipient_jobs = None
         try:
             migrate_database(engine)
+            application.state.human_sessions = human_auth.HumanSessionManager(engine, settings)
+            application.state.human_login = human_auth.HumanLoginManager(settings, application.state.human_sessions)
+            application.state.human_access = human_auth.HumanAccessPolicy(settings, application.state.human_sessions)
+            google = google_connection.GoogleConnection(engine, settings, store=google_store,
+                transport=google_transport, verifier=google_verifier)
+            application.state.google = google
+            nonlocal mail_provider
+            mail_provider = supplied_mail_provider or google_connection.GoogleMailProvider(google)
+            application.state.mail_provider = mail_provider
             with Session(engine) as session:
                 applications.ensure_submission_events(session)
                 work.ensure_initial_followups(session, settings)
@@ -105,31 +121,16 @@ def create_app(
     application.state.settings = settings
     application.state.mail_provider = mail_provider
     application.state.calendar_provider = calendar_provider
-    password_slots = threading.BoundedSemaphore(2)
 
     @application.middleware("http")
     async def protect_human_routes(request: Request, call_next):
-        local = request.client is None or request.client.host in {"127.0.0.1", "::1", "testclient"}
-        if not hosted and not local and not request.url.path.startswith("/api/agent/"):
-            return JSONResponse(status_code=403, content={"detail": "Local access required"})
         path = request.url.path
-        if hosted and path != "/api/health":
-            try:
-                human_auth.check_transport(request, settings)
-                public = path in {"/api/auth/session", "/api/auth/login"}
-                if path.startswith("/api/") and not path.startswith("/api/agent/") and not public:
-                    token = request.cookies.get(human_auth.COOKIE)
-                    if not await asyncio.to_thread(human_auth.authenticated, application.state.engine, settings, token):
-                        raise HTTPException(401, "Sign in to your workspace")
-                    if request.method not in {"GET", "HEAD", "OPTIONS"}:
-                        human_auth.require_origin(request, settings)
-                        import hmac
-                        if not hmac.compare_digest(request.headers.get("x-csrf-token", ""), human_auth.csrf_token(token)):
-                            raise HTTPException(403, "Refresh the page before saving; the security token is missing or invalid")
-            except HTTPException as exc:
-                response = JSONResponse(status_code=exc.status_code, content={"detail": exc.detail}, headers=exc.headers)
-                response.headers["Cache-Control"] = "no-store"
-                return response
+        try:
+            await asyncio.to_thread(application.state.human_access.authorize, request)
+        except HTTPException as exc:
+            response = JSONResponse(status_code=exc.status_code, content={"detail": exc.detail}, headers=exc.headers)
+            response.headers["Cache-Control"] = "no-store"
+            return response
         response = await call_next(request)
         if hosted:
             response.headers["X-Content-Type-Options"] = "nosniff"
@@ -147,6 +148,19 @@ def create_app(
     @application.exception_handler(applications.InvalidApplication)
     async def invalid_application(_request, exc):
         return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+    @application.exception_handler(applications.ApplicationRevisionConflict)
+    async def application_revision_conflict(_request, exc):
+        from fastapi.encoders import jsonable_encoder
+        return JSONResponse(status_code=409, content=jsonable_encoder({'detail': str(exc), 'current': exc.current, 'proposed': exc.proposed}))
+
+    @application.exception_handler(StaleDataError)
+    async def concurrent_revision_conflict(_request, exc):
+        return JSONResponse(status_code=409, content={'detail': 'The record changed during this operation. Refresh and review before retrying.'})
+
+    @application.exception_handler(google_connection.GoogleConnectionError)
+    async def google_error(_request, exc):
+        return JSONResponse(status_code=409, content={'detail': str(exc)})
 
     @application.exception_handler(followup_templates.RevisionConflict)
     async def revision_conflict(_request, exc):
@@ -169,42 +183,54 @@ def create_app(
             yield session
 
     def local_only(request: Request):
-        if not hosted and request.client and request.client.host not in {"127.0.0.1", "::1", "testclient"}:
-            raise HTTPException(status_code=403, detail="Local access required")
+        application.state.human_access.require_local(request)
+
+    def google_human(request: Request):
+        return application.state.human_access.connection_owner(request)
+
+    @application.get('/api/connections', dependencies=[Depends(local_only)])
+    def connections():
+        return {'google': application.state.google.status()}
+
+    @application.post('/api/connections/google/start')
+    def google_start(data: google_connection.GoogleStart, request: Request, response: Response, owner=Depends(google_human)):
+        import secrets
+        binding = secrets.token_urlsafe(32)
+        url = application.state.google.start(data.capabilities, binding, owner)
+        response.set_cookie(google_connection.COOKIE, binding, httponly=True,
+            secure=hosted and settings.app_public_url.startswith('https:'), samesite='lax',
+            max_age=600, path='/api/connections/google')
+        return {'authorization_url': url, 'expires_in': 600}
+
+    @application.get('/api/connections/google/callback')
+    def google_callback(request: Request, state: str = '', code: str = '', error: str = '', owner=Depends(google_human)):
+        from fastapi.responses import RedirectResponse
+        application.state.google.finish(state, code, request.cookies.get(google_connection.COOKIE, ''), owner, bool(error),
+            owner_validator=application.state.human_sessions.is_authenticated_reference if hosted else None)
+        response = RedirectResponse('/#/settings', status_code=303)
+        response.delete_cookie(google_connection.COOKIE, path='/api/connections/google')
+        response.headers['Referrer-Policy'] = 'no-referrer'
+        return response
+
+    @application.post('/api/connections/google/disconnect')
+    def google_disconnect(owner=Depends(google_human)):
+        return application.state.google.disconnect()
+
+    @application.post('/api/connections/google/drive-test')
+    def google_drive_test(data: google_connection.DriveTest, owner=Depends(google_human)):
+        return google_connection.GoogleDriveProvider(application.state.google).test(data.recovery_key)
 
     @application.get("/api/auth/session")
     def human_session(request: Request):
-        if not hosted:
-            return {"enabled": False, "authenticated": True, "csrf_token": None}
-        token = request.cookies.get(human_auth.COOKIE)
-        valid = human_auth.authenticated(application.state.engine, settings, token)
-        return {"enabled": True, "authenticated": valid, "csrf_token": human_auth.csrf_token(token) if valid else None}
+        return application.state.human_sessions.status(request.cookies.get(human_auth.COOKIE))
 
     @application.post("/api/auth/login")
     def human_login(data: human_auth.LoginInput, request: Request, response: Response):
-        if not hosted:
-            raise HTTPException(404, "Hosted sign-in is not enabled")
-        human_auth.require_origin(request, settings)
-        if request.headers.get("content-type", "").split(";")[0].lower() != "application/json":
-            raise HTTPException(415, "Use a JSON sign-in request")
-        human_auth.record_attempt(application.state.engine, request.client.host if request.client else "unknown")
-        if not password_slots.acquire(blocking=False):
-            raise HTTPException(429, "Sign-in is busy. Try again shortly.", headers={"Retry-After": "2"})
-        try:
-            if not human_auth.verify_password(data.password, settings.app_password_hash.get_secret_value()):
-                raise HTTPException(401, "Incorrect workspace password")
-        finally:
-            password_slots.release()
-        token = human_auth.create_session(application.state.engine, settings, request.cookies.get(human_auth.COOKIE))
-        response.set_cookie(human_auth.COOKIE, token, max_age=settings.app_session_hours * 3600, secure=True, httponly=True, samesite="strict", path="/")
-        return {"enabled": True, "authenticated": True, "csrf_token": human_auth.csrf_token(token)}
+        return application.state.human_login.sign_in(data.password, request, response)
 
     @application.post("/api/auth/logout")
     def human_logout(request: Request, response: Response):
-        if hosted:
-            human_auth.revoke(application.state.engine, request.cookies.get(human_auth.COOKIE))
-        response.delete_cookie(human_auth.COOKIE, secure=True, httponly=True, samesite="strict", path="/")
-        return {"authenticated": False}
+        return application.state.human_login.sign_out(request, response)
 
     @application.get("/api/settings/general")
     def general_settings(session: Session = Depends(get_session)):
@@ -390,7 +416,7 @@ def create_app(
         )
 
     @application.post("/api/agent/tools/{operation}")
-    def agent_operation(operation: str, args: dict, token: str = Depends(agent_token), session: Session = Depends(get_session)):
+    def agent_operation(operation: str, args: dict, request: Request, response: Response, token: str = Depends(agent_token), session: Session = Depends(get_session)):
         permission = agent_ops.PERMISSION_FOR.get(operation)
         if permission is None:
             raise agent_errors.AgentApiError("VALIDATION_ERROR", "Unknown agent operation", 404)
@@ -398,10 +424,23 @@ def create_app(
             raise agent_errors.AgentApiError("PERMISSION_DENIED", f"Agent permission required: {permission}", 403)
         session.rollback()
         try:
+            from uuid import UUID, uuid4
+            supplied_id = request.headers.get('x-tracker-request-id', args.get('request_id'))
+            if supplied_id is not None and not isinstance(supplied_id, str):
+                raise ValueError('request_id must be a UUID string')
+            request_id = str(UUID(supplied_id)) if supplied_id is not None else str(uuid4())
+            if args.get('request_id') is not None and str(UUID(args['request_id'])) != request_id:
+                raise ValueError('The request body and header must use the same request_id')
+            response.headers['X-Tracker-Request-Id'] = request_id
+            args = dict(args)
+            if request.headers.get('x-tracker-request-id'):
+                args.setdefault('request_id', request_id)
+            args.setdefault('client_label', request.headers.get('x-tracker-client', 'unknown'))
             return agent_ops.invoke(
                 session, settings, operation, args, mail_provider=mail_provider,
                 calendar_provider=calendar_provider,
                 token_fingerprint=agent_auth.token_fingerprint(token),
+                correlation_id=request_id,
             )
         except Exception as exc:
             raise agent_errors.from_exception(exc) from exc
@@ -410,7 +449,7 @@ def create_app(
     async def events(request: Request):
         supplied = request.headers.get("last-event-id")
         cursor = int(supplied) if supplied and supplied.isdecimal() else None
-        check = (lambda: human_auth.authenticated(application.state.engine, settings, request.cookies.get(human_auth.COOKIE))) if hosted else None
+        check = (lambda: application.state.human_sessions.is_authenticated(request.cookies.get(human_auth.COOKIE))) if hosted else None
         return StreamingResponse(invalidation.stream(application.state.engine, cursor, authorized=check), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     @application.post("/api/applications", response_model=ApplicationRead, status_code=201)
@@ -621,7 +660,8 @@ def create_app(
 
     @application.get("/api/integrations")
     def get_integration_status():
-        return {"mail": {"connected": mail_provider.is_connected()}, "calendar": {"connected": calendar_provider.is_connected()}}
+        return {"mail": {"connected": mail_provider.is_connected()}, "calendar": {"connected": calendar_provider.is_connected()},
+                'google': application.state.google.status()}
 
     @application.get("/api/exports/applications.csv")
     def export_applications_csv(filters: ApplicationFilters = Depends(), session: Session = Depends(get_session)):

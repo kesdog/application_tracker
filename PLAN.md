@@ -1,5 +1,12 @@
 # Application Tracker — V1 Implementation Plan
 
+Current implementation extension: [Shared agent and Google integration](SHARED_AGENT_GOOGLE_PLAN.md).
+
+Login/session refactor: [class ownership and function-by-function workflow](LOGIN_WORKFLOW.md).
+Reusable workspace login/session managers, provider-independent pending OAuth
+sessions, and Google login orchestration are implemented with offline regression
+coverage. Live Google consent follows the checklist in `GOOGLE_INTEGRATION.md`.
+
 Target stack: Python 3, FastAPI, SQLAlchemy 2, Alembic, Pydantic, SQLite (WAL), Vue 3, TypeScript, Vite, Pinia, SSE, MCP.
 
 This plan builds V1 in ten incremental releases from `0.1.0` through `0.10.0`.

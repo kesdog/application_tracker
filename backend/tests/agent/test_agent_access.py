@@ -48,7 +48,7 @@ def test_recipient_settings_overrides_and_queue_are_shared_by_rest_and_mcp(setup
     assert created['recipient_page_limit'] is None
     assert client.get(f'/api/applications/{app_id}/recipients').json()['page_limit'] == 12
     server = create_mcp_server(settings, token)
-    asyncio.run(server.call_tool('update_application', {'application_id': app_id, 'changes': {'recipient_page_limit': 3}}))
+    asyncio.run(server.call_tool('update_application', {'application_id': app_id, 'changes': {'recipient_page_limit': 3, 'expected_revision': created['revision']}}))
     research = json.loads(asyncio.run(server.call_tool('get_recipient_research', {'application_id': app_id}))[0].text)
     assert research['page_limit'] == 3 and research['default_page_limit'] == 12
     queued = agent_call(client, token, 'queue_recipient_research', {'application_id': app_id, 'refresh_pages': True})
@@ -178,7 +178,7 @@ def test_agent_phone_uses_same_validation_and_followup_channels(setup):
     assert created.status_code == 200
     assert created.json()["phone_number"] == "+33612345678"
     application_id = created.json()["id"]
-    updated = agent_call(client, token, "update_application", {"application_id": application_id, "changes": {"phone_number": "+44 20 8366 1177"}})
+    updated = agent_call(client, token, "update_application", {"application_id": application_id, "changes": {"phone_number": "+44 20 8366 1177", "expected_revision": created.json()["revision"]}})
     assert updated.status_code == 200
     assert updated.json()["phone_number"] == "+442083661177"
     followup = agent_call(client, token, "create_followup", {"application_id": application_id, "followup": {"channel": "BOTH"}})
@@ -238,7 +238,7 @@ def test_agent_create_idempotency_replays_persisted_result_and_scopes_keys(setup
     permissions = {"read": True, "create": True, "edit": False, "draft": True, "tasks": False, "interviews": False}
     client.put("/api/settings/agent/permissions", json=permissions)
     first = agent_call(client, token, "create_application", {"application": draft("Idempotent"), "idempotency_key": "application-1"})
-    retry = agent_call(client, token, "create_application", {"application": draft("Changed payload"), "idempotency_key": "application-1"})
+    retry = agent_call(client, token, "create_application", {"application": draft("Idempotent"), "idempotency_key": "application-1"})
     assert first.status_code == retry.status_code == 200
     assert retry.json() == first.json()
     assert agent_call(client, token, "list_applications").json()["items"].__len__() == 1
@@ -249,7 +249,7 @@ def test_agent_create_idempotency_replays_persisted_result_and_scopes_keys(setup
 
     # A new application process uses the stored SQLite replay result.
     with TestClient(create_app(settings)) as restarted:
-        replay = agent_call(restarted, token, "create_application", {"application": draft("After restart"), "idempotency_key": "application-1"})
+        replay = agent_call(restarted, token, "create_application", {"application": draft("Idempotent"), "idempotency_key": "application-1"})
         assert replay.status_code == 200
         assert replay.json()["id"] == first.json()["id"]
 
@@ -362,7 +362,7 @@ def test_rest_and_mcp_normalize_contracts_and_use_the_same_filters(setup, wordin
     mcp_result = asyncio.run(server.call_tool("search_applications", {"filters": filters, "limit": 1, "cursor": mcp_page["next_cursor"]}))
     mcp_next = json.loads(mcp_result[0].text)
     assert {record["id"] for record in mcp_page["items"] + mcp_next["items"]} == human_ids
-    asyncio.run(server.call_tool("update_application", {"application_id": saved["id"], "changes": {"contract_type": "Stage"}}))
+    asyncio.run(server.call_tool("update_application", {"application_id": saved["id"], "changes": {"contract_type": "Stage", "expected_revision": saved["revision"]}}))
     updated = client.get(f"/api/applications/{saved['id']}").json()
     assert updated["contract_type"] == "APPRENTICESHIP_INTERNSHIP"
     assert updated["date_applied"] == saved["date_applied"]
@@ -409,12 +409,12 @@ def test_agent_can_edit_legacy_contract_without_overwriting_missing_fields(setup
     legacy = client.post("/api/applications", json={**draft(), "contract_type": "Legacy custom wording", "job_url": None, "email_reference": "Original email"}).json()
     token = client.post("/api/settings/agent/token").json()["token"]
     client.put("/api/settings/agent/permissions", json={"read": True, "create": False, "edit": True, "draft": False, "tasks": False, "interviews": False})
-    response = agent_call(client, token, "update_application", {"application_id": legacy["id"], "changes": {"status": "INTERVIEW"}})
+    response = agent_call(client, token, "update_application", {"application_id": legacy["id"], "changes": {"status": "INTERVIEW", "expected_revision": legacy["revision"]}})
     assert response.status_code == 200
     assert response.json()["contract_type"] == legacy["contract_type"]
     assert response.json()["job_url"] is None
     assert response.json()["date_applied"] == legacy["date_applied"]
-    cleared = agent_call(client, token, "update_application", {"application_id": legacy["id"], "changes": {"contract_type": None}})
+    cleared = agent_call(client, token, "update_application", {"application_id": legacy["id"], "changes": {"contract_type": None, "expected_revision": response.json()["revision"]}})
     assert cleared.status_code == 200 and cleared.json()["contract_type"] is None
 
 

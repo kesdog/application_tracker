@@ -3,6 +3,7 @@ from datetime import datetime, time, timezone
 from pydantic import ValidationError
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.exc import StaleDataError
 
 from app.activity import InvalidActor, record_audit, record_event
 from app.config import Settings
@@ -18,6 +19,15 @@ class ApplicationNotFound(Exception):
 
 class InvalidApplication(ValueError):
     pass
+
+
+class ApplicationRevisionConflict(ValueError):
+    def __init__(self, application, proposed):
+        from app.schemas import ApplicationRead
+        from fastapi.encoders import jsonable_encoder
+        self.current = ApplicationRead.model_validate(application).model_dump(mode='json')
+        self.proposed = jsonable_encoder(proposed)
+        super().__init__('The application changed. Review the current and proposed values before retrying with the new revision.')
 
 
 def value_text(value) -> str:
@@ -141,6 +151,9 @@ def update_application(
 ) -> Application:
     application = get_application(session, application_id)
     changes = data.model_dump(exclude_unset=True)
+    expected = changes.pop('expected_revision', None)
+    if expected is not None and expected != application.revision:
+        raise ApplicationRevisionConflict(application, changes)
     if "deadline" in changes and changes["deadline"] is None:
         changes["deadline_kind"] = None
     # Validate the whole prospective record before mutating any persisted fields.
@@ -190,7 +203,12 @@ def update_application(
         if {"followup_delay_days", "date_applied"} & set(changes):
             from app.work import reschedule_pending_automatic_followups
             reschedule_pending_automatic_followups(session, application, settings or Settings())
-    session.commit()
+    try:
+        session.commit()
+    except StaleDataError:
+        session.rollback()
+        current = get_application(session, application_id)
+        raise ApplicationRevisionConflict(current, changes) from None
     session.refresh(application)
     return application
 

@@ -18,6 +18,10 @@ def test_feature_selection_includes_backend_consumers():
     assert runner.select(['backend/app/recipient_research.py'], graph={})[0] == {'followups', 'system'}
     assert runner.select(['backend/app/recipient_reports.py'], graph={})[0] == {'followups', 'agent', 'auth', 'migrations', 'system'}
     assert runner.select(['backend/app/followup_ai.py'], graph={})[0] == {'followups', 'agent', 'activity', 'auth'}
+    assert runner.select(['backend/app/google_connection.py'], graph={})[0] == {'agent', 'followups', 'auth', 'migrations', 'system'}
+    for module in ('google_login', 'oauth_sessions'):
+        assert runner.select([f'backend/app/{module}.py'], graph={})[0] == {'agent', 'followups', 'auth', 'migrations', 'system'}
+    assert runner.select(['backend/app/agent_call_context.py'], graph={})[0] == runner.BACKEND
 
 
 def test_frontend_import_graph_tracks_transitive_components_and_raw_assets():

@@ -33,7 +33,11 @@ BACKEND_MODULES = {
     'recipient_research': {'followups', 'system'},
     'recipient_reports': {'followups', 'agent', 'auth', 'migrations', 'system'},
     'followup_reminders': {'followups', 'notifications', 'dashboard', 'agent'},
-    'integrations': {'followups', 'interviews', 'notifications'},
+    'integrations': {'followups', 'interviews', 'notifications', 'agent', 'auth'},
+    'google_login': {'agent', 'followups', 'auth', 'migrations', 'system'},
+    'oauth_sessions': {'agent', 'followups', 'auth', 'migrations', 'system'},
+    'google_connection': {'agent', 'followups', 'auth', 'migrations', 'system'},
+    'agent_call_context': BACKEND,
     'human_auth': {'auth', 'notifications'},
     'backup': {'auth', 'notifications'},
     'push': {'notifications'}, 'push_keys': {'notifications'},
@@ -109,7 +113,9 @@ def select(paths, graph=None):
             backend.update(BACKEND)
         elif path.startswith('backend/app/'):
             stem = Path(path).stem
-            if stem.startswith('agent_') or stem == 'mcp_server':
+            if stem in BACKEND_MODULES:
+                backend.update(BACKEND_MODULES[stem])
+            elif stem.startswith('agent_') or stem == 'mcp_server':
                 backend.update({'agent', 'posting', 'followups', 'auth'})
             else:
                 backend.update(BACKEND_MODULES.get(stem, BACKEND))

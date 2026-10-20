@@ -15,6 +15,20 @@ def payload(**overrides):
     return {"job_title": "Engineer", "company": "Example", "date_applied": "2026-09-18", "job_url": "https://example.com/jobs/1", **overrides}
 
 
+def test_shared_agent_upgrade_preserves_populated_applications_and_single_authority(tmp_path, legacy_database):
+    with legacy_database('0021_recipient_page_reports') as connection:
+        connection.execute(text("INSERT INTO applications (id, job_title, company, date_applied, email_reference) VALUES ('existing', 'Engineer', 'Example', '2026-10-18', 'mail')"))
+        connection.execute(text("INSERT INTO agent_credentials (id, token_hash, permissions, created_at, updated_at) VALUES (1, 'stored-hash', :permissions, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"), {'permissions': '{"read":true}'})
+    settings = Settings(app_data_dir=tmp_path, _env_file=None)
+    with TestClient(create_app(settings)) as client:
+        assert client.get('/api/applications/existing').json()['revision'] == 1
+        assert client.get('/api/settings/agent').json()['configured']
+        assert client.get('/api/connections').json()['google']['status'] == 'DISCONNECTED'
+        with client.app.state.engine.connect() as connection:
+            assert connection.exec_driver_sql('SELECT token_hash FROM agent_credentials').scalar_one() == 'stored-hash'
+            assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
+
+
 def test_migrates_010_database_and_preserves_records_after_restart(tmp_path):
     # 0.1.0 created an empty SQLite file in WAL mode, without application tables.
     engine = create_database(tmp_path)

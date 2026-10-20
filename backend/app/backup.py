@@ -75,6 +75,8 @@ def restore_workspace(source: Path, data_dir: Path):
                 dst.execute("UPDATE application_documents SET storage_path=? WHERE id=?", (str(relocated), doc_id))
         if "human_sessions" in tables:
             dst.execute("DELETE FROM human_sessions")
+        if 'external_connections' in tables:
+            dst.execute("UPDATE external_connections SET secret_reference=NULL, status='DISCONNECTED', scopes='[]', generation=generation+1, verified_at=NULL")
         if "push_deliveries" in tables:
             dst.execute("DELETE FROM push_deliveries")
         if "push_devices" in tables:

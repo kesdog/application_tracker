@@ -37,6 +37,20 @@ class Settings(BaseSettings):
     mcp_transport: Literal["stdio", "streamable-http"] = "stdio"
     mcp_host: str = "127.0.0.1"
     mcp_port: int = Field(default=8001, ge=1, le=65535)
+    google_client_id: str | None = None
+    google_client_secret: SecretStr | None = None
+    google_redirect_uri: str | None = None
+
+    @model_validator(mode="after")
+    def validate_google_callback(self):
+        if self.google_redirect_uri:
+            origin = (self.app_public_url or '').rstrip('/') if self.app_mode == "hosted" else f"http://{self.app_host}:{self.app_port}"
+            if self.google_redirect_uri != f"{origin}/api/connections/google/callback":
+                raise ValueError("GOOGLE_REDIRECT_URI must use the configured workspace origin and /api/connections/google/callback")
+            if self.app_mode == "local" and self.app_host not in {"127.0.0.1", "::1", "localhost"}:
+                raise ValueError("Local Google OAuth requires a loopback listener")
+        return self
+
     posting_check_interval_hours: int = Field(default=24, ge=1, le=8760)
     posting_check_concurrency: int = Field(default=5, ge=1, le=20)
     posting_playwright_fallback: bool = True

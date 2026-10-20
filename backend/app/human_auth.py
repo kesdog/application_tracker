@@ -4,6 +4,7 @@ import getpass
 import hashlib
 import hmac
 import secrets
+import threading
 from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -57,14 +58,6 @@ def csrf_token(token: str) -> str:
     return hmac.new(token.encode(), b"tracker-human-csrf-v1", hashlib.sha256).hexdigest()
 
 
-def authenticated(engine, settings, token: str | None) -> bool:
-    if not token or len(token) > 100:
-        return False
-    with Session(engine) as session:
-        item = session.get(HumanSession, digest(token))
-        return bool(item and item.expires_at > utc_now() and hmac.compare_digest(item.credential_fingerprint, fingerprint(settings)))
-
-
 def require_origin(request, settings):
     if request.headers.get("origin") != settings.app_public_url:
         raise HTTPException(403, "Request origin does not match this workspace")
@@ -78,48 +71,155 @@ def check_transport(request, settings):
         raise HTTPException(400, "Use HTTPS to access this workspace")
 
 
-def record_attempt(engine, address: str):
-    now = utc_now()
-    keys = [(digest("ip:" + address), 10), (digest("workspace"), 100)]
-    with Session(engine) as session:
-        session.execute(text("BEGIN IMMEDIATE"))
-        session.execute(delete(LoginAttempt).where(LoginAttempt.window_started_at < now - WINDOW))
-        rows = []
-        for key, limit in keys:
-            item = session.get(LoginAttempt, key)
-            if item and item.attempts >= limit:
-                seconds = max(1, int((item.window_started_at + WINDOW - now).total_seconds()))
-                raise HTTPException(429, "Too many sign-in attempts. Try again later.", headers={"Retry-After": str(seconds)})
-            if not item:
-                item = LoginAttempt(key=key, attempts=0, window_started_at=now)
-                session.add(item)
-            rows.append(item)
-        for item in rows:
-            item.attempts += 1
-        session.commit()
+class HumanSessionManager:
+    """Own browser session persistence, expiry, revocation and cookie lifecycle."""
+    def __init__(self, engine, settings):
+        self.engine, self.settings = engine, settings
 
+    def is_authenticated_reference(self, reference: str) -> bool:
+        """Validate a server-held session digest, including pending OAuth owners."""
+        if not reference or len(reference) != 64:
+            return False
+        with Session(self.engine) as session:
+            item = session.get(HumanSession, reference)
+            return bool(item and item.expires_at > utc_now()
+                and hmac.compare_digest(item.credential_fingerprint, fingerprint(self.settings)))
 
-def create_session(engine, settings, old_token: str | None = None) -> str:
-    now, token = utc_now(), secrets.token_urlsafe(32)
-    with Session(engine) as session:
-        session.execute(text("BEGIN IMMEDIATE"))
-        session.execute(delete(HumanSession).where(HumanSession.expires_at <= now))
-        if old_token:
-            session.execute(delete(HumanSession).where(HumanSession.token_hash == digest(old_token)))
-        existing = session.scalars(select(HumanSession).order_by(HumanSession.created_at.desc())).all()
-        for item in existing[19:]:
-            session.delete(item)
-        session.add(HumanSession(token_hash=digest(token), credential_fingerprint=fingerprint(settings),
-                                 expires_at=now + timedelta(hours=settings.app_session_hours)))
-        session.commit()
-    return token
+    def is_authenticated(self, token: str | None) -> bool:
+        return bool(token and len(token) <= 100 and self.is_authenticated_reference(digest(token)))
 
+    def status(self, token: str | None) -> dict:
+        if self.settings.app_mode == 'local':
+            return {'enabled': False, 'authenticated': True, 'csrf_token': None}
+        valid = self.is_authenticated(token)
+        return {'enabled': True, 'authenticated': valid, 'csrf_token': csrf_token(token) if valid else None}
 
-def revoke(engine, token: str | None):
-    if token:
-        with Session(engine) as session:
-            session.execute(delete(HumanSession).where(HumanSession.token_hash == digest(token)))
+    def create(self, old_token: str | None = None) -> str:
+        now, token = utc_now(), secrets.token_urlsafe(32)
+        with Session(self.engine) as session:
+            session.execute(text('BEGIN IMMEDIATE'))
+            session.execute(delete(HumanSession).where(HumanSession.expires_at <= now))
+            if old_token:
+                session.execute(delete(HumanSession).where(HumanSession.token_hash == digest(old_token)))
+            existing = session.scalars(select(HumanSession).order_by(HumanSession.created_at.desc())).all()
+            for item in existing[19:]:
+                session.delete(item)
+            session.add(HumanSession(token_hash=digest(token), credential_fingerprint=fingerprint(self.settings),
+                expires_at=now + timedelta(hours=self.settings.app_session_hours)))
             session.commit()
+        return token
+
+    def revoke(self, token: str | None):
+        if token:
+            with Session(self.engine) as session:
+                session.execute(delete(HumanSession).where(HumanSession.token_hash == digest(token)))
+                session.commit()
+
+    def set_cookie(self, response, token: str):
+        response.set_cookie(COOKIE, token, max_age=self.settings.app_session_hours * 3600,
+            secure=True, httponly=True, samesite='strict', path='/')
+
+    def clear_cookie(self, response):
+        response.delete_cookie(COOKIE, secure=True, httponly=True, samesite='strict', path='/')
+
+
+class LoginAttemptLimiter:
+    """Persistent per-address and workspace limits, independent of session state."""
+    def __init__(self, engine):
+        self.engine = engine
+
+    def record(self, address: str):
+        now = utc_now()
+        keys = [(digest('ip:' + address), 10), (digest('workspace'), 100)]
+        with Session(self.engine) as session:
+            session.execute(text('BEGIN IMMEDIATE'))
+            session.execute(delete(LoginAttempt).where(LoginAttempt.window_started_at < now - WINDOW))
+            rows = []
+            for key, limit in keys:
+                item = session.get(LoginAttempt, key)
+                if item and item.attempts >= limit:
+                    seconds = max(1, int((item.window_started_at + WINDOW - now).total_seconds()))
+                    raise HTTPException(429, 'Too many sign-in attempts. Try again later.', headers={'Retry-After': str(seconds)})
+                if not item:
+                    item = LoginAttempt(key=key, attempts=0, window_started_at=now)
+                    session.add(item)
+                rows.append(item)
+            for item in rows:
+                item.attempts += 1
+            session.commit()
+
+
+class HumanLoginManager:
+    """Verify a login attempt, then ask the session manager to issue a session."""
+    def __init__(self, settings, sessions: HumanSessionManager, *, limiter=None, password_verifier=None):
+        self.settings, self.sessions = settings, sessions
+        self.limiter = limiter or LoginAttemptLimiter(sessions.engine)
+        self.password_verifier = password_verifier or verify_password
+        self.password_slots = threading.BoundedSemaphore(2)
+
+    def sign_in(self, password: str, request, response) -> dict:
+        if self.settings.app_mode != 'hosted':
+            raise HTTPException(404, 'Hosted sign-in is not enabled')
+        require_origin(request, self.settings)
+        if request.headers.get('content-type', '').split(';')[0].lower() != 'application/json':
+            raise HTTPException(415, 'Use a JSON sign-in request')
+        self.limiter.record(request.client.host if request.client else 'unknown')
+        if not self.password_slots.acquire(blocking=False):
+            raise HTTPException(429, 'Sign-in is busy. Try again shortly.', headers={'Retry-After': '2'})
+        try:
+            if not self.password_verifier(password, self.settings.app_password_hash.get_secret_value()):
+                raise HTTPException(401, 'Incorrect workspace password')
+        finally:
+            self.password_slots.release()
+        token = self.sessions.create(request.cookies.get(COOKIE))
+        self.sessions.set_cookie(response, token)
+        return {'enabled': True, 'authenticated': True, 'csrf_token': csrf_token(token)}
+
+    def sign_out(self, request, response) -> dict:
+        if self.settings.app_mode == 'hosted':
+            self.sessions.revoke(request.cookies.get(COOKIE))
+        self.sessions.clear_cookie(response)
+        return {'authenticated': False}
+
+
+class HumanAccessPolicy:
+    """Shared request policy for API routes, event streams and OAuth linking."""
+    def __init__(self, settings, sessions: HumanSessionManager):
+        self.settings, self.sessions = settings, sessions
+
+    def require_local(self, request):
+        if self.settings.app_mode == 'local' and request.client and request.client.host not in {'127.0.0.1', '::1', 'testclient'}:
+            raise HTTPException(403, 'Local access required')
+
+    def authorize(self, request):
+        path = request.url.path
+        if self.settings.app_mode == 'local':
+            if not path.startswith('/api/agent/'):
+                self.require_local(request)
+            return
+        if path == '/api/health':
+            return
+        check_transport(request, self.settings)
+        public = path in {'/api/auth/session', '/api/auth/login', '/api/connections/google/callback'}
+        if not path.startswith('/api/') or path.startswith('/api/agent/') or public:
+            return
+        token = request.cookies.get(COOKIE)
+        if not self.sessions.is_authenticated(token):
+            raise HTTPException(401, 'Sign in to your workspace')
+        if request.method not in {'GET', 'HEAD', 'OPTIONS'}:
+            require_origin(request, self.settings)
+            if not hmac.compare_digest(request.headers.get('x-csrf-token', ''), csrf_token(token)):
+                raise HTTPException(403, 'Refresh the page before saving; the security token is missing or invalid')
+
+    def connection_owner(self, request) -> str | None:
+        self.require_local(request)
+        origin = self.settings.app_public_url if self.settings.app_mode == 'hosted' else f'http://{self.settings.app_host}:{self.settings.app_port}'
+        if str(request.base_url).rstrip('/') != origin:
+            raise HTTPException(421, 'Use the configured workspace address for Google connections')
+        if request.method == 'POST' and request.headers.get('origin') != origin:
+            raise HTTPException(403, 'Start Google connection actions from this workspace')
+        token = request.cookies.get(COOKIE)
+        return digest(token) if token else (digest('local') if self.settings.app_mode == 'local' else None)
 
 
 class LoginInput(BaseModel):

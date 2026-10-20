@@ -3,6 +3,7 @@ import Button from 'primevue/button'
 import Textarea from 'primevue/textarea'
 import { onMounted, ref } from 'vue'
 import AppearanceSettings from './components/settings/AppearanceSettings.vue'
+import GoogleSettings from './components/settings/GoogleSettings.vue'
 import FollowUpSettings from './components/settings/FollowUpSettings.vue'
 import PhoneInstallation from './components/settings/PhoneInstallation.vue'
 import PhoneNotifications from './components/settings/PhoneNotifications.vue'
@@ -75,7 +76,7 @@ onMounted(() => { void load(); void checkConnection() })
     <template v-if="settings">
       <section class="panel"><h3>Access token</h3><p>{{ settings.configured ? 'An agent token is configured.' : 'No agent token has been created.' }}</p>
         <Button type="button" class="primary" :disabled="saving" @click="generate">{{ settings.configured ? 'Regenerate token' : 'Generate token' }}</Button>
-        <p v-if="settings.configured" class="hint">Regenerating invalidates the previous token immediately.</p>
+        <p v-if="settings.configured" class="hint" role="note">Regenerating immediately disconnects every client using this token, including ChatGPT and Claude. Reconfigure both clients with the new token.</p>
         <div v-if="token" class="token-box"><label for="agent-token">New token — shown once</label><Textarea class="at-form-control" id="agent-token" :value="token" readonly rows="3" @focus="($event.target as HTMLTextAreaElement).select()"></Textarea><p>Copy it into your agent's secure configuration. This page does not store the plaintext token.</p></div>
       </section>
       <form class="panel" @submit.prevent="save"><h3>Permissions</h3><p class="hint">Changes apply to REST and MCP calls immediately.</p>
@@ -86,7 +87,11 @@ onMounted(() => { void load(); void checkConnection() })
     <section class="panel"><h3>Agent connection help</h3>
       <dl class="connection-list"><div><dt>Local MCP / stdio</dt><dd><code>{{ connectionInfo?.local_mcp_command ?? 'Unavailable' }}</code></dd></div><div><dt>Agent REST API</dt><dd><code>{{ connectionInfo?.rest_endpoint ?? 'Unavailable' }}</code></dd></div><div><dt>Remote MCP / Streamable HTTP</dt><dd v-if="connectionInfo?.remote_mcp_endpoint"><code>{{ connectionInfo.remote_mcp_endpoint }}</code></dd><dd v-else>Not enabled. Set <code>MCP_TRANSPORT=streamable-http</code> to expose the configured loopback endpoint.</dd></div></dl>
       <p class="hint">Remote MCP uses the same bearer token and permissions as REST. Keep it private: use TLS and network access controls before exposing it beyond your machine.</p>
+      <details><summary>ChatGPT / Codex connection</summary><p>For local Codex, start <code>application-tracker-mcp</code> with <code>APPLICATION_TRACKER_AGENT_TOKEN</code> in its protected environment. Use the same workspace data directory and token as Claude. For ChatGPT, validate a Secure MCP Tunnel or secured HTTPS connection in your workspace; remote availability and write actions depend on the client environment.</p></details>
+      <details><summary>Claude / Claude Code connection</summary><p>For local Claude Code, use the same stdio command and <code>APPLICATION_TRACKER_AGENT_TOKEN</code>. Claude remote connectors need a secured HTTPS endpoint reachable from Anthropic. Verify its authentication flow before connecting; no second tracker identity or Google consent is needed.</p></details>
+      <p class="hint">See AGENT_CONNECTIONS.md for configuration templates and a connection test checklist. Client connections are unverified until tested in your environment. Conflicting agent edits require review. No inference API keys are required by the tracker.</p>
     </section>
+    <GoogleSettings />
     <section class="panel"><h3>Integrations</h3><p>Mail: {{ integrations?.mail.connected ? 'Connected' : 'Not connected' }}. Calendar: {{ integrations?.calendar.connected ? 'Connected' : 'Not connected' }}.</p><p>Without a mail provider, email drafts are saved as local notes. Interview calendar files can be downloaded and imported manually. Nothing is sent or added to an external calendar automatically.</p></section>
     <section class="panel" aria-label="System status" aria-live="polite" :aria-busy="connection === 'checking'"><div class="status-heading"><h3>System status</h3><Button type="button" :disabled="connection === 'checking'" @click="checkConnection">{{ connection === 'checking' ? 'Checking…' : 'Check again' }}</Button></div>
       <p v-if="connection === 'disconnected'" class="at-message error">Unable to reach the backend. Make sure it is running, then check again or refresh this page.</p>

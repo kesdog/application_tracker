@@ -17,6 +17,7 @@ const loading = ref(true)
 const inheritLimit = ref(true)
 const pageLimit = ref<number | ''>(6)
 const limitDirty = ref(false)
+const limitRevision = ref<number>()
 const limitValid = computed(() => inheritLimit.value || typeof pageLimit.value === 'number' && Number.isInteger(pageLimit.value) && pageLimit.value >= 1 && pageLimit.value <= 100)
 let version = 0
 let timer: ReturnType<typeof setInterval> | undefined
@@ -38,7 +39,7 @@ async function load() {
     const result = await getRecipientState(props.applicationId)
     if (current !== version || disposed) return
     state.value = result
-    if (!limitDirty.value) { inheritLimit.value = result.page_limit_override == null; pageLimit.value = result.page_limit_override ?? result.default_page_limit ?? 6 }
+    if (!limitDirty.value) { inheritLimit.value = result.page_limit_override == null; pageLimit.value = result.page_limit_override ?? result.default_page_limit ?? 6; limitRevision.value = result.application_revision }
     if (!result.followups.some(f => f.id === selected.value)) selected.value = result.followups.find(f => !f.recipient_email)?.id ?? result.followups[0]?.id ?? ''
     if (!keepEdits) resetForm()
   } catch (reason) { if (current === version) error.value = reason instanceof Error ? reason.message : 'Unable to load recipients.' }
@@ -52,7 +53,7 @@ async function perform(action: () => Promise<unknown>, message: string, changed 
 }
 function queue() { return perform(() => fetchRecipients(props.applicationId), 'Recipient search queued. You can continue working.') }
 function refresh() { return perform(() => fetchRecipients(props.applicationId, true), 'Source refresh queued. Saved pages may be fetched again within the page limit.') }
-function saveLimit() { if (!limitValid.value) return; return perform(async () => { await updateApplication(props.applicationId, { recipient_page_limit: inheritLimit.value ? null : Number(pageLimit.value) }); limitDirty.value = false }, 'Page limit saved. It applies when the next research run starts.') }
+function saveLimit() { if (!limitValid.value) return; return perform(async () => { await updateApplication(props.applicationId, { recipient_page_limit: inheritLimit.value ? null : Number(pageLimit.value), expected_revision: limitRevision.value }); limitDirty.value = false }, 'Page limit saved. It applies when the next research run starts.') }
 function useCandidate(candidate: RecipientCandidate) {
   if (!item.value) return
   return perform(() => chooseRecipient(props.applicationId, item.value!.id, candidate.id, item.value!.revision), 'Recipient selected. Review the message before sending.', true)

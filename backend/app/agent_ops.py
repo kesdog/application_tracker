@@ -11,6 +11,11 @@ from app.agent_schemas import AgentApplicationCreate, AgentApplicationUpdate, Ag
 from app.contract_types import CONTRACT_OPTIONS
 from app.config import Settings
 from app.models import ActorType
+from app import google_connection
+from app.agent_call_context import current_call
+import hashlib
+import json
+from uuid import UUID, uuid4
 from app.schemas import ApplicationRead
 from app.interview_schemas import InterviewContext, InterviewCreate, InterviewRead, InterviewUpdate
 from app.work_schemas import FollowUpCreate, FollowUpRead, FollowUpUpdate, NoteCreate, NoteRead, TaskCreate, TaskRead, TaskUpdate
@@ -19,6 +24,7 @@ from app.dashboard_schemas import DashboardRead
 
 
 PERMISSION_FOR = {
+    "search_mail": "read", "get_mail_message": "read",
     "get_recipient_settings": "read", "update_recipient_settings": "edit",
     "get_recipient_research": "read", "queue_recipient_research": "edit",
     "list_recipient_page_reports": "read", "get_recipient_page_report": "read",
@@ -33,10 +39,29 @@ PERMISSION_FOR = {
     "update_interview": "interviews",
 }
 
-IDEMPOTENT_CREATE_OPERATIONS = {"create_application", "create_note", "create_followup", "create_task", "create_interview"}
+def invoke(session, settings, operation, args, **kwargs):
+    args = dict(args)
+    supplied_id = args.pop('request_id', None)
+    correlation_id = kwargs.pop('correlation_id', None)
+    if supplied_id is not None:
+        if not isinstance(supplied_id, str):
+            raise ValueError('request_id must be a UUID string')
+        request_id = str(UUID(supplied_id))
+    else:
+        request_id = str(UUID(correlation_id)) if correlation_id else str(uuid4())
+    label = args.pop('client_label', 'unknown')
+    if not isinstance(label, str) or label not in {'chatgpt', 'claude', 'codex', 'unknown'}:
+        label = 'unknown'
+    if supplied_id and operation in PERMISSION_FOR and PERMISSION_FOR[operation] != 'read':
+        args.setdefault('idempotency_key', request_id)
+    marker = current_call.set({'request_id': request_id, 'client_label': label, 'client_label_verified': False})
+    try:
+        return _authorized_invoke(session, settings, operation, args, **kwargs)
+    finally:
+        current_call.reset(marker)
 
 
-def invoke(
+def _authorized_invoke(
     session: Session, settings: Settings, operation: str, args: dict, *,
     mail_provider: integrations.MailProvider | None = None, calendar_provider: integrations.CalendarProvider | None = None,
     token_fingerprint: str | None = None,
@@ -44,15 +69,33 @@ def invoke(
     if operation not in PERMISSION_FOR:
         raise KeyError(operation)
     if token_fingerprint:
+        from app.models import AgentCredential
+        import hmac
+        credential = session.get(AgentCredential, 1)
+        if not credential or not hmac.compare_digest(credential.token_hash, token_fingerprint):
+            from app.agent_errors import AgentApiError
+            raise AgentApiError('INVALID_TOKEN', 'Valid agent bearer token required', 401)
+        if not credential.permissions.get(PERMISSION_FOR[operation], False):
+            from app.agent_errors import AgentApiError
+            raise AgentApiError('PERMISSION_DENIED', f'Agent permission required: {PERMISSION_FOR[operation]}', 403)
         agent_auth.mark_used(session, token_fingerprint)
     args = dict(args)
     key = args.pop("idempotency_key", None)
     if key is not None and (not isinstance(key, str) or not key.strip() or len(key) > 200):
         raise ValueError("idempotency_key must be a non-empty string of 200 characters or fewer")
-    if operation in IDEMPOTENT_CREATE_OPERATIONS and key:
+    if operation == 'draft_followup':
+        if not args.get('expected_revision'):
+            raise ValueError('expected_revision is required when creating a follow-up draft')
+        if key:
+            from uuid import uuid5, NAMESPACE_URL
+            args['operation_id'] = str(uuid5(NAMESPACE_URL, f'tracker:{token_fingerprint}:draft:{key}'))
+        elif not args.get('operation_id'):
+            raise ValueError('Supply a stable operation_id UUID or idempotency_key for a draft request')
+    if PERMISSION_FOR[operation] != 'read' and operation != 'draft_followup' and key:
         if not token_fingerprint:
             raise ValueError("An authenticated token is required for idempotency")
-        record, replay = agent_idempotency.reserve(session, token_fingerprint, operation, key)
+        request_hash = hashlib.sha256(json.dumps(jsonable_encoder(args), sort_keys=True).encode()).hexdigest()
+        record, replay = agent_idempotency.reserve(session, token_fingerprint, operation, key, request_hash)
         if replay is not None:
             return replay
         try:
@@ -60,7 +103,9 @@ def invoke(
             agent_idempotency.complete(session, record, result)
             return result
         except Exception:
-            agent_idempotency.abandon(session, record)
+            # A service may have committed before a response/audit failure. Keep
+            # the reservation so an uncertain retry cannot create a second record.
+            session.rollback()
             raise
     return _invoke(session, settings, operation, args, mail_provider=mail_provider, calendar_provider=calendar_provider, token_fingerprint=token_fingerprint)
 
@@ -74,7 +119,14 @@ def _invoke(
     actor = {"actor_type": ActorType.AGENT, "actor_reference": "agent-token"}
     topic = None
 
-    if operation == "get_recipient_settings":
+    if operation in {'search_mail', 'get_mail_message'}:
+        if not isinstance(mail_provider, google_connection.GoogleMailProvider):
+            raise google_connection.GoogleConnectionError('Connect Google in Settings to use mailbox lookup.')
+        if operation == 'search_mail':
+            result = mail_provider.search(**google_connection.MailSearch.model_validate(args).model_dump())
+        else:
+            result = mail_provider.lookup(**google_connection.MailLookup.model_validate(args).model_dump())
+    elif operation == "get_recipient_settings":
         result = recipient_reports.research_settings(session)
         session.commit()
     elif operation == "update_recipient_settings":
@@ -198,11 +250,14 @@ def _invoke(
         result = FollowUpRead.model_validate(item).model_dump(mode="json")
         topic = "followup.updated"
     elif operation == "mark_followup_sent":
-        item = work.update_followup(session, application_id, args["followup_id"], FollowUpUpdate(status="SENT"), settings=settings, **actor)
+        if not isinstance(args.get('expected_revision'), int) or args['expected_revision'] < 1:
+            raise ValueError('expected_revision is required when marking a follow-up sent')
+        item = work.update_followup(session, application_id, args["followup_id"], FollowUpUpdate(status="SENT", expected_revision=args['expected_revision']), settings=settings, **actor)
         result = FollowUpRead.model_validate(item).model_dump(mode="json")
         topic = "followup.updated"
     elif operation == "draft_followup":
-        result = integrations.draft_followup(session, application_id, args["followup_id"], integrations.DraftRequest.model_validate({"content": args["content"]}), mail_provider or integrations.DisconnectedMailProvider(), **actor).model_dump(mode="json")
+        data = {key: args[key] for key in ('content', 'expected_revision', 'operation_id') if key in args}
+        result = integrations.draft_followup(session, application_id, args["followup_id"], integrations.DraftRequest.model_validate(data), mail_provider or integrations.DisconnectedMailProvider(), **actor).model_dump(mode="json")
         topic = "followup.updated"
     elif operation == "create_task":
         item = work.create_task(session, application_id, TaskCreate.model_validate(args["task"]), **actor)

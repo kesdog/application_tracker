@@ -55,6 +55,8 @@ class Application(Base):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    revision: Mapped[int] = mapped_column(default=1, server_default="1")
+    __mapper_args__ = {"version_id_col": revision}
     job_title: Mapped[str] = mapped_column(String(300))
     company: Mapped[str] = mapped_column(String(300))
     intermediary: Mapped[str | None] = mapped_column(String(300))
@@ -358,6 +360,8 @@ class AuditEntry(Base):
     new_value: Mapped[dict | None] = mapped_column(JSON)
     actor_type: Mapped[ActorType] = mapped_column(SqlEnum(ActorType, native_enum=False, create_constraint=True, name="audit_actor_type"))
     actor_reference: Mapped[str | None] = mapped_column(String(300))
+    request_id: Mapped[str | None] = mapped_column(String(36))
+    client_label: Mapped[str | None] = mapped_column(String(20))
     created_at: Mapped[datetime] = mapped_column(default=utc_now, index=True)
     reversible: Mapped[bool] = mapped_column(Boolean, default=False)
     undone_at: Mapped[datetime | None]
@@ -374,6 +378,33 @@ class AgentCredential(Base):
     updated_at: Mapped[datetime] = mapped_column(default=utc_now, onupdate=utc_now)
 
 
+class ExternalConnection(Base):
+    """One Google identity; credentials live exclusively in the OS secret store."""
+    __tablename__ = "external_connections"
+    __table_args__ = (CheckConstraint("id = 1", name="single_google_connection"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    issuer: Mapped[str | None] = mapped_column(String(255))
+    subject: Mapped[str | None] = mapped_column(String(255))
+    email: Mapped[str | None] = mapped_column(String(320))
+    scopes: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(40), default="DISCONNECTED")
+    secret_reference: Mapped[str | None] = mapped_column(String(100))
+    generation: Mapped[int] = mapped_column(default=0)
+    updated_at: Mapped[datetime] = mapped_column(default=utc_now)
+    verified_at: Mapped[datetime | None]
+
+
+class MailDraftOperation(Base):
+    """Durable receipt/uncertainty marker written before touching Gmail."""
+    __tablename__ = "mail_draft_operations"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    application_id: Mapped[str] = mapped_column(ForeignKey("applications.id"))
+    followup_id: Mapped[str] = mapped_column(ForeignKey("followups.id"))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    result: Mapped[dict | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)
+
+
 class AgentIdempotencyRecord(Base):
     """A bounded replay cache for successful agent create requests."""
     __tablename__ = "agent_idempotency_records"
@@ -384,6 +415,7 @@ class AgentIdempotencyRecord(Base):
     operation: Mapped[str] = mapped_column(String(80))
     idempotency_key: Mapped[str] = mapped_column(String(200))
     result: Mapped[dict | None] = mapped_column(JSON)
+    request_hash: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(default=utc_now)
     expires_at: Mapped[datetime] = mapped_column(index=True)
 

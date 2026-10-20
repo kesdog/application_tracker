@@ -1,13 +1,19 @@
 """Explicit integration interfaces and a safe local fallback for email drafts."""
 from datetime import timedelta, timezone
 from typing import Protocol
+import hashlib
+import json
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy import text
 
 from app.activity import record_audit, record_event
 from app.applications import InvalidApplication, get_application
-from app.models import ActorType, FollowUp, FollowUpChannel, FollowUpStatus, Note, NoteType, utc_now
+from app.models import ActorType, ApplicationStatus, FollowUp, FollowUpChannel, FollowUpStatus, MailDraftOperation, Note, NoteType, utc_now
+from app.followup_templates import RevisionConflict, TAG
 from app.work import child
 
 
@@ -48,6 +54,8 @@ class DisconnectedCalendarProvider:
 class DraftRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
     content: str = Field(min_length=1)
+    expected_revision: int | None = Field(default=None, ge=1, strict=True)
+    operation_id: UUID = Field(default_factory=uuid4)
 
 
 class DraftResult(BaseModel):
@@ -62,18 +70,68 @@ def draft_followup(
     provider: MailProvider, *, actor_type: ActorType = ActorType.HUMAN,
     actor_reference: str | None = None,
 ) -> DraftResult:
+    operation_id = str(data.operation_id)
+    request_hash = hashlib.sha256(json.dumps([application_id, followup_id, data.content, data.expected_revision]).encode()).hexdigest()
+    receipt = session.get(MailDraftOperation, operation_id)
+    if receipt:
+        if receipt.request_hash != request_hash:
+            raise RevisionConflict('This draft operation ID belongs to a different request. Review the existing draft before continuing.')
+        if receipt.result is None:
+            raise RevisionConflict('This draft is in progress or its external result is uncertain. Check the mailbox and reconcile it before starting another operation.')
+        return DraftResult.model_validate(receipt.result)
     application = get_application(session, application_id)
     item = child(session, FollowUp, application_id, followup_id)
+    if data.expected_revision is not None and item.revision != data.expected_revision:
+        raise RevisionConflict('The follow-up changed. Reload and review before drafting.')
     if item.channel == FollowUpChannel.PHONE:
         raise InvalidApplication("Phone-only follow-ups do not have an email draft")
     if item.status == FollowUpStatus.SENT or item.archived_at:
         raise InvalidApplication("Reopen the follow-up before drafting")
-    if provider.is_connected():
+    if application.status == ApplicationStatus.CLOSED:
+        raise InvalidApplication('Reopen the application before drafting')
+    connected = provider.is_connected()
+    if connected:
         if not item.recipient_email:
             raise InvalidApplication('Choose a recipient before creating a mailbox draft')
+        if TAG.search(data.content) or TAG.search(item.subject or ''):
+            raise InvalidApplication('Fill or remove unresolved variables before creating a mailbox draft')
+    original_revision = item.revision
+    receipt = MailDraftOperation(id=operation_id, application_id=application_id,
+        followup_id=followup_id, request_hash=request_hash)
+    session.add(receipt)
+    try:
+        session.commit()  # Durable before the external side effect, including timeouts/crashes.
+    except IntegrityError:
+        session.rollback()
+        raise RevisionConflict('This draft operation was already started. Retry the same operation ID to retrieve its result.') from None
+    if connected:
+        session.refresh(item)
+        session.refresh(application)
+        if item.revision != original_revision or item.status == FollowUpStatus.SENT or item.archived_at or application.status == ApplicationStatus.CLOSED or application.deleted_at:
+            session.delete(receipt)
+            session.commit()
+            raise RevisionConflict('The follow-up changed before draft creation. Reload and review before retrying.')
         reference = provider.create_draft(application, item, data.content)
         result = DraftResult(location="MAILBOX", note_id=None, message_reference=reference, message="Draft placed in the connected mailbox. Nothing was sent.")
+        session.rollback()
+        session.execute(text('BEGIN IMMEDIATE'))
+        session.refresh(item)
+        session.refresh(application)
+        if item.revision != original_revision or item.status == FollowUpStatus.SENT or item.archived_at or application.status == ApplicationStatus.CLOSED or application.deleted_at:
+            result.message += ' The tracker context changed during creation. Review the mailbox draft; the newer tracker message was preserved.'
+            receipt.result = result.model_dump(mode='json')
+            record_event(session, application_id, 'EMAIL_DRAFT_CREATED', result.message, actor_type=actor_type,
+                actor_reference=actor_reference, metadata={'operation_id': operation_id, 'followup_id': followup_id})
+            session.commit()
+            return result
     else:
+        session.execute(text('BEGIN IMMEDIATE'))
+        session.refresh(item)
+        session.refresh(application)
+        if item.revision != original_revision or item.status == FollowUpStatus.SENT or item.archived_at or application.status == ApplicationStatus.CLOSED or application.deleted_at:
+            session.delete(receipt)
+            session.commit()
+            raise RevisionConflict('The follow-up changed before saving the local draft. Reload and review before retrying.')
         note = Note(application_id=application_id, content=data.content, type=NoteType.EMAIL_DRAFT, created_by=actor_type.value)
         session.add(note)
         session.flush()
@@ -88,6 +146,10 @@ def draft_followup(
         item.approved_revision = None
         record_event(session, application_id, "FOLLOWUP_DRAFTED", f"Follow-up #{item.sequence_number} drafted", actor_type=actor_type, actor_reference=actor_reference, metadata={"followup_id": item.id})
         record_audit(session, application_id, "FOLLOWUP", item.id, "UPDATE", previous=previous, new={name: getattr(item, name) for name in previous}, actor_type=actor_type, actor_reference=actor_reference, reversible=True)
+    receipt.result = result.model_dump(mode='json')
+    record_event(session, application_id, 'EMAIL_DRAFT_CREATED', result.message,
+        actor_type=actor_type, actor_reference=actor_reference,
+        metadata={'followup_id': followup_id, 'operation_id': operation_id, 'location': result.location})
     session.commit()
     return result
 

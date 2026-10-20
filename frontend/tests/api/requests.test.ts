@@ -21,6 +21,8 @@ it('reads the feature endpoints with encoded identifiers, filters and no caching
     ['/api/interviews/abc%2F123/context', () => api.getInterviewContext('abc/123')],
     ['/api/dashboard', () => api.getDashboard()],
     ['/api/settings/agent', () => api.getAgentSettings()],
+    ['/api/followups/agent-status', () => api.getFollowUpAgentStatus()],
+    ['/api/applications/app%2Fone/followups/message%2Fone/rendered-message', () => api.getRenderedFollowUp('app/one', 'message/one')],
   ]
   for (const [url, read] of reads) {
     await expect(read(), url).resolves.toEqual(payload)
@@ -52,6 +54,11 @@ it('writes the feature routes with exact JSON, explicit nulls and empty DELETE r
     ['/api/applications/app', 'DELETE', undefined, () => api.deleteApplication('app')],
     ['/api/settings/agent/token', 'POST', undefined, () => api.regenerateAgentToken()],
     ['/api/settings/agent/permissions', 'PUT', permissions, () => api.saveAgentPermissions(permissions)],
+    ['/api/connections/google/start', 'POST', { capabilities: ['gmail_read'] }, () => api.startGoogle(['gmail_read'])],
+    ['/api/connections/google/disconnect', 'POST', undefined, () => api.disconnectGoogle()],
+    ['/api/connections/google/drive-test', 'POST', { recovery_key: 'user-owned-key' }, () => api.testGoogleDrive('user-owned-key')],
+    ['/api/applications/app/followups/message/draft', 'POST', { content: 'Hello', expected_revision: 3, operation_id: 'explicit-stable-operation' }, () => api.draftEmailFollowup('app', 'message', 'Hello', 3, 'explicit-stable-operation')],
+    ['/api/applications/app%2Fone/followups/message%2Fone/draft-task', 'POST', { expected_revision: 4 }, () => api.queueFollowUpDraft('app/one', 'message/one', 4)],
   ]
   for (const [url, method, body, write] of writes) {
     await expect(write(), url).resolves.toEqual(method === 'DELETE' ? undefined : { id: 'saved', token: 'new-token' })

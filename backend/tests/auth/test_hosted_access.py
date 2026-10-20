@@ -41,6 +41,17 @@ def headers(client):
     return {"Origin": ORIGIN, "X-CSRF-Token": client.get("/api/auth/session").json()["csrf_token"]}
 
 
+def test_google_connection_management_uses_human_session_csrf_and_callback_binding(hosted):
+    client, _, _ = hosted
+    assert client.get('/api/connections').status_code == 401
+    assert client.get('/api/connections/google/callback?code=x&state=x').status_code == 409
+    assert login(client).status_code == 200
+    assert client.post('/api/connections/google/start', json={'capabilities': ['gmail_read']}).status_code == 403
+    assert client.post('/api/connections/google/disconnect', headers={'Origin': ORIGIN}).status_code == 403
+    assert client.post('/api/connections/google/disconnect', headers=headers(client)).status_code == 200
+    assert client.get('/api/connections/google/callback?code=x&state=x').status_code == 409
+
+
 def test_password_hashes_and_fail_closed_configuration(tmp_path, password_hash):
     assert validate_password_hash(password_hash)
     assert verify_password(PASSWORD, password_hash) and not verify_password("wrong", password_hash)
@@ -201,3 +212,66 @@ def test_restore_relocates_windows_paths_on_any_platform_and_rejects_corruption(
     with pytest.raises(ValueError, match="checksum"):
         restore_workspace(source, tmp_path / "corrupt-destination")
     assert not (tmp_path / "corrupt-destination").exists()
+
+
+@pytest.mark.parametrize('context', ['valid', 'revoked', 'expired', 'password_changed', 'other_session', 'missing_browser'])
+def test_google_callback_without_strict_cookie_requires_the_active_initiating_session(hosted, context):
+    from types import SimpleNamespace
+    from urllib.parse import parse_qs, urlsplit
+    import httpx
+    from pydantic import SecretStr
+    from app.google_connection import COOKIE as LINK_COOKIE, SCOPES
+
+    client, app, settings = hosted
+    google = app.state.google
+    settings.google_client_id = 'test-client'
+    settings.google_redirect_uri = ORIGIN + '/api/connections/google/callback'
+    credentials = {}
+    google.store = SimpleNamespace(put=lambda key, value: credentials.update({key: value}),
+        get=credentials.get, delete=lambda key: credentials.pop(key, None))
+    google.transport = httpx.MockTransport(lambda request: httpx.Response(200, json={
+        'id_token': 'verified-test-token', 'access_token': 'access', 'refresh_token': 'refresh',
+        'scope': SCOPES['gmail_read'], 'expires_in': 3600}))
+    assert login(client).status_code == 200
+    owner = client.cookies.get(COOKIE)
+    started = client.post('/api/connections/google/start', json={'capabilities': ['gmail_read']}, headers=headers(client))
+    assert started.status_code == 200
+    assert 'SameSite=lax' in started.headers['set-cookie']
+    params = parse_qs(urlsplit(started.json()['authorization_url']).query)
+    google.verifier = lambda token, audience: {'iss': 'https://accounts.google.com', 'aud': audience,
+        'sub': 'google-owner', 'email': 'owner@example.test', 'email_verified': True, 'nonce': params['nonce'][0]}
+    binding = client.cookies.get(LINK_COOKIE)
+    if context == 'revoked':
+        assert client.post('/api/auth/logout', headers=headers(client)).status_code == 200
+    elif context == 'expired':
+        with Session(app.state.engine) as session:
+            session.get(HumanSession, digest(owner)).expires_at = utc_now() - timedelta(seconds=1)
+            session.commit()
+    elif context == 'password_changed':
+        settings.app_password_hash = SecretStr(hash_password('replacement workspace test password'))
+    # Simulate the real cross-site return: Lax link cookie present, Strict cookie absent.
+    client.cookies.clear()
+    if context != 'missing_browser':
+        client.cookies.set(LINK_COOKIE, binding, path='/api/connections/google')
+    if context == 'other_session':
+        client.cookies.set(COOKIE, app.state.human_sessions.create())
+    callback = {'state': params['state'][0], 'code': 'test-code'}
+    response = client.get('/api/connections/google/callback', params=callback, follow_redirects=False)
+    assert response.status_code == (303 if context == 'valid' else 409)
+    assert len(credentials) == (1 if context == 'valid' else 0)
+    if context == 'valid':
+        assert client.get('/api/connections/google/callback', params=callback, follow_redirects=False).status_code == 409
+
+
+def test_session_managers_share_persistence_and_revocation(hosted):
+    from app.human_auth import HumanSessionManager
+    _, app, settings = hosted
+    first = app.state.human_sessions
+    second = HumanSessionManager(app.state.engine, settings)
+    token = first.create()
+    assert second.is_authenticated(token)
+    replacement = second.create(token)
+    assert not first.is_authenticated(token)
+    assert first.is_authenticated(replacement)
+    second.revoke(replacement)
+    assert not first.is_authenticated_reference(digest(replacement))

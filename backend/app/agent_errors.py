@@ -7,9 +7,10 @@ class AgentApiError(Exception):
     code: str
     message: str
     status_code: int = 400
+    details: dict | None = None
 
     def payload(self) -> dict:
-        return {"error": {"code": self.code, "message": self.message}}
+        return {"error": {"code": self.code, "message": self.message, **({'details': self.details} if self.details else {})}}
 
 
 def from_exception(exc: Exception) -> AgentApiError:
@@ -18,6 +19,12 @@ def from_exception(exc: Exception) -> AgentApiError:
     name = exc.__class__.__name__
     message = str(exc) or "Agent operation failed"
     lower = message.lower()
+    if name == 'ApplicationRevisionConflict':
+        return AgentApiError('REVISION_CONFLICT', message, 409, {'current': exc.current, 'proposed': exc.proposed})
+    if name == 'StaleDataError':
+        return AgentApiError('REVISION_CONFLICT', 'The record changed during this operation. Read its current revision and review before retrying.', 409)
+    if name == 'GoogleConnectionError':
+        return AgentApiError('GOOGLE_CONNECTION_ERROR', message, 409)
     if name == "ApplicationNotFound":
         if "interview" in lower:
             code = "INTERVIEW_NOT_FOUND"

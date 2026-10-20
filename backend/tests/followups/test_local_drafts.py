@@ -29,7 +29,9 @@ def test_draft_fallback_keeps_mailbox_disconnected_and_never_sends(tmp_path):
         drafted = next(item for item in work["followups"] if item["id"] == followup["id"])
         assert drafted["status"] == "PREPARED"
         assert drafted["sent_at"] is None
-        assert client.get("/api/integrations").json() == {"mail": {"connected": False}, "calendar": {"connected": False}}
+        status = client.get('/api/integrations').json()
+        assert status['mail'] == status['calendar'] == {'connected': False}
+        assert status['google']['status'] == 'DISCONNECTED'
 
 
 def test_phone_only_cannot_create_email_draft(tmp_path):

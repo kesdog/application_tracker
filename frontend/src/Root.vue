@@ -1,19 +1,21 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import App from './App.vue'
-import { checkHumanSession, humanSession, signIn, signOut } from './auth'
+import { browserSession, workspaceLogin } from './auth'
+const humanSession = browserSession.state
+const checkHumanSession = () => workspaceLogin.check()
 const password = ref('')
 const busy = ref(false)
 const error = ref('')
 async function login() {
   busy.value = true; error.value = ''
-  try { await signIn(password.value); password.value = '' }
+  try { await workspaceLogin.signIn(password.value); password.value = '' }
   catch (reason) { error.value = reason instanceof Error ? reason.message : 'Unable to sign in.' }
   finally { busy.value = false }
 }
 async function logout() {
   error.value = ''
-  try { await signOut() }
+  try { await workspaceLogin.signOut() }
   catch (reason) { error.value = reason instanceof Error ? reason.message : 'Unable to confirm sign-out. Try again.' }
 }
 onMounted(checkHumanSession)

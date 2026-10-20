@@ -95,7 +95,7 @@ async function save() {
       .filter(key => draft.value![key] !== application.value![key])
       .map(key => [key, draft.value![key]]))
     if (needsOutcomeClear.value && clearOutcome.value) changes.outcome = null
-    application.value = await updateApplication(props.id, changes)
+    application.value = await updateApplication(props.id, { ...changes, expected_revision: draft.value.revision })
     draft.value = null
     saved.value = true
     timelineVersion.value++

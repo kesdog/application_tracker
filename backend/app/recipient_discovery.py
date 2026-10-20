@@ -91,6 +91,7 @@ def application_state(session,application_id):
     return {'job':job_read(session.scalar(select(RecipientDiscovery).where(RecipientDiscovery.application_id == application_id))),
         'page_limit': app.recipient_page_limit or research_settings(session)['recipient_page_limit'],
         'page_limit_override': app.recipient_page_limit,
+        'application_revision': app.revision,
         'default_page_limit': research_settings(session)['recipient_page_limit'],
         'followups':[{'id':f.id,'sequence_number':f.sequence_number,'revision':f.revision,'recipient_email':f.recipient_email,'recipient_name':f.recipient_name} for f in followups],
         'candidates':[{'id':c.id,**c.value,'context_current':c.context == context(app)} for c in candidates],

@@ -1,4 +1,4 @@
-import { expireHumanSession, withSessionHeaders } from './auth'
+import { browserSession } from './auth'
 
 export interface PhoneDevice { id: string; label: string; active: boolean; reason: string | null; created_at: string; latest: null | { state: string; attempts: number; error: string | null; accepted_at: string | null } }
 export interface PhoneNotificationStatus { configured: boolean; public_key: string | null; devices: PhoneDevice[] }
@@ -41,6 +41,7 @@ export interface ApplicationCreate {
 }
 
 export interface Application extends ApplicationCreate {
+  revision: number
   id: string
   contact_type: 'EMAIL' | 'PHONE'
   status: 'SUBMITTED' | 'INTERVIEW' | 'CLOSED'
@@ -164,7 +165,17 @@ export interface PostingCheckResult { status: Application['posting_status']; che
 export interface PostingReviewPlan { application_id: string; job_url: string | null; searches: { label: string; url: string }[]; search_query: string; agent_search_prompt: string; instructions: string }
 export interface PostingReviewInput { status: Application['posting_status']; evidence_url: string; notes: string; checked_at: string; same_position: boolean; replace_job_url: boolean }
 export interface AgentConnectionInfo { local_mcp_command: string; rest_endpoint: string; mcp_transport: 'stdio' | 'streamable-http'; remote_mcp_endpoint: string | null }
-export interface IntegrationStatus { mail: { connected: boolean }; calendar: { connected: boolean } }
+export interface IntegrationStatus { mail: { connected: boolean }; calendar: { connected: boolean }; google?: GoogleConnection }
+export type GoogleCapability = 'drive' | 'gmail_read' | 'gmail_drafts'
+export interface GoogleConnection { configured: boolean; status: string; email: string | null; capabilities: Record<GoogleCapability, boolean>; updated_at: string | null; verified_at: string | null; message: string | null }
+export function getConnections(): Promise<{ google: GoogleConnection }> { return request('/api/connections') }
+export function startGoogle(capabilities: GoogleCapability[]): Promise<{ authorization_url: string; expires_in: number }> {
+  return request('/api/connections/google/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ capabilities }) })
+}
+export function disconnectGoogle(): Promise<GoogleConnection> { return request('/api/connections/google/disconnect', { method: 'POST' }) }
+export function testGoogleDrive(recovery_key: string): Promise<{ verified: boolean; deleted: boolean; message: string }> {
+  return request('/api/connections/google/drive-test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ recovery_key }) })
+}
 export interface DraftResult { location: 'LOCAL_NOTE' | 'MAILBOX'; note_id: string | null; message_reference: string | null; message: string }
 
 export function getAgentSettings(): Promise<AgentSettings> { return request('/api/settings/agent') }
@@ -174,9 +185,9 @@ export function saveAgentPermissions(permissions: AgentPermissions): Promise<Age
   return request('/api/settings/agent/permissions', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(permissions) })
 }
 export function getIntegrationStatus(): Promise<IntegrationStatus> { return request('/api/integrations') }
-export function draftEmailFollowup(applicationId: string, followupId: string, content: string): Promise<DraftResult> {
+export function draftEmailFollowup(applicationId: string, followupId: string, content: string, expected_revision?: number, operation_id: string = crypto.randomUUID()): Promise<DraftResult> {
   return request(`/api/applications/${encodeURIComponent(applicationId)}/followups/${encodeURIComponent(followupId)}/draft`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content }),
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content, expected_revision, operation_id }),
   })
 }
 
@@ -223,7 +234,7 @@ export interface RecipientCandidate { id: string; name: string | null; email: st
   fit?: { region?: { state: string; requested?: string | null; observed?: string | null }; sector?: { state: string; requested?: string | null; observed?: string | null } };
 }
 export interface RecipientFollowUp { id: string; sequence_number: number; revision: number; recipient_email: string | null; recipient_name: string | null }
-export interface RecipientState { job: RecipientJob | null; candidates: RecipientCandidate[]; missing_followups: number; followups: RecipientFollowUp[]; page_limit?: number; page_limit_override?: number | null; default_page_limit?: number }
+export interface RecipientState { application_revision?: number; job: RecipientJob | null; candidates: RecipientCandidate[]; missing_followups: number; followups: RecipientFollowUp[]; page_limit?: number; page_limit_override?: number | null; default_page_limit?: number }
 export interface RecipientQueue { queued: number; running: number; failed: number; missing_followups: number; concurrency_limit: number; available: boolean }
 export const getRecipientState = (id: string): Promise<RecipientState> => request(`/api/applications/${encodeURIComponent(id)}/recipients`)
 export const fetchRecipients = (id: string, refreshPages = false): Promise<RecipientJob> => request(`/api/applications/${encodeURIComponent(id)}/recipients/fetch`, { method: 'POST', ...(refreshPages ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_pages: true }) } : {}) })
@@ -266,15 +277,15 @@ export function listTasks(): Promise<TaskListItem[]> {
   return request('/api/tasks')
 }
 
-export type ApplicationUpdate = Partial<Omit<Application, 'id'>>
+export type ApplicationUpdate = Partial<Omit<Application, 'id' | 'revision'>> & { expected_revision?: number }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 8000)
   try {
-    const response = await fetch(path, { ...withSessionHeaders(options), signal: controller.signal, cache: 'no-store' })
+    const response = await fetch(path, { ...browserSession.withHeaders(options), signal: controller.signal, cache: 'no-store' })
     if (!response.ok) {
-      if (response.status === 401) expireHumanSession()
+      if (response.status === 401) browserSession.expire()
       const body = await response.json().catch(() => null)
       const detail = body?.detail
       const message = Array.isArray(detail)

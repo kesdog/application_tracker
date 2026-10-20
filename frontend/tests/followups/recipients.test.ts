@@ -11,7 +11,7 @@ enableAutoUnmount(afterEach)
 const global = { plugins: [[PrimeVue, { unstyled: true }] as [typeof PrimeVue, { unstyled: boolean }]] }
 const followup:api.RecipientFollowUp={id:'followup-1',sequence_number:1,revision:2,recipient_email:null,recipient_name:null}
 const candidate:api.RecipientCandidate={id:'candidate-1',name:null,email:'jobs@example.com',kind:'recruiter_hr',role:null,source_url:'https://example.com/careers',evidence:'Public recruitment contact',company_match:'domain_name',vacancy_match:'unconfirmed',email_status:'published',stale:false,context_current:true}
-const state:api.RecipientState={job:null,candidates:[candidate],missing_followups:1,followups:[followup]}
+const state:api.RecipientState={application_revision:4,job:null,candidates:[candidate],missing_followups:1,followups:[followup]}
 function button(w:ReturnType<typeof mount>,label:string){return w.findAll('button').find(b=>b.text()===label)!}
 beforeEach(()=>{
  vi.clearAllMocks()
@@ -42,12 +42,12 @@ it('saves per-application budgets, restores inheritance and explicitly requests 
  vi.mocked(api.getRecipientState).mockResolvedValue({...state,page_limit:9,default_page_limit:12,page_limit_override:9})
  await button(wrapper,'Save page limit').trigger('click')
  await flushPromises()
- expect(api.updateApplication).toHaveBeenLastCalledWith('app-1',{recipient_page_limit:9})
+ expect(api.updateApplication).toHaveBeenLastCalledWith('app-1',{recipient_page_limit:9,expected_revision:4})
  await inherit.setValue(true)
  vi.mocked(api.getRecipientState).mockResolvedValue({...state,page_limit:12,default_page_limit:12,page_limit_override:null})
  await button(wrapper,'Save page limit').trigger('click')
  await flushPromises()
- expect(api.updateApplication).toHaveBeenLastCalledWith('app-1',{recipient_page_limit:null})
+ expect(api.updateApplication).toHaveBeenLastCalledWith('app-1',{recipient_page_limit:null,expected_revision:4})
  await button(wrapper,'Refresh saved pages').trigger('click')
  await flushPromises()
  expect(api.fetchRecipients).toHaveBeenCalledWith('app-1',true)
@@ -165,4 +165,21 @@ it('shows source context and blocks choosing stale or region-conflicting leads',
  expect(wrapper.text()).toContain('verify the region and team')
  for (const action of wrapper.findAll('button').filter(b=>b.text()==='Use this recipient')) expect(action.attributes('disabled')).toBeDefined()
  expect(api.chooseRecipient).not.toHaveBeenCalled()
+})
+
+it('retains the edited limit revision when another client invalidates the application',async()=>{
+ vi.mocked(api.getRecipientState).mockResolvedValue({...state,page_limit:6,application_revision:4})
+ const wrapper=mount(RecipientPicker,{props:{applicationId:'app-1'},global})
+ await flushPromises()
+ await wrapper.get('input[type="checkbox"]').setValue(false)
+ await wrapper.get('input[type="number"]').setValue('9')
+ vi.mocked(api.getRecipientState).mockResolvedValue({...state,page_limit:20,application_revision:5})
+ window.dispatchEvent(new CustomEvent('tracker:invalidate',{detail:{application_id:'app-1'}}))
+ await flushPromises()
+ vi.mocked(api.updateApplication).mockRejectedValueOnce(new Error('The application changed. Review before retrying.'))
+ await button(wrapper,'Save page limit').trigger('click')
+ await flushPromises()
+ expect(api.updateApplication).toHaveBeenLastCalledWith('app-1',{recipient_page_limit:9,expected_revision:4})
+ expect((wrapper.get('input[type="number"]').element as HTMLInputElement).value).toBe('9')
+ expect(wrapper.get('[role="alert"]').text()).toContain('Review before retrying')
 })
