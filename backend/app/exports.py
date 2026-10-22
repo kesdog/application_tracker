@@ -1,4 +1,5 @@
 import csv
+import re
 from io import BytesIO, StringIO
 
 from openpyxl import Workbook
@@ -17,6 +18,13 @@ HEADERS = [
     "Remote Policy", "Contract Type", "Source", "Job URL", "Email Reference",
     "Phone Number", "Contact Type", "Posting Status", "Documents", "Intermediary", "Contact Name", "Contact Email", "Deadline", "Deadline Type",
 ]
+
+
+def csv_text(value):
+    """Spreadsheet programs interpret formula prefixes even in quoted CSV cells."""
+    if isinstance(value, str) and re.match(r'^[\s\ufeff]*[=+@-]', value):
+        return "'" + value
+    return value.isoformat() if hasattr(value, 'isoformat') else value
 
 
 def _rows(session: Session, filters: ApplicationFilters) -> list[list]:
@@ -40,7 +48,7 @@ def csv_export(session: Session, filters: ApplicationFilters) -> bytes:
     writer = csv.writer(output)
     writer.writerow(HEADERS)
     for row in _rows(session, filters):
-        writer.writerow([value.isoformat() if hasattr(value, "isoformat") else value for value in row])
+        writer.writerow([csv_text(value) for value in row])
     return output.getvalue().encode("utf-8-sig")
 
 
@@ -51,6 +59,9 @@ def xlsx_export(session: Session, filters: ApplicationFilters) -> bytes:
     sheet.append(HEADERS)
     for row in _rows(session, filters):
         sheet.append(row)
+        for cell, value in zip(sheet[sheet.max_row], row):
+            if isinstance(value, str):
+                cell.data_type = 's'
 
     header_fill = PatternFill("solid", fgColor="263E5C")
     for cell in sheet[1]:

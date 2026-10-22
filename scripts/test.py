@@ -8,13 +8,21 @@ from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = {'applications', 'activity', 'work', 'followups', 'interviews', 'dashboard',
-           'documents', 'posting', 'agent', 'auth', 'notifications', 'migrations', 'system'}
+           'documents', 'posting', 'agent', 'auth', 'notifications', 'migrations', 'system', 'sync'}
 FRONTEND = {'applications', 'work', 'followups', 'api', 'auth', 'notifications', 'appearance', 'shell'}
-SEGMENTS = BACKEND | FRONTEND | {'tooling'}
+VENDOR = {'toolbox': 'libs/portable-webtoolbox-embedded-v0.7.0/webtoolbox-embedded/tests'}
+SEGMENTS = BACKEND | FRONTEND | VENDOR.keys() | {'tooling'}
 
 # Shared persistence, application services/schemas, startup and configuration
 # affect all backend features. Smaller modules list their consumers explicitly.
 BACKEND_MODULES = {
+    'application_merge': {'applications', 'sync', 'followups', 'activity', 'documents'},
+    'secret_store': {'auth', 'agent', 'sync'},
+    'application_import': {'applications', 'documents', 'migrations', 'auth'},
+    'mail_reviews': {'applications', 'followups', 'auth'},
+    'workspace_routes': {'applications', 'documents', 'auth', 'sync', 'migrations'},
+    'application_sync': {'applications', 'sync', 'auth', 'system'},
+    'mailbox_import': {'applications', 'sync', 'activity', 'migrations'},
     'activity': BACKEND,
     'activity_schemas': {'activity', 'agent'},
     'work': BACKEND,
@@ -36,14 +44,26 @@ BACKEND_MODULES = {
     'integrations': {'followups', 'interviews', 'notifications', 'agent', 'auth'},
     'google_login': {'agent', 'followups', 'auth', 'migrations', 'system'},
     'oauth_sessions': {'agent', 'followups', 'auth', 'migrations', 'system'},
-    'google_connection': {'agent', 'followups', 'auth', 'migrations', 'system'},
+    'google_connection': {'agent', 'followups', 'auth', 'migrations', 'system', 'sync', 'applications'},
+    'authorized_api': {'auth', 'agent', 'sync'},
+    'session_manager': {'auth', 'agent', 'sync'},
+    'journal': BACKEND,
+    'engine': {'sync', 'auth', 'migrations', 'agent'},
+    'merge': {'sync'},
+    'crypto': {'sync'},
+    'drive': {'sync', 'agent'},
+    'domain': BACKEND,
+    'routes': {'sync', 'auth'},
+    'worker': {'sync', 'system'},
+    'queue': BACKEND,
+    'checkpoints': {'sync'},
     'agent_call_context': BACKEND,
-    'human_auth': {'auth', 'notifications'},
-    'backup': {'auth', 'notifications'},
+    'human_auth': {'auth', 'notifications', 'sync'},
+    'backup': {'auth', 'notifications', 'sync', 'applications', 'documents'},
     'push': {'notifications'}, 'push_keys': {'notifications'},
     'posting_checker': {'posting', 'agent'}, 'posting_service': {'posting', 'activity', 'agent'},
     'posting_review': {'posting', 'agent'},
-    'confirmation_details': {'posting', 'agent'}, 'confirmation_links': {'posting', 'agent'},
+    'confirmation_details': {'posting', 'agent', 'applications'}, 'confirmation_links': {'posting', 'agent', 'applications'},
     'contract_types': {'applications', 'dashboard', 'agent', 'documents'},
     'job_sources': {'applications', 'posting', 'agent'},
     'invalidation': {'agent', 'auth', 'activity', 'work', 'followups', 'interviews', 'posting', 'applications'},
@@ -104,7 +124,12 @@ def select(paths, graph=None):
     for raw in paths:
         path = normalize(raw)
         parts = path.split('/')
-        if path.startswith('backend/tests/'):
+        if path.startswith('libs/'):
+            if any(path.startswith(target + '/') for target in VENDOR.values()):
+                backend.update(VENDOR)
+            else:
+                backend.update({'followups', 'agent', 'system', *VENDOR})
+        elif path.startswith('backend/tests/'):
             if len(parts) >= 4 and parts[2] in BACKEND:
                 backend.add(parts[2])
             else:
@@ -139,15 +164,15 @@ def select(paths, graph=None):
         elif path.startswith('frontend/'):
             frontend.update(FRONTEND)
         elif path.startswith(('scripts/', 'tests/')):
-            backend.update(BACKEND)
+            backend.update(BACKEND | VENDOR.keys())
             frontend.update(FRONTEND)
             tooling = True
         elif path in {'pyproject.toml', 'requirements-dev.lock', 'Dockerfile', 'build-windows.ps1'} or path.startswith(('deploy/', '.github/')) or path.endswith(('.yaml', '.yml')):
-            backend.update(BACKEND)
+            backend.update(BACKEND | VENDOR.keys())
             frontend.update(FRONTEND)
             tooling = True
         elif Path(path).suffix != '.md' and path != '.gitignore':
-            backend.update(BACKEND)
+            backend.update(BACKEND | VENDOR.keys())
             frontend.update(FRONTEND)
             tooling = True
     return backend, frontend, tooling
@@ -160,9 +185,8 @@ def commands(backend, frontend, tooling=False, full=False):
         result.append((ROOT / 'frontend', ['pnpm', 'build']))
         result.append((ROOT, [sys.executable, '-m', 'pip', 'check']))
     if backend or tooling:
-        targets = [f'backend/tests/{name}' for name in sorted(backend)]
-        if 'followups' in backend:
-            targets.append('libs/portable-webtoolbox-embedded-v0.7.0/webtoolbox-embedded/tests')
+        targets = [f'backend/tests/{name}' for name in sorted(backend - VENDOR.keys())]
+        targets.extend(VENDOR[name] for name in sorted(backend & VENDOR.keys()))
         if tooling:
             targets.append('tests')
         # A fresh, ignored directory avoids inaccessible user temp folders and
@@ -189,12 +213,12 @@ def main(argv=None):
         parser.error('--base requires --changed')
     if args.list:
         for name in sorted(SEGMENTS):
-            print(f"{name:15} {'backend ' if name in BACKEND else ''}{'frontend' if name in FRONTEND else ''}{'runner checks' if name == 'tooling' else ''}")
+            print(f"{name:15} {'backend ' if name in BACKEND else ''}{'frontend' if name in FRONTEND else ''}{'vendor' if name in VENDOR else ''}{'runner checks' if name == 'tooling' else ''}")
         return 0
     if args.full:
-        backend, frontend, tooling = BACKEND, FRONTEND, True
+        backend, frontend, tooling = BACKEND | VENDOR.keys(), FRONTEND, True
     elif args.segment:
-        backend = BACKEND & set(args.segment)
+        backend = (BACKEND | VENDOR.keys()) & set(args.segment)
         frontend = FRONTEND & set(args.segment)
         tooling = 'tooling' in args.segment
     else:

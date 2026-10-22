@@ -9,6 +9,8 @@ from app.activity import record_audit, record_event
 from app.applications import ApplicationNotFound, InvalidApplication, get_application
 from app.models import ActorType, ApplicationDocument, DocumentType
 
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+
 
 def _clean_filename(value: str | None) -> str:
     filename = Path((value or "").replace("\\", "/")).name.strip()
@@ -54,8 +56,15 @@ def create_document(
         stored_path = directory / f"{uuid4().hex}_{display_name}"
         try:
             with stored_path.open("wb") as destination:
+                total = 0
                 while chunk := upload.file.read(1024 * 1024):
+                    total += len(chunk)
+                    if total > MAX_UPLOAD_BYTES:
+                        raise InvalidApplication('Documents must be 20 MiB or smaller')
                     destination.write(chunk)
+        except OSError:
+            stored_path.unlink(missing_ok=True)
+            raise InvalidApplication('The document could not be saved. Check available disk space and workspace permissions.') from None
         except Exception:
             stored_path.unlink(missing_ok=True)
             raise

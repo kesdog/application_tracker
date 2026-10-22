@@ -1,5 +1,28 @@
 # Hosted workspace and phone access
 
+## Live environment configuration
+
+Copy `deploy/hosted.env.example` to the ignored `deploy/hosted.env`. Set `TRACKER_DOMAIN` there for Compose. The root `.env` is used for local/source installations; its Google placeholders are linked to `.env.example`. Desktop/browser OAuth client IDs and the phone HTTPS origin are intentionally blank until you configure the Google project. Reserved `GOOGLE_WEB_CLIENT_ID`/`GOOGLE_WEB_ORIGIN` values document the future phone target; they do not enable the unfinished independent phone client.
+
+For hosted Google access, set `GOOGLE_CLIENT_ID` and, if required by that client type, `GOOGLE_CLIENT_SECRET` in `deploy/hosted.env`. The Google overlay binds the callback to `https://TRACKER_DOMAIN/api/connections/google/callback`. Register that exact URI with Google. Keep Drive/Gmail permissions optional and run the real cross-client sync gate before phone implementation.
+
+Create a separate credential-encryption master key using the built image:
+
+```bash
+docker compose --env-file deploy/hosted.env run --rm --no-deps --user 0 \
+  -v "$PWD/deploy/secrets:/secrets" tracker \
+  python -m app.secret_store --output /secrets/credential.key
+sudo chown 10001:10001 deploy/secrets/credential.key
+sudo chmod 400 deploy/secrets/credential.key
+docker compose --env-file deploy/hosted.env -f compose.yaml -f compose.google.yaml up -d --no-build
+```
+
+Complete the base installation below first. The key is mounted read-only outside `/data`; credential values under `/data/credentials` are individually authenticated and encrypted. Keep a protected separate copy of the key. Workspace backups omit that directory and restoration disconnects Google; reconnect with the intended identity and the separate sync recovery export. Losing/replacing the master key does not decrypt old credential files. The local desktop continues to use its native OS vault unless `APP_CREDENTIAL_KEY_FILE` is explicitly set.
+
+`Dockerfile` installs the hashed `requirements-runtime.lock`. The frontend license is a browser-visible build-time value; supply `--build-arg VITE_PRIMEUI_LICENSE_KEY=...` from your protected build configuration for a licensed production UI. No key is committed. The read-only release workflow validates both platforms and produces candidate artifacts; it does not migrate existing hosted workspaces or install updates automatically.
+
+Full ZIP backups and verification are available in Settings; [RECOVERY.md](../RECOVERY.md) documents packaged/source recovery and the rule to restore into a new empty directory.
+
 This setup supplies a single-workspace password, authenticated browser sessions, an installable phone shell, an HTTPS reverse proxy, portable backups, and optional Web Push. The base stack works without push configuration; the optional setup below enables phone reminders. It does not send emails or wake an AI agent.
 
 The current local installation stays on loopback with no login. Hosting has not been provisioned. Docker is unavailable on the development machine, so the container stack requires the server checks below before going live.

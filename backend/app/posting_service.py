@@ -42,7 +42,12 @@ def check_application_posting(session: Session, application_id: str, checker: Po
     if not application.job_url:
         result = PostingCheckResult(PostingStatus.UNKNOWN, utc_now(), None, None, "ERROR", "No job URL is saved for this application")
     else:
-        result = asyncio.run((checker or PostingChecker()).check(application.job_url))
+        checked_url = application.job_url
+        result = asyncio.run((checker or PostingChecker()).check(checked_url))
+        session.refresh(application)
+        if application.deleted_at or application.job_url != checked_url:
+            from app.applications import InvalidApplication
+            raise InvalidApplication('The posting changed during the check. Check the current posting again.')
     return apply_result(session, application, result, actor_type=actor_type)
 
 

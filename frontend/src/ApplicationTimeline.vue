@@ -5,17 +5,30 @@ import InputText from 'primevue/inputtext'
 import { onMounted, reactive, ref } from 'vue'
 import { createTimelineEntry, getTimeline, undoLastChange, updateTimelineEntry, type Timeline, type TimelineEvent } from './api'
 import EmailReference from './EmailReference.vue'
+import { emailReferenceUrl } from './emailReference'
 import PrimeTimeline from 'primevue/timeline'
 import { actorLabels, timelineEventMeta } from './presentation/timelinePresentation'
 import { appearanceVariable } from './settings/applyAppearance'
 
 function emailSummary(event: TimelineEvent) {
+  if (event.event_type === 'APPLICATION_SUBMITTED' && event.metadata?.date_only
+    && event.summary === `Application submitted on ${event.metadata.date_applied}`) {
+    return { text: 'Application submitted', reference: null }
+  }
   if (event.event_type !== 'MANUAL') return { text: event.summary, reference: null }
-  const reference = event.summary.match(/https?:\/\/[^\s<>]+/)?.[0] ?? event.summary.match(/\[Gmail:[a-f0-9]+\]/i)?.[0] ?? null
-  return { text: reference ? event.summary.replace(reference, '').trim() : event.summary, reference }
+  const references = event.summary.match(/https?:\/\/[^\s<>]+|\[Gmail:[a-f0-9]+\]/gi) ?? []
+  const unique = new Map<string, string>()
+  let text = event.summary
+  for (const reference of references) {
+    const url = emailReferenceUrl(reference)
+    if (!url) continue
+    unique.set(url, reference)
+    text = text.replace(reference, '')
+  }
+  return { text: text.replace(/[ \t]{2,}/g, ' ').trim() || 'Email activity', reference: [...unique.values()].join('\n') || null }
 }
 
-const props = defineProps<{ applicationId: string }>()
+const props = defineProps<{ applicationId: string; embedded?: boolean }>()
 const emit = defineEmits<{ undone: [] }>()
 const timeline = ref<Timeline | null>(null)
 const busy = ref(false)
@@ -80,20 +93,33 @@ onMounted(load)
 </script>
 
 <template>
-  <section class="panel timeline-panel" aria-labelledby="timeline-title">
-    <div class="timeline-heading"><div><h3 id="timeline-title">Timeline <span>{{ timeline?.events.length ?? 0 }}</span></h3><p class="hint">Submitted-on entries use the recorded application date. Add an email event when you need the exact sent or received time.</p></div><div class="actions"><Button v-if="!entryOpen" type="button" :disabled="busy" @click="openEntry()">Add email event</Button><Button v-if="timeline?.undo_available" type="button" :disabled="busy" @click="undo">Undo last change</Button><Button type="button" :disabled="busy" @click="load">{{ busy ? 'Working…' : 'Refresh timeline' }}</Button></div></div>
+  <section class="panel timeline-panel" :class="{ embedded }" aria-label="Application timeline">
+    <div class="timeline-heading"><h3 v-if="!embedded">Timeline</h3><span v-if="timeline" class="event-count">{{ timeline.events.length }} {{ timeline.events.length === 1 ? 'event' : 'events' }}</span><div class="actions"><Button v-if="!entryOpen" type="button" severity="secondary" outlined size="small" :disabled="busy" @click="openEntry()">Add email event</Button><Button v-if="timeline?.undo_available" type="button" severity="secondary" text size="small" :disabled="busy" @click="undo">Undo last change</Button><Button type="button" severity="secondary" text size="small" :disabled="busy" @click="load">{{ busy ? 'Working…' : 'Refresh' }}</Button></div></div>
     <p v-if="error" class="at-message error" role="alert">{{ error }}</p><p v-if="notice" class="at-message success" role="status">{{ notice }}</p>
-    <form v-if="entryOpen" class="entry-form" @submit.prevent="saveEntry"><fieldset :disabled="busy"><legend>{{ entryForm.id ? 'Edit email timeline entry' : 'Add email timeline entry' }}</legend><label>What happened<InputText class="at-form-control" v-model="entryForm.summary" required maxlength="500" placeholder="e.g. Submitted technical task by email" /></label><DateTimeField v-model="entryForm.occurred_at" label="Email time (local)" :disabled="busy" required /><div class="actions"><Button class="primary" type="submit">Save entry</Button><Button type="button" @click="entryOpen = false">Cancel</Button></div></fieldset></form>
+    <form v-if="entryOpen" class="entry-form" @submit.prevent="saveEntry"><fieldset :disabled="busy"><legend>{{ entryForm.id ? 'Edit email event' : 'New email event' }}</legend><label>What happened<InputText class="at-form-control" v-model="entryForm.summary" required maxlength="500" placeholder="e.g. Submitted technical task by email" /></label><DateTimeField v-model="entryForm.occurred_at" label="Email time (local)" :disabled="busy" required /><p class="hint">Use the email's sent or received time. Submission entries keep the application date.</p><div class="actions"><Button class="primary" type="submit">Save entry</Button><Button type="button" @click="entryOpen = false">Cancel</Button></div></fieldset></form>
     <p v-if="!timeline && busy" role="status">Loading activity…</p><p v-else-if="timeline && !timeline.events.length" class="hint">No activity recorded yet.</p>
     <PrimeTimeline v-if="timeline?.events.length" :value="timeline.events" class="activity-timeline" aria-label="Application activity">
-      <template #marker="{ item }"><span class="event-marker" :style="markerStyle(item.event_type)"><i :class="timelineEventMeta(item.event_type).icon" aria-hidden="true" /></span></template>
-      <template #content="{ item }"><div class="event-content"><div class="event-heading"><strong>{{ emailSummary(item).text }} <EmailReference v-if="emailSummary(item).reference" :reference="emailSummary(item).reference" /></strong><Button v-if="item.event_type === 'MANUAL'" type="button" severity="secondary" text :disabled="busy" @click="openEntry(item)">Edit</Button></div><p>{{ dateText(item) }} · {{ actorLabels[item.actor_type as keyof typeof actorLabels] }}<template v-if="item.actor_reference"> · {{ item.actor_reference }}</template></p></div></template>
+      <template #marker="{ item }"><span class="event-marker" :style="markerStyle(item.event_type)" aria-hidden="true"><i :class="timelineEventMeta(item.event_type).icon" /></span></template>
+      <template #content="{ item }"><div class="event-content"><div class="event-heading"><strong>{{ emailSummary(item).text }} <EmailReference v-if="emailSummary(item).reference" :reference="emailSummary(item).reference" /></strong><Button v-if="item.event_type === 'MANUAL'" type="button" severity="secondary" text size="small" :disabled="busy" @click="openEntry(item)">Edit</Button></div><p>{{ dateText(item) }} · {{ actorLabels[item.actor_type as keyof typeof actorLabels] }}<template v-if="item.actor_reference && !(item.actor_type === 'AGENT' && item.actor_reference === 'agent-token')"> · {{ item.actor_reference }}</template></p></div></template>
     </PrimeTimeline>
   </section>
 </template>
 
 <style scoped>
-@layer legacy {
-.timeline-panel { margin-top: 32px; }.timeline-heading, .actions, .event-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }.timeline-heading h3 { margin-bottom: 4px; }.timeline-heading h3 span { color: var(--at-text-muted); font-size: 13px; font-weight: 400; }.hint { color: var(--at-text-muted); font-size: 13px; line-height: 1.5; margin: 4px 0; }.notice { color: var(--at-successful); font-size: 14px; }.entry-form { border-top: 1px solid var(--at-border); margin-top: 18px; padding-top: 18px; }.entry-form fieldset { border: 0; margin: 0; padding: 0; }.entry-form legend { font-size: 14px; font-weight: 650; }.entry-form label { display: block; font-size: 14px; font-weight: 600; margin-top: 12px; }.entry-form input { display: block; width: 100%; margin-top: 6px; padding: 10px; border: 1px solid var(--at-border); border-radius: 5px; font: inherit; }.primary { background: var(--at-primary); border-color: var(--at-primary); color:var(--at-primary-contrast); }.timeline { list-style: none; padding: 0; margin: 22px 0 0; }.timeline li { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; position: relative; padding-bottom: 20px; }.timeline li:not(:last-child)::before { content: ''; position: absolute; left: 16px; top: 32px; bottom: 0; width: 2px; background: var(--at-border); }.icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: color-mix(in srgb, var(--at-submitted) 10%, var(--at-surface)); color: var(--at-submitted); font-size: 14px; font-weight: 700; z-index: 1; }.timeline strong { font-size: 14px; }.timeline p { color: var(--at-text-muted); font-size: 12px; margin: 5px 0 0; }.event-manual .icon { background: color-mix(in srgb, var(--at-cancelled) 10%, var(--at-surface)); color: var(--at-cancelled); }.event-task_completed .icon, .event-followup_sent .icon, .event-outcome_changed .icon { background: color-mix(in srgb, var(--at-successful) 10%, var(--at-surface)); color: var(--at-successful); }.event-undo .icon { background: color-mix(in srgb, var(--at-cancelled) 10%, var(--at-surface)); color: var(--at-cancelled); }.event-interview_created .icon, .event-interview_changed .icon { background: color-mix(in srgb, var(--at-interview) 10%, var(--at-surface)); color: var(--at-interview); }
-}
+.timeline-panel { margin-top:24px; padding:20px; border:1px solid var(--at-border); border-radius:8px; background:var(--at-surface); }
+.timeline-panel.embedded { margin:0; padding:0 20px 20px; border:0; border-radius:0; background:transparent; }
+.timeline-heading, .actions, .event-heading { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.timeline-heading { margin-bottom:20px; }.timeline-heading h3 { margin:0; }.timeline-heading > .actions { margin-left:auto; }
+.event-count, .hint { color:var(--at-text-muted); font-size:13px; }.hint { line-height:1.5; }
+.activity-timeline :deep(.p-timeline-event-opposite) { display:none; }
+.activity-timeline :deep(.p-timeline-event-separator) { flex:0 0 32px; width:32px; overflow:visible; }
+.activity-timeline :deep(.p-timeline-event-content) { min-width:0; padding:0 0 22px 14px; }
+.event-marker { display:flex; align-items:center; justify-content:center; flex:0 0 32px; width:32px; height:32px; border-radius:50%; line-height:1; overflow:visible; }
+.event-marker i { display:block; width:1em; height:1em; font-size:14px; line-height:1; }
+.event-content { min-width:0; padding-top:3px; }.event-heading { align-items:flex-start; justify-content:space-between; flex-wrap:nowrap; }
+.event-heading strong { min-width:0; overflow-wrap:anywhere; font-size:14px; line-height:1.5; font-weight:550; }
+.event-heading :deep(button) { flex-shrink:0; }.event-content p { margin:5px 0 0; color:var(--at-text-muted); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
+.entry-form { border-top:1px solid var(--at-border); margin:18px 0; padding-top:18px; }.entry-form fieldset { border:0; margin:0; padding:0; min-width:0; }
+.entry-form legend { font-size:14px; font-weight:650; }.entry-form label { display:block; font-size:14px; font-weight:600; margin-top:12px; }.entry-form .actions { margin-top:14px; }
+@media(max-width:600px) { .timeline-panel.embedded { padding:0 14px 14px; }.timeline-heading > .actions { margin-left:0; }.activity-timeline :deep(.p-timeline-event-content) { padding-left:10px; } }
 </style>

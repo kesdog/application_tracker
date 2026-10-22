@@ -46,15 +46,3 @@ def test_mailbox_completion_preserves_newer_context_and_replays_receipt(tmp_path
         latest = client.get(path + '/work').json()['followups'][0]
         assert latest['body'] == ('A newer human message' if change == 'message' else 'Original message')
         assert latest['status'] == 'PREPARED'
-
-
-def test_disconnected_draft_replay_creates_one_local_note(client):
-    application = client.post('/api/applications', json={'company': 'Example', 'job_title': 'Engineer', 'date_applied': '2026-10-18', 'email_reference': 'mail'}).json()
-    path = f"/api/applications/{application['id']}"
-    followup = client.get(path + '/work').json()['followups'][0]
-    request = {'content': 'Local offline draft', 'operation_id': str(uuid4()), 'expected_revision': followup['revision']}
-    endpoint = path + '/followups/' + followup['id'] + '/draft'
-    first = client.post(endpoint, json=request)
-    assert first.status_code == 200 and first.json()['location'] == 'LOCAL_NOTE'
-    assert client.post(endpoint, json=request).json() == first.json()
-    assert len(client.get(path + '/work').json()['notes']) == 1

@@ -1,0 +1,12 @@
+services:
+  tracker:
+    environment:
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?Set GOOGLE_CLIENT_ID in deploy/hosted.env}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: https://${TRACKER_DOMAIN}/api/connections/google/callback
+      APP_CREDENTIAL_KEY_FILE: /run/secrets/tracker_credential_key
+    secrets:
+      - tracker_credential_key
+secrets:
+  tracker_credential_key:
+    file: ./deploy/secrets/credential.key

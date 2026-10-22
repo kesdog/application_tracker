@@ -4,6 +4,7 @@ import logging
 from datetime import timedelta, timezone
 
 from sqlalchemy.orm import Session
+from sqlalchemy import or_, select
 
 from app import dashboard
 from app.models import Application, PostingStatus, utc_now
@@ -33,6 +34,8 @@ class ReminderScheduler:
         now = utc_now()
         groups = {name: [] for name in ("due_followups", "overdue_followups", "due_tasks", "overdue_tasks", "upcoming_interviews")}
         for item in data["upcoming"]:
+            if item['kind'] == 'DEADLINE':
+                continue
             if item["kind"] == "INTERVIEW":
                 group = "upcoming_interviews"
             else:
@@ -57,14 +60,18 @@ class PostingCheckScheduler:
     """Low-frequency, bounded posting checks; no retry loop or lifecycle mutation."""
     def __init__(self, engine, settings, interval_seconds: int = 60):
         self.engine = engine; self.settings = settings; self.interval_seconds = interval_seconds
-        self.stop = asyncio.Event(); self.last_run = utc_now()
+        self.stop = asyncio.Event(); self.last_run = None
         self.snapshot = {"checked_at": None, "checked": 0, "closed": 0, "unknown": 0}
 
     async def refresh(self) -> dict:
-        if utc_now() - self.last_run < timedelta(hours=self.settings.posting_check_interval_hours):
-            return self.snapshot
+        cutoff = utc_now() - timedelta(hours=self.settings.posting_check_interval_hours)
         with Session(self.engine) as session:
-            candidates = [(item.id, item.job_url) for item in session.query(Application).filter_by(deleted_at=None).filter(Application.job_url.is_not(None)).filter(Application.posting_status != PostingStatus.CLOSED).all()]
+            from app.models import ApplicationStatus
+            candidates = list(session.execute(select(Application.id, Application.job_url).where(
+                Application.deleted_at.is_(None), Application.job_url.is_not(None),
+                Application.status != ApplicationStatus.CLOSED, Application.posting_status != PostingStatus.CLOSED,
+                or_(Application.posting_last_checked_at.is_(None), Application.posting_last_checked_at <= cutoff),
+            ).order_by(Application.posting_last_checked_at, Application.id).limit(100)))
         semaphore = asyncio.Semaphore(self.settings.posting_check_concurrency)
         checker = PostingChecker(browser_fallback=render_with_playwright if self.settings.posting_playwright_fallback else None)
         async def one(pair):
@@ -73,10 +80,13 @@ class PostingCheckScheduler:
             def persist():
                 with Session(self.engine) as session:
                     application = get_application(session, pair[0])
+                    session.refresh(application)
+                    if application.job_url != pair[1] or application.status.value == 'CLOSED':
+                        return None
                     return posting_service.apply_result(session, application, result)
             return await asyncio.to_thread(persist)
         results = await asyncio.gather(*(one(pair) for pair in candidates), return_exceptions=True)
-        checked = [item for item in results if not isinstance(item, Exception)]
+        checked = [item for item in results if item is not None and not isinstance(item, Exception)]
         self.last_run = utc_now()
         self.snapshot = {"checked_at": self.last_run.replace(tzinfo=timezone.utc), "checked": len(checked), "closed": sum(item.status.value == "CLOSED" for item in checked), "unknown": sum(item.status.value == "UNKNOWN" for item in checked)}
         return self.snapshot

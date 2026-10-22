@@ -17,12 +17,8 @@ from app import invalidation
 
 
 @pytest.fixture
-def setup(tmp_path):
-    settings = Settings(app_data_dir=tmp_path, _env_file=None)
-    app = create_app(settings)
-    with TestClient(app) as client:
-        yield client, app, settings
-
+def setup(client):
+    return client, client.app, client.app.state.settings
 
 def agent_call(client, token, operation, payload=None):
     headers = {"Authorization": f"Bearer {token}"} if token else {}

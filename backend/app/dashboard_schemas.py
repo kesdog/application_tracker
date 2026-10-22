@@ -21,7 +21,7 @@ class DashboardApplication(BaseModel):
 
 class UpcomingItem(BaseModel):
     id: str
-    kind: Literal["TASK", "FOLLOWUP", "INTERVIEW"]
+    kind: Literal["TASK", "FOLLOWUP", "INTERVIEW", "DEADLINE"]
     title: str
     due_at: datetime
     status: str

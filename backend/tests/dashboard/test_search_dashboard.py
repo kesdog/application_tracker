@@ -129,3 +129,15 @@ def test_dashboard_excludes_soft_deleted_application_activity(client):
     assert dashboard["counts"]["active_applications"] == 0
     assert dashboard["upcoming"] == []
     assert dashboard["recent_activity"] == []
+
+
+def test_application_deadlines_appear_as_dates_without_creating_followup_notices(client):
+    from datetime import date, timedelta
+    application = create_application(client)
+    deadline = (date.today() + timedelta(days=2)).isoformat()
+    assert client.patch('/api/applications/' + application['id'], json={'deadline': deadline, 'deadline_kind': 'FIRST_ROUND'}).status_code == 200
+    dashboard = client.get('/api/dashboard').json()
+    item = next(item for item in dashboard['upcoming'] if item['kind'] == 'DEADLINE')
+    assert item['title'] == 'First-round selection' and item['due_at'].startswith(deadline)
+    assert item['status'] == 'DATE_ONLY'
+    assert not any(item['kind'] == 'DEADLINE' for item in client.get('/api/reminders').json()['due_tasks'])

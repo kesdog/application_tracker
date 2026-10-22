@@ -9,14 +9,7 @@ from app.config import Settings
 from app.followup_reminders import synchronize
 from app.main import create_app
 from app.models import FollowUpNotice
-
-
-def settings(client, **changes):
-    values = client.get('/api/settings/general').json()
-    revision = values.pop('revision')
-    result = client.put('/api/settings/general', json={**values, **changes, 'expected_revision': revision})
-    assert result.status_code == 200, result.text
-    return result.json()
+from tests.support import save_settings as settings
 
 
 def application(client, **changes):

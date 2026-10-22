@@ -9,6 +9,7 @@ import InputText from 'primevue/inputtext'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { deleteApplication, getApplication, getDashboard, updateApplication, type Application, type ApplicationUpdate, type DashboardData } from './api'
 import { useConfirm } from 'primevue/useconfirm'
+import CompletedFollowUps from './components/applications/CompletedFollowUps.vue'
 import ApplicationStatusTag from './components/applications/ApplicationStatusTag.vue'
 import ApplicationOutcomeTag from './components/applications/ApplicationOutcomeTag.vue'
 import ApplicationNextAction from './components/applications/ApplicationNextAction.vue'
@@ -32,6 +33,8 @@ const saving = ref(false)
 const loadError = ref('')
 const saveError = ref('')
 const saved = ref(false)
+const postingCopyNotice = ref('')
+const postingCopyError = ref(false)
 const clearOutcome = ref(false)
 const timelineVersion = ref(0)
 const contentVersion = ref(0)
@@ -50,6 +53,18 @@ const visibleOptionalFields = computed(() => optionalFields.filter(field => hasT
 const visibleDescription = computed(() => (application.value?.description ?? '').replace(
   'Imported from INDEED application confirmation email. The email contains no extractable direct job posting URL. Original source and dated email evidence are preserved in the timeline. The original Indeed source is recorded; the posting URL still needs verification.', '',
 ).trim())
+
+async function copyJobPosting() {
+  if (!application.value?.job_url) return
+  try {
+    await navigator.clipboard.writeText(application.value.job_url)
+    postingCopyError.value = false
+    postingCopyNotice.value = 'Job posting link copied.'
+  } catch {
+    postingCopyError.value = true
+    postingCopyNotice.value = 'Could not copy the link. Right-click Job posting to copy its address.'
+  }
+}
 
 async function load() {
   loading.value = true
@@ -154,7 +169,7 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
     <BusyIndicator v-if="loading" label="Loading application…" />
     <div v-else-if="loadError" role="alert"><p class="at-message error">{{ loadError }}</p><Button type="button" @click="load">Try again</Button></div>
     <template v-else-if="application">
-      <div class="focus-heading"><div><p class="eyebrow">{{ application.company }}<template v-if="application.location"> · {{ application.location }}</template><template v-if="application.remote_policy"> · {{ remotePolicyMeta[application.remote_policy]?.label ?? application.remote_policy }}</template></p><h2 id="focus-title">{{ application.job_title }}</h2><div class="badges"><ApplicationStatusTag :status="application.status" /><ApplicationOutcomeTag v-if="application.outcome" :outcome="application.outcome" /></div></div><div v-if="!draft" class="header-actions"><Button type="button" @click="edit">Edit application</Button><Button type="button" severity="danger" outlined :disabled="saving" @click="confirmDelete">Delete application</Button></div></div>
+      <div class="focus-heading"><div><p class="eyebrow">{{ application.company }}<template v-if="application.location"> · {{ application.location }}</template><template v-if="application.remote_policy"> · {{ remotePolicyMeta[application.remote_policy]?.label ?? application.remote_policy }}</template></p><h2 id="focus-title">{{ application.job_title }}</h2><div class="badges"><ApplicationStatusTag :status="application.status" /><CompletedFollowUps :count="application.completed_followup_count" /><ApplicationOutcomeTag v-if="application.outcome" :outcome="application.outcome" /></div></div><div v-if="!draft" class="header-actions"><Button type="button" @click="edit">Edit application</Button><Button type="button" severity="danger" outlined :disabled="saving" @click="confirmDelete">Delete application</Button></div></div>
       <div v-if="!draft && nextAction" class="focus-next"><span>Next step</span><ApplicationNextAction :action="nextAction" /></div>
       <p v-if="saveError && !draft" class="at-message error" role="alert">{{ saveError }}</p>
       <p v-if="saved" class="at-message success" role="status">Changes saved.</p>
@@ -175,7 +190,7 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
           <p class="hint">Keep at least one source: a job URL or an email reference.</p>
           <div class="grid">
             <label>Job URL<InputText class="at-form-control" v-model="draft.job_url" type="url" maxlength="2048" @change="onJobUrlChanged" /></label>
-            <label>Email reference<InputText class="at-form-control" v-model="draft.email_reference" maxlength="2048" /></label>
+            <label>Email references<Textarea class="at-form-control" v-model="draft.email_reference" maxlength="2048" rows="3" /><small>One message link, ID, or subject per line.</small></label>
             <label>Contact type<Select class="at-form-control" aria-label="Contact type" v-model="draft.contact_type" :disabled="saving" :options="contactTypes" option-label="label" option-value="value" option-disabled="disabled" /></label>
             <label>Contact name<InputText class="at-form-control" v-model="draft.contact_name" maxlength="300" /></label>
             <label>Contact email<InputText class="at-form-control" v-model="draft.contact_email" type="email" maxlength="320" placeholder="name@company.com" /></label>
@@ -211,29 +226,27 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
 
       <template v-else>
         <section class="panel" aria-label="Application overview">
-          <div class="badges"><AppTag v-bind="postingStatusMeta[application.posting_status]" /><AppTag v-if="application.remote_policy && remotePolicyMeta[application.remote_policy]" v-bind="remotePolicyMeta[application.remote_policy]!" /></div>
-          <dl class="details">
-            <div><dt>Date applied</dt><dd>{{ application.date_applied }}</dd></div>
-            <div v-if="application.deadline"><dt>{{ application.deadline_kind === 'FIRST_ROUND' ? 'First-round selection' : 'Applications close' }}</dt><dd>{{ application.deadline }}</dd></div>
+          <div class="overview-top"><div class="source-actions"><a v-if="application.job_url" :href="application.job_url" target="_blank" rel="noopener noreferrer">Job posting <i class="pi pi-external-link" aria-hidden="true" /></a><span v-else class="missing-value">Job posting not linked</span><Button v-if="application.job_url" type="button" severity="secondary" outlined size="small" @click="copyJobPosting"><i class="pi pi-copy" aria-hidden="true" />Copy job posting</Button></div><AppTag v-bind="postingStatusMeta[application.posting_status]" /></div>
+          <p v-if="postingCopyNotice" :role="postingCopyError ? 'alert' : 'status'" class="hint">{{ postingCopyNotice }}</p>
+          <div class="overview-meta"><span>Applied {{ application.date_applied }}</span><span v-if="application.deadline">{{ application.deadline_kind === 'FIRST_ROUND' ? 'First-round selection' : 'Applications close' }} {{ application.deadline }}</span><EmailReference v-if="hasText(application.email_reference)" :reference="application.email_reference" label="Email ref" /></div>
+          <details class="supporting-details"><summary>Application details</summary><dl class="details">
             <div v-if="hasText(application.contact_name)"><dt>Contact</dt><dd>{{ application.contact_name }}</dd></div>
             <div v-if="hasText(application.contact_email)"><dt>Contact email</dt><dd><a :href="`mailto:${application.contact_email}`">{{ application.contact_email }}</a></dd></div>
             <div v-if="application.intermediary"><dt>Via / intermediary</dt><dd>{{ application.intermediary }}</dd></div>
-            <div><dt>Job URL</dt><dd><a v-if="application.job_url" :href="application.job_url" target="_blank" rel="noopener noreferrer">{{ application.job_url }} ↗</a><span v-else class="missing-value">Missing — use the posting search below.</span></dd></div>
-            <div v-if="hasText(application.email_reference)"><dt>Email reference</dt><dd><EmailReference :reference="application.email_reference" label="Open email ↗" /></dd></div>
             <div v-if="hasText(application.phone_number)"><dt>Phone number</dt><dd><a :href="`tel:${application.phone_number}`">{{ application.phone_number }}</a></dd></div>
             <div v-if="application.contact_type === 'PHONE'"><dt>Contact type</dt><dd>Phone</dd></div>
             <div v-if="hasText(application.remote_policy)"><dt>Remote policy</dt><dd>{{ remotePolicyLabel(application.remote_policy) }}</dd></div>
             <div v-if="hasText(application.source) && application.source !== 'OTHER'"><dt>Source</dt><dd>{{ jobSourceLabel(application.source) }}</dd></div>
             <div v-if="application.followup_delay_days !== null && application.followup_delay_days !== 7"><dt>Follow-up delay</dt><dd>{{ application.followup_delay_days }} days</dd></div>
             <div v-for="field in visibleOptionalFields" :key="field.key"><dt>{{ field.label }}</dt><dd>{{ application[field.key] }}</dd></div>
-          </dl>
+          </dl></details>
         </section>
-        <section v-if="visibleDescription || hasText(application.requirements)" class="panel"><template v-if="visibleDescription"><h3>Description</h3><p class="text-block">{{ visibleDescription }}</p></template><template v-if="hasText(application.requirements)"><h3>Requirements</h3><p class="text-block">{{ application.requirements }}</p></template></section>
-        <PostingReview :application="application" @changed="postingChanged" />
+        <details v-if="visibleDescription || hasText(application.requirements)" class="panel"><summary>Role description & requirements</summary><template v-if="visibleDescription"><h3>Description</h3><p class="text-block">{{ visibleDescription }}</p></template><template v-if="hasText(application.requirements)"><h3>Requirements</h3><p class="text-block">{{ application.requirements }}</p></template></details>
+        <details class="posting-tools"><summary>Posting checks & search</summary><PostingReview :application="application" embedded @changed="postingChanged" /></details>
         <ApplicationDocuments :key="`documents-${contentVersion}`" :application-id="application.id" @changed="timelineVersion++" />
         <ApplicationInterviews :key="`interviews-${contentVersion}`" :application-id="application.id" @changed="workChanged" />
         <ApplicationWork :key="`work-${contentVersion}`" :application-id="application.id" :phone-number="application.phone_number" :closed="application.status === 'CLOSED'" @changed="workChanged" />
-        <ApplicationTimeline :key="timelineVersion" :application-id="application.id" @undone="handleUndo" />
+        <details class="posting-tools"><summary>Timeline</summary><ApplicationTimeline :key="timelineVersion" :application-id="application.id" embedded @undone="handleUndo" /></details>
       </template>
     </template>
   </section>
@@ -253,6 +266,11 @@ a { color: var(--at-link); text-underline-offset: 3px; overflow-wrap: anywhere; 
 .danger { color: var(--at-unsuccessful); border-color: var(--at-unsuccessful); background: color-mix(in srgb, var(--at-unsuccessful) 10%, var(--at-surface)); }
 .panel { background: var(--at-surface); border: 1px solid var(--at-border); border-radius: 8px; padding: 24px; margin: 20px 0; }
 .details { margin-top: 16px; }
+.overview-top, .source-actions, .overview-meta { display:flex; align-items:center; flex-wrap:wrap; gap:12px 18px; }
+.overview-top { justify-content:space-between; }.overview-meta { margin-top:16px; font-size:13px; color:var(--at-text-muted); }
+.source-actions > a { font-weight:650; }.source-actions i { font-size:12px; }
+summary { cursor:pointer; font-weight:600; }.supporting-details { margin-top:18px; padding-top:14px; border-top:1px solid var(--at-border); }
+.posting-tools { margin:20px 0; border:1px solid var(--at-border); border-radius:8px; background:var(--at-surface); }.posting-tools > summary { padding:16px 24px; }
 .details > div { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 20px; }
 .details dd { text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; }
 .missing-value { color: var(--at-cancelled); }

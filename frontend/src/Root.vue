@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import App from './App.vue'
+import WelcomeExperience from './components/welcome/WelcomeExperience.vue'
 import { browserSession, workspaceLogin } from './auth'
+const welcome = ref<InstanceType<typeof WelcomeExperience> | null>(null)
 const humanSession = browserSession.state
 const checkHumanSession = () => workspaceLogin.check()
 const password = ref('')
@@ -22,10 +24,11 @@ onMounted(checkHumanSession)
 </script>
 
 <template>
-  <template v-if="humanSession.loaded && humanSession.authenticated"><p v-if="error" class="auth-error" role="alert">{{ error }}</p><App :hosted="humanSession.enabled" @signout="logout" /></template>
+  <template v-if="humanSession.loaded && humanSession.authenticated"><p v-if="error" class="auth-error" role="alert">{{ error }}</p><App :hosted="humanSession.enabled" @signout="logout" @open-guide="welcome?.openGuide()" @open-legal="document => welcome?.openLegal(document)" /></template>
   <main v-else class="sign-in"><section><div class="mark" aria-hidden="true">AT</div><h1>Application Tracker</h1><p v-if="humanSession.checking" role="status">Connecting to your workspace…</p>
     <template v-else><p v-if="humanSession.error" class="auth-error" role="alert">{{ humanSession.error }}</p><form v-if="humanSession.loaded" @submit.prevent="login"><h2>Sign in to your workspace</h2><p>Use the workspace password set on your server.</p><label for="workspace-password">Password</label><input id="workspace-password" v-model="password" type="password" autocomplete="current-password" maxlength="1024" required :disabled="busy" /><p v-if="error" class="auth-error" role="alert">{{ error }}</p><button type="submit" :disabled="busy || !password">{{ busy ? 'Signing in…' : 'Sign in' }}</button></form><button v-else type="button" @click="checkHumanSession">Try again</button></template>
   </section></main>
+  <WelcomeExperience ref="welcome" :ready="humanSession.loaded && humanSession.authenticated" />
 </template>
 
 <style scoped>

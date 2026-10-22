@@ -52,6 +52,19 @@ def run() -> None:
     if not server.started:
         raise RuntimeError(f"The local server could not start on {address}")
 
+    if os.environ.get('APP_DESKTOP_SMOKE') == '1':
+        import urllib.request
+        try:
+            with urllib.request.urlopen(address + '/api/health', timeout=10) as response:
+                if response.status != 200:
+                    raise RuntimeError('Packaged API health check failed')
+        finally:
+            server.should_exit = True
+            thread.join(timeout=15)
+        if thread.is_alive():
+            raise RuntimeError('Packaged application failed to shut down')
+        return
+
     def open_page(_icon, _item):
         webbrowser.open(address)
 

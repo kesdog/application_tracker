@@ -3,7 +3,9 @@ import type { PresentationMeta } from './applicationPresentation'
 export const actorLabels: Record<ActorType, string> = { HUMAN: 'Human', AGENT: 'Agent', SYSTEM: 'System' }
 const timelineMeta: Record<string, PresentationMeta> = {
   APPLICATION_CREATED: { label: 'Application created', tone: 'submitted', icon: 'pi pi-plus' },
-  APPLICATION_SUBMITTED: { label: 'Application submitted', tone: 'submitted', icon: 'pi pi-send' },
+  APPLICATION_SUBMITTED: { label: 'Application submitted', tone: 'submitted', icon: 'pi pi-file-check' },
+  APPLICATION_UPDATED: { label: 'Application updated', tone: 'neutral', icon: 'pi pi-file-edit' },
+  POSTING_STATUS_CHANGED: { label: 'Posting status changed', tone: 'neutral', icon: 'pi pi-link' },
   STATUS_CHANGED: { label: 'Status changed', tone: 'submitted', icon: 'pi pi-arrow-right' },
   OUTCOME_CHANGED: { label: 'Outcome changed', tone: 'neutral', icon: 'pi pi-flag' },
   NOTE_ADDED: { label: 'Note added', tone: 'neutral', icon: 'pi pi-file-edit' },

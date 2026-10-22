@@ -1,5 +1,5 @@
 from datetime import date, datetime, timezone
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, EmailStr, Field, HttpUrl, TypeAdapter, field_validator, model_validator
 import phonenumbers
@@ -138,6 +138,9 @@ class ApplicationRead(ApplicationCreate):
     posting_check_failures: int
     deleted_at: datetime | None
     duplicate_warnings: list[DuplicateMatch] = Field(default_factory=list)
+    completed_followup_count: int = Field(default=0, ge=0)
+    has_potential_recipients: bool = False
+    followup_target_status: Literal['UNKNOWN', 'POTENTIAL', 'CONFIRMED', 'SENT'] = 'UNKNOWN'
 
     @field_validator("posting_last_checked_at", "deleted_at")
     @classmethod

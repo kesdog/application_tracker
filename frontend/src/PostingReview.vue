@@ -7,7 +7,7 @@ import InputText from 'primevue/inputtext'
 import { computed, ref, watch } from 'vue'
 import { checkPosting, getPostingReview, recordPostingReview, type Application, type PostingReviewPlan } from './api'
 
-const props = defineProps<{ application: Application }>()
+const props = defineProps<{ application: Application; embedded?: boolean }>()
 const emit = defineEmits<{ changed: [] }>()
 const plan = ref<PostingReviewPlan | null>(null)
 const busy = ref(false)
@@ -67,9 +67,9 @@ async function saveReview() {
 </script>
 
 <template>
-  <section class="posting-panel" aria-labelledby="posting-title">
-    <h3 id="posting-title">Job posting</h3>
-    <p v-if="application.job_url || application.posting_last_checked_at"><strong>{{ label }}</strong><span v-if="application.posting_last_checked_at"> · {{ new Date(application.posting_last_checked_at).toLocaleString() }} (local time)</span></p>
+  <section class="posting-panel" :class="{ embedded }" aria-label="Posting checks and search">
+    <h3 v-if="!embedded">Job posting</h3>
+    <p v-if="(!embedded && application.job_url) || application.posting_last_checked_at"><strong v-if="!embedded">{{ label }}</strong><span v-if="application.posting_last_checked_at">{{ embedded ? 'Last checked ' : ' · ' }}{{ new Date(application.posting_last_checked_at).toLocaleString() }} (local time)</span></p>
     <p v-if="application.posting_check_failures > 0 && application.posting_status !== 'UNKNOWN'" class="hint">Last confirmed status: {{ application.posting_status }}. The latest check was inconclusive.</p>
     <div v-if="application.job_url" class="step">
       <h4>Check the saved posting</h4>
@@ -107,6 +107,7 @@ async function saveReview() {
 </template>
 
 <style scoped>
+.posting-panel.embedded { padding:0 20px 20px; border:0; border-radius:0; background:transparent; }
 @layer legacy {
 .posting-panel { padding:24px; border:1px solid var(--at-border); border-radius:10px; background:var(--at-surface); }
 h3 { margin:0 0 14px; } h4 { margin:0 0 8px; } .hint { color:var(--at-text-muted); font-size:13px; line-height:1.5; }

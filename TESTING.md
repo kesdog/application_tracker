@@ -1,127 +1,58 @@
-# Testing by feature
+# Development checks
 
-Use the project Python environment from the repository root. During development,
-run the segments affected by the edit; run the complete gate before pushing.
+Use the project virtual environment from the repository root:
 
 ```powershell
-# Choose checks from staged, unstaged, deleted and untracked files.
+.\.venv\Scripts\python.exe scripts/test.py --list
 .\.venv\Scripts\python.exe scripts/test.py --changed
-
-# Also include commits since a branch/ref (plus current worktree edits).
 .\.venv\Scripts\python.exe scripts/test.py --changed --base origin/main
-
-# Inspect selection without running anything.
-.\.venv\Scripts\python.exe scripts/test.py --files backend/app/push.py --dry-run
-
-# Explicit feature selection, useful during repeated edits.
 .\.venv\Scripts\python.exe scripts/test.py --segment applications
-.\.venv\Scripts\python.exe scripts/test.py --segment followups notifications
-
-# Required before a push: build/type-check, pip check, all backend/tooling tests,
-# then all frontend tests. Stops at the first failed command.
+.\.venv\Scripts\python.exe scripts/test.py --segment followups toolbox
 .\.venv\Scripts\python.exe scripts/test.py --full
 ```
 
-`--list` shows the available segments. `--files` accepts one or more paths,
-including absolute paths inside this checkout. Selection unions the affected
-segments, so a segment runs once even when several edited files require it.
-Documentation-only edits and a clean checkout select no tests.
+`--changed` includes staged, unstaged, deleted and untracked files. `--base` also
+includes committed changes. Use `--files <paths> --dry-run` to inspect selection.
+Use `--segment` for focused iterations and `--full` before pushing.
 
-The runner places isolated pytest workspaces under the ignored `.run/` directory
-with a fresh name for each invocation, avoiding stale or inaccessible user temp
-folders. They can be removed when no test run is active.
+The full gate builds and type-checks the frontend, checks installed Python
+dependencies, then runs all application, toolbox and runner tests. The toolbox
+is independent: routine follow-up checks run the app's adapter tests, while
+`--segment toolbox` runs the vendored library tests. `--full` runs both once.
 
-| Segment | Backend coverage | Frontend coverage |
-| --- | --- | --- |
-| applications | Creation, lifecycle, contacts, deadlines | Wizard, table, filters, status/action presentation, source/mailbox links |
-| activity | Timeline, actors, undo, soft deletion | Covered by the shared API contract |
-| work | Notes, tasks, scoping, validation, foreign keys | Date labels |
-| followups | Prepared messages, revisions, scheduling, legacy compatibility, local drafts | Editor, templates, queue, notices |
-| interviews | CRUD, context, global ordering, calendar | Covered by the shared API contract and date labels |
-| dashboard | Search, duplicates, counts, work ordering, reminder snapshot | Covered by the shared API contract and action presentation |
-| documents | Uploads, references, filename search, CSV/XLSX | Covered by the shared API contract |
-| posting | Confirmation extraction, direct/rendered checks, manual reviews | No dedicated component test; shared changes use frontend fallback |
-| agent | Permissions, idempotency, REST/MCP, schemas, SSE | Covered by the shared API contract |
-| auth | Hosted/local access, sessions, CSRF, backup/restore | Login, session loss, protected UI, CSRF |
-| notifications | Push delivery, leases, retries, subscription/auth, restore | Device opt-in/removal and service worker |
-| migrations | Populated historical database upgrades and restart preservation | — |
-| system | Health, configuration, startup, static serving | — |
-| api | — | Health, request route table, response/error handling, multipart and links |
-| appearance | — | Palettes, persistence, readability and table preferences |
-| shell | — | Sidebar accessibility/persistence and theme controls |
-| tooling | Test selector regressions | — |
+For a clean release environment, install `requirements-dev.lock` with
+`pip install --require-hashes -r requirements-dev.lock`, then install the app and
+vendored toolbox with `--no-deps --no-build-isolation`. The universal lock contains
+platform markers and includes the build/test/search dependencies. Regenerate both
+locks with uv 0.13.5 and `python scripts/lock.py` after a reviewed dependency change.
 
-Backend files live in `backend/tests/<segment>/`, frontend files in
-`frontend/tests/<segment>/`, and runner regressions in `tests/`. Cross-feature
-tests have one owning segment; automatic selection also includes their consumers.
+`python scripts/artifact_smoke.py` exercises the installed distribution, compiled
+UI, migrations, persistence, document upload and backup/recovery with synthetic
+data. Windows builds also support `APP_DESKTOP_SMOKE=1` for a noninteractive
+start/health/shutdown check. `.github/workflows/release-gate.yml` requires Windows
+and Linux gates and retains candidate ZIP/image artifacts and logs. It does not
+establish live OAuth, physical-phone acceptance or signing/upgrade readiness.
+CI pins Python 3.13.17 on both platforms, which has official Windows and Linux
+runner builds; local validation also covers the installed Python 3.12.14 runtime.
 
-For a single test or layer, the underlying tools still work:
+Tests belong in `backend/tests/<segment>/` and `frontend/tests/<segment>/`.
+`--list` is the current segment registry; runner checks live in `tests/`.
+Put reusable setup in support modules or fixtures rather than importing helpers
+from collected test modules. Each database-backed test keeps an isolated
+workspace and app lifespan. Temporary workspaces are under ignored `.run/`.
 
-```powershell
-.\.venv\Scripts\python.exe -m pytest backend/tests/applications -q
-.\.venv\Scripts\python.exe -m pytest backend/tests/migrations -q
-pnpm --dir frontend test tests/applications
-pnpm --dir frontend test tests/api/requests.test.ts
-```
+Backend source selection follows the consumer map in `scripts/test.py`;
+frontend selection follows local imports transitively. Shared and unknown
+source files deliberately select broader checks. Dependency, build, deployment,
+runner and generic test-support changes select the full applicable suites.
+Update the consumer map when adding backend modules or cross-feature consumers.
+The selector cannot infer every runtime/data dependency; include extra segments
+or run `--full` when a change crosses those boundaries.
 
-## How automatic selection works
+Default validation is offline. Live Google probes require explicit operator
+opt-in and independently authorized test accounts; they are not part of routine
+local or CI runs. Do not give CI a personal mailbox or workspace database.
 
-The follow-ups segment also runs the vendored toolbox's offline extraction, cache, URL-safety and background-job tests. The dev environment requires the toolbox search/dev extras and pytest-asyncio. Root pytest configuration uses asyncio auto mode so unmarked async vendor tests also run in the combined suite. App-owned discovery tests cover duplicate queue requests, the global five-job limit, lease recovery, stale results, recipient selection and manual fallback; network calls use controlled research fixtures.
-
-Recipient report coverage verifies global/per-application budgets, inheritance,
-settings conflicts, REST/MCP permissions, populated migrations, derived-only
-storage, cross-application/restart reuse, URL aliases, concurrent deduplication,
-cancellation recovery, incremental saves, explicit refresh and saved link
-frontiers. Legacy-cache conversion is offline; cache tests ensure raw HTML never
-enters the replacement persistent search cache. Frontend cases cover controls,
-refresh, lazy/scoped report inspection, pagination and safe text rendering.
-
-Backend selection uses the reviewed consumer map in `scripts/test.py`.
-Application services/schemas, work, activity, templates, models, database,
-configuration, startup and migrations are shared across the backend and select
-all backend segments. Smaller modules select their feature and known consumers.
-Agent transport changes also select posting, follow-ups and hosted access.
-
-Frontend selection follows local imports transitively through TypeScript and Vue
-files, including dynamic imports, test mocks and raw public assets. It selects
-the owning segments of dependent tests. This intentionally includes shell/auth
-checks when their imported component tree depends on the edit.
-
-Unknown or currently uncovered source files select the entire affected layer;
-dependency/build/deployment and runner changes select both layers. This is a
-conservative development aid, not a guarantee of impact analysis: it cannot
-infer every runtime/data dependency. If a change crosses feature boundaries,
-add the relevant segments or use `--full`. When adding a backend module, add its
-consumers to the map. Add new tests under an existing segment, or register a new
-segment in the runner and its selection tests.
-
-## Review and consolidation
-
-The review started with 248 backend cases and 101 frontend cases. Existing
-distinct regression coverage was kept for authentication, data preservation,
-transport permissions, concurrent writes, DST, notification retries/leases,
-privacy and browser behavior.
-
-- Eight backend modules now share a function-scoped client fixture. Every test
-  still gets an isolated temporary database and app lifespan.
-- Historical migration tests share the upgrade/seeding fixture and live together.
-  Their seeded snapshots exercise distinct schema transitions, so they remain
-  separate. The schema-head assertion follows Alembic's current head.
-- The smaller due/overdue dashboard check was folded into the richer dashboard
-  scenario. The empty-document-filter assertion was folded into document search.
-- Free-text search creates one application and checks all nine metadata queries,
-  avoiding eight repeated database startups while retaining every assertion.
-- Seven small frontend API files were consolidated into request contract tables.
-  Read/write paths, encoded IDs, explicit nulls, error payloads, multipart uploads,
-  export links and token rotation requests remain checked. Date behavior stays
-  in its own utility test.
-- Repeated palette mutation assertions were removed from status-tag cases;
-  appearance tests already check that behavior. Tag rendering assertions remain.
-- Release-number tests were reassigned to their owning features. Static-serving
-  checks now create their own assets instead of requiring an old `frontend/dist`;
-  the full gate still builds/type-checks the real frontend.
-
-The application suites now have 238 backend cases and 83 frontend cases, plus six
-selector regressions. Case counts measure organization, not coverage percentage;
-consolidated tables still exercise multiple assertions and inputs. Direct
-`pytest` and `pnpm test` continue to run their full respective suites.
+The detailed coverage inventory and review notes are maintained locally in
+ignored `test.md`. It is intentionally separate from this public contributor
+guide and must not be force-added to Git or included in application bundles.

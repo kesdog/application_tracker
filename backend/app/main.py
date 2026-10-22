@@ -36,6 +36,12 @@ from app import followup_templates, followup_reminders, human_auth, push
 from app import followup_ai
 from app import recipient_discovery
 from app import google_connection
+from app.sync.engine import SyncEngine
+from app.sync.drive import DriveTransport
+from app.sync.routes import sync_router
+from app.sync.worker import SyncWorker
+from app.application_sync import ApplicationSync
+from app.workspace_routes import router as workspace_router
 from sqlalchemy.orm.exc import StaleDataError
 from sqlalchemy import select, func, or_
 
@@ -55,6 +61,9 @@ def create_app(
     google_store=None,
     google_transport=None,
     google_verifier=None,
+    sync_transport=None,
+    sync_store=None,
+    sync_background: bool = True,
 ) -> FastAPI:
     settings = settings or Settings()
     access_logger = logging.getLogger('uvicorn.access')
@@ -74,6 +83,9 @@ def create_app(
         phone_push = None
         push_task = None
         recipient_jobs = None
+        sync_worker = None
+        sync_task = None
+        application_sync = None
         try:
             migrate_database(engine)
             application.state.human_sessions = human_auth.HumanSessionManager(engine, settings)
@@ -82,9 +94,15 @@ def create_app(
             google = google_connection.GoogleConnection(engine, settings, store=google_store,
                 transport=google_transport, verifier=google_verifier)
             application.state.google = google
+            application.state.sync = SyncEngine(engine, sync_transport or DriveTransport(google), sync_store or google.store)
+            if sync_background:
+                sync_worker = SyncWorker(application.state.sync)
+                sync_task = asyncio.create_task(sync_worker.run())
             nonlocal mail_provider
             mail_provider = supplied_mail_provider or google_connection.GoogleMailProvider(google)
             application.state.mail_provider = mail_provider
+            application_sync = ApplicationSync(engine, settings, google, mail_provider, application.state.sync)
+            application.state.application_sync = application_sync
             with Session(engine) as session:
                 applications.ensure_submission_events(session)
                 work.ensure_initial_followups(session, settings)
@@ -102,6 +120,11 @@ def create_app(
             recipient_jobs.start()
             yield
         finally:
+            if application_sync:
+                await asyncio.to_thread(application_sync.close)
+            if sync_worker and sync_task:
+                sync_worker.stop.set()
+                await sync_task
             if recipient_jobs:
                 await recipient_jobs.close()
             if phone_push is not None and push_task is not None:
@@ -121,6 +144,21 @@ def create_app(
     application.state.settings = settings
     application.state.mail_provider = mail_provider
     application.state.calendar_provider = calendar_provider
+    application.include_router(sync_router())
+    application.include_router(workspace_router())
+
+    def application_sync_service(request: Request):
+        if request.headers.get('authorization') or request.app.state.human_access.connection_owner(request) is None:
+            raise HTTPException(403, 'Use the human workspace session to synchronize applications')
+        return request.app.state.application_sync
+
+    @application.get('/api/applications/sync/status')
+    def application_sync_status(service=Depends(application_sync_service)):
+        return JSONResponse(service.status(), headers={'Cache-Control': 'no-store'})
+
+    @application.post('/api/applications/sync')
+    def start_application_sync(service=Depends(application_sync_service)):
+        return JSONResponse(service.start(), headers={'Cache-Control': 'no-store'})
 
     @application.middleware("http")
     async def protect_human_routes(request: Request, call_next):

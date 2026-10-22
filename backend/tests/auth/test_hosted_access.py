@@ -41,6 +41,16 @@ def headers(client):
     return {"Origin": ORIGIN, "X-CSRF-Token": client.get("/api/auth/session").json()["csrf_token"]}
 
 
+def test_workspace_recovery_requires_login_and_csrf(hosted):
+    client, _, _ = hosted
+    assert client.get('/api/workspace/trash').status_code == 401
+    assert client.post('/api/workspace/backup').status_code == 401
+    login(client)
+    assert client.post('/api/workspace/backup').status_code == 403
+    assert client.get('/api/workspace/trash').status_code == 200
+    assert client.get('/api/workspace/trash', headers={'Authorization': 'Bearer agent'}).status_code == 403
+
+
 def test_google_connection_management_uses_human_session_csrf_and_callback_binding(hosted):
     client, _, _ = hosted
     assert client.get('/api/connections').status_code == 401

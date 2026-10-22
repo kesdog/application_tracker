@@ -2,8 +2,8 @@ from datetime import date, datetime, timezone
 from enum import Enum
 from uuid import uuid4
 
-from sqlalchemy import Boolean, CheckConstraint, Enum as SqlEnum, ForeignKey, JSON, String, Text, UniqueConstraint
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import Boolean, CheckConstraint, Enum as SqlEnum, ForeignKey, JSON, String, Text, UniqueConstraint, case, func, select
+from sqlalchemy.orm import DeclarativeBase, Mapped, column_property, mapped_column
 
 
 class Base(DeclarativeBase):
@@ -270,6 +270,38 @@ class RecipientCandidate(Base):
     created_at: Mapped[datetime] = mapped_column(default=utc_now)
 
 
+# Computed with each application query; no extra request/query per table row.
+Application.completed_followup_count = column_property(
+    select(func.count(FollowUp.id))
+    .where(FollowUp.application_id == Application.id, FollowUp.status == FollowUpStatus.SENT)
+    .correlate_except(FollowUp)
+    .scalar_subquery()
+)
+
+# Only leads for the current employer, role, posting and location count as potential targets.
+_potential_recipient = select(RecipientCandidate.id).where(
+    RecipientCandidate.application_id == Application.id,
+    *(RecipientCandidate.context[key].as_string().is_not_distinct_from(getattr(Application, key))
+      for key in ('company', 'job_title', 'job_url', 'location')),
+    func.coalesce(RecipientCandidate.value['excluded'].as_boolean(), False).is_(False),
+    (func.length(func.trim(func.coalesce(RecipientCandidate.value['email'].as_string(), ''))) > 0)
+    | (func.length(func.trim(func.coalesce(RecipientCandidate.value['name'].as_string(), ''))) > 0),
+).correlate_except(RecipientCandidate).exists()
+Application.has_potential_recipients = column_property(_potential_recipient)
+Application.followup_target_status = column_property(case(
+    (select(FollowUp.id).where(FollowUp.application_id == Application.id,
+        FollowUp.channel != FollowUpChannel.PHONE, FollowUp.status == FollowUpStatus.SENT
+    ).correlate_except(FollowUp).exists(), 'SENT'),
+    ((func.length(func.trim(func.coalesce(Application.contact_email, ''))) > 0)
+     | select(FollowUp.id).where(FollowUp.application_id == Application.id,
+        FollowUp.channel != FollowUpChannel.PHONE, FollowUp.status != FollowUpStatus.SENT,
+        FollowUp.archived_at.is_(None), func.length(func.trim(func.coalesce(FollowUp.recipient_email, ''))) > 0
+     ).correlate_except(FollowUp).exists(), 'CONFIRMED'),
+    (_potential_recipient, 'POTENTIAL'),
+    else_='UNKNOWN',
+))
+
+
 class GeneralSettings(Base):
     __tablename__ = "general_settings"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -426,6 +458,26 @@ class InvalidationEvent(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     topic: Mapped[str] = mapped_column(String(80))
     application_id: Mapped[str | None] = mapped_column(String(36))
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)
+
+
+class MailImportReceipt(Base):
+    __tablename__ = 'mail_import_receipts'
+    account: Mapped[str] = mapped_column(String(64), primary_key=True)
+    message_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    thread_id: Mapped[str] = mapped_column(String(64), index=True)
+    application_id: Mapped[str | None] = mapped_column(ForeignKey('applications.id'), index=True)
+    state: Mapped[str] = mapped_column(String(20))
+    subject: Mapped[str] = mapped_column(String(500))
+    reason: Mapped[str] = mapped_column(String(500))
+    message_at: Mapped[datetime | None]
+    lifecycle_applied: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class ImportBatch(Base):
+    __tablename__ = 'import_batches'
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    result: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(default=utc_now)
 
 

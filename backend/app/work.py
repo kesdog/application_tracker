@@ -29,6 +29,9 @@ def automatic_channel(application: Application) -> FollowUpChannel:
 
 
 def can_schedule_automatic_followup(application: Application, settings: Settings, session: Session) -> bool:
+    from app.sync.domain import imported_record
+    if imported_record(session, 'application', application.id):
+        return False
     return (
         application.deleted_at is None
         and application.status != ApplicationStatus.CLOSED
@@ -81,6 +84,9 @@ def ensure_initial_followups(session: Session, settings: Settings) -> int:
             created += 1
     from app.models import TimelineEvent
     for item in session.scalars(select(FollowUp).where(FollowUp.prepared_at.is_(None), FollowUp.status != FollowUpStatus.SENT)):
+        from app.sync.domain import imported_record
+        if imported_record(session, 'followup', item.id):
+            continue
         application = session.get(Application, item.application_id)
         if application.deleted_at is not None:
             continue
@@ -214,6 +220,7 @@ def create_task(
     session: Session, application_id: str, data: TaskCreate, *,
     actor_type: ActorType = ActorType.HUMAN, actor_reference: str | None = None, commit: bool = True,
 ) -> Task:
+    session.info['sync_actor'] = actor_type.value
     get_application(session, application_id)
     item = Task(application_id=application_id, **data.model_dump())
     session.add(item); session.flush()
@@ -248,6 +255,7 @@ def create_followup(
 ) -> FollowUp:
     # Take SQLite's write lock before reading the next sequence number. API calls
     # supply a fresh session; simultaneous creates serialize within busy_timeout.
+    session.info['sync_actor'] = actor_type.value
     session.execute(text("BEGIN IMMEDIATE"))
     application = get_application(session, application_id)
     if data.channel in (FollowUpChannel.PHONE, FollowUpChannel.BOTH) and not application.phone_number:
@@ -276,6 +284,13 @@ def update_followup(
         session.execute(text("BEGIN IMMEDIATE"))
     item = child(session, FollowUp, application_id, item_id)
     changes = data.model_dump(exclude_unset=True)
+    from app.sync.domain import imported_record, require_local_message
+    from app.sync.models import SyncRecord
+    if imported_record(session, 'followup', item.id):
+        if {'subject', 'body'} & changes.keys():
+            session.get(SyncRecord, 'followup:' + item.id).imported = False
+        elif changes.get('status') in (FollowUpStatus.READY, FollowUpStatus.SENT):
+            require_local_message(session, item.id)
     if template_metadata:
         changes.update(template_metadata)
     expected = changes.pop("expected_revision", None)
@@ -391,6 +406,8 @@ def apply_message(session: Session, application_id: str, item_id: str, settings:
 
 
 def ai_request(session: Session, application_id: str, item_id: str, settings: Settings) -> dict:
+    from app.sync.domain import require_local_message
+    require_local_message(session, item_id)
     from app.followup_ai import current_request
     return current_request(session, application_id, item_id, settings)
 
@@ -404,6 +421,8 @@ def resolved_message(session: Session, application_id: str, item_id: str, settin
 
 def queue_draft_task(session: Session, application_id: str, item_id: str, settings: Settings, revision: int):
     session.execute(text('BEGIN IMMEDIATE'))
+    from app.sync.domain import require_local_message
+    require_local_message(session, item_id)
     from app import agent_auth
     from app.models import Task, TaskStatus
     from sqlalchemy import select

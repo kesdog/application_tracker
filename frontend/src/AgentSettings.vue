@@ -4,6 +4,7 @@ import Textarea from 'primevue/textarea'
 import { onMounted, ref } from 'vue'
 import AppearanceSettings from './components/settings/AppearanceSettings.vue'
 import GoogleSettings from './components/settings/GoogleSettings.vue'
+import WorkspaceData from './components/settings/WorkspaceData.vue'
 import FollowUpSettings from './components/settings/FollowUpSettings.vue'
 import PhoneInstallation from './components/settings/PhoneInstallation.vue'
 import PhoneNotifications from './components/settings/PhoneNotifications.vue'
@@ -68,6 +69,7 @@ onMounted(() => { void load(); void checkConnection() })
     <p class="eyebrow">Your workspace</p><h2 id="agent-settings-title">Settings</h2>
     <p class="intro">Customize your workspace and manage agent access, integrations, and local system status.</p>
     <FollowUpSettings />
+    <WorkspaceData />
     <PhoneInstallation />
     <PhoneNotifications />
     <AppearanceSettings />

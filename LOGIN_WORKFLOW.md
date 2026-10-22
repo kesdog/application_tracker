@@ -12,6 +12,25 @@ into the tracker or replace the agent token.
 
 ## Ownership and reuse
 
+The framework-independent core is now `backend/app/session_manager.py`:
+`SessionManager(SessionStore, credential_binding, lifetime=..., capacity=...,
+clock=...)`. It imports only the Python standard library. Stores implement
+`load`, atomic `replace` (prune/revoke/insert), and `revoke`; persisted grants
+contain a token digest, credential-version binding, creation and expiry times.
+`SqlHumanSessionStore` is the tracker adapter. `HumanSessionManager` retains the
+existing cookie/CSRF-facing interface, with no change to agent authentication.
+
+For authorized provider APIs, reuse `backend/app/authorized_api.py`:
+`AuthorizedApiClient(base_url, acquire, request, rejected)`. `acquire(capability)`
+returns `TokenLease(token, generation)`; `rejected` receives only actual
+authorization failures and must check the generation before invalidating a
+stored grant. Rate-limit/storage/server errors preserve the credential. The
+client never retries writes automatically. The HTTP/store adapters remain host
+choices, and tokens are absent from errors and diagnostic representations.
+
+Independent in-memory adapter examples and tests live in
+`backend/tests/auth/test_session_manager.py` and `test_authorized_api.py`.
+
 | Class | Responsibility | Shared consumers |
 | --- | --- | --- |
 | `BrowserSessionManager` (`frontend/src/auth.ts`) | Reactive session state, CSRF headers, expiry, stale-response protection | Root, API client, event stream |

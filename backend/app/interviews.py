@@ -35,6 +35,7 @@ def create_interview(
     session: Session, application_id: str, data: InterviewCreate, *,
     actor_type: ActorType = ActorType.HUMAN, actor_reference: str | None = None,
 ) -> Interview:
+    session.info['sync_actor'] = actor_type.value
     get_application(session, application_id)
     interview = Interview(application_id=application_id, **data.model_dump())
     session.add(interview)

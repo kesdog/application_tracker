@@ -12,6 +12,7 @@ frontend/dist/
 *.log
 .run/
 /work/
+/test.md
 output/playwright/
 deploy/secrets/
 deploy/hosted.env

@@ -1,3 +1,8 @@
+/** References stay compatible with the saved text field: one message per line. */
+export function emailReferences(reference: string | null): string[] {
+  return [...new Set((reference ?? '').split(/\r?\n/).map(value => value.trim()).filter(Boolean))]
+}
+
 /** Open direct mailbox links, or find a saved message ID/subject in Gmail. */
 export function emailReferenceUrl(reference: string | null): string | null {
   const value = reference?.trim()

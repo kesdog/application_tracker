@@ -9,8 +9,7 @@ from sqlalchemy.orm import Session
 from app.models import GeneralSettings, TimelineEvent
 from app.config import Settings
 from app.mcp_server import create_mcp_server
-from tests.followups.test_draft_tasks import activate, prepare
-from tests.followups.test_prepared_followups import settings
+from tests.support import activate_agent as activate, prepare_followup as prepare, save_settings as settings
 
 
 def request(client, url):
@@ -97,15 +96,16 @@ def test_draft_requires_explicit_request_reports_reference_and_completes_only_ta
     assert client.post(route, headers=headers, json=args).status_code == 403
 
 
-@pytest.mark.parametrize('status', ['skipped', 'needs_clarification', 'failure'])
-def test_non_content_results_are_durable_and_allow_a_fresh_attempt(client, status):
-    app, item, url = prepare(client)
-    req = request(client, url)
-    payload = result(req, status=status, body=None, details='Mailbox tools unavailable')
-    assert client.post(url + '/ai-results', json=payload).status_code == 200
-    assert request(client, url)['operation_id'] != req['operation_id']
-    work = client.get(f"/api/applications/{app['id']}/work").json()
-    assert work['followups'][0]['body'] == item['body'] and work['followups'][0]['status'] == 'PREPARED'
+def test_non_content_results_are_durable_and_allow_a_fresh_attempt(client):
+    for status in ['skipped', 'needs_clarification', 'failure']:
+        app, item, url = prepare(client)
+        req = request(client, url)
+        payload = result(req, status=status, body=None, details='Mailbox tools unavailable')
+        assert client.post(url + '/ai-results', json=payload).status_code == 200, status
+        assert client.get(url + '/ai-results').json()[0]['status'] == status
+        assert request(client, url)['operation_id'] != req['operation_id']
+        work = client.get(f"/api/applications/{app['id']}/work").json()
+        assert work['followups'][0]['body'] == item['body'] and work['followups'][0]['status'] == 'PREPARED'
 
 
 def test_concurrent_identical_results_are_recorded_once(client):

@@ -3,20 +3,7 @@ from datetime import timedelta
 from sqlalchemy.orm import Session
 
 from app.models import AgentCredential, utc_now
-
-
-def prepare(client):
-    app = client.post('/api/applications', json={'company': 'Example', 'job_title': 'Engineer', 'date_applied': '2026-10-01', 'email_reference': 'message-123', 'contact_email': 'recruiter@example.com'}).json()
-    item = client.get(f"/api/applications/{app['id']}/work").json()['followups'][0]
-    return app, item, f"/api/applications/{app['id']}/followups/{item['id']}"
-
-
-def activate(client):
-    token = client.post('/api/settings/agent/token').json()['token']
-    permissions = {'read': True, 'draft': True, 'tasks': True}
-    assert client.put('/api/settings/agent/permissions', json=permissions).status_code == 200
-    assert client.post('/api/agent/tools/get_tracker_info', headers={'Authorization': f'Bearer {token}'}, json={}).status_code == 200
-    return token
+from tests.support import activate_agent as activate, prepare_followup as prepare
 
 
 def test_requires_actual_agent_use_and_expires_or_revokes_access(client):

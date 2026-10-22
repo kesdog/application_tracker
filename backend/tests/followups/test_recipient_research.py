@@ -5,7 +5,7 @@ from webtoolbox import merge_and_rank
 from webtoolbox.contacts import assess_employer, extract_contacts
 
 from app.recipient_research import PublicRecipientResearch
-from app.recipient_research import matches_company, usable_url, role_for_email, contact_url
+from app.recipient_research import adapt_candidate, matches_company, usable_url, role_for_email, contact_url
 
 
 class FakeWeb:
@@ -193,3 +193,27 @@ def test_investor_relations_addresses_are_retained_only_in_diagnostics():
     result=discover(FakeWeb({'https://example.com/contact':page('<p>investor.relations@employer.test</p>')}))
     assert not result['candidates']
     assert result['diagnostics']['excluded_candidates'][0]['exclusion_reason'] == 'not_recruitment_investor_relations'
+
+
+def test_research_filters_ads_brokers_wrong_company_and_extracts_text_emails_without_ownership_guess():
+    assert not usable_url('https://www.bing.com/aclick?x=1')
+    assert not usable_url('https://rocketreach.co/person')
+    assert not usable_url('https://user:password@employer.test/contact')
+    assert matches_company('Powens',{'url':'https://careers.powens.com/','title':'Careers','snippet':''})
+    assert not matches_company('Finaxys',{'url':'https://unrelated.org/','title':'Other firm','snippet':'Recruitment'})
+    from webtoolbox.contacts import extract_contacts, assess_employer
+    from webtoolbox import merge_and_rank
+    html = """<p>Write to recrutement@employer.test</p><p>media@employer.test</p>
+    <div class="person"><h3>Justine Michel</h3><p class="role">Chief People Officer</p></div>
+    <div class="person"><h3>Damien Mat</h3><p class="role">Lead Software Engineer</p></div>"""
+    raw = [assess_employer(c, 'Example') for c in extract_contacts(html, 'https://example.com/contact')]
+    candidates = [adapt_candidate(c) for c in merge_and_rank(raw)]
+    useful = [c for c in candidates if not c['excluded']]
+    assert len(useful) == 3
+    by_name = {c['name']: c for c in useful}
+    assert by_name['Justine Michel']['email'] is None
+    assert by_name[None]['email'] == 'recrutement@employer.test' and by_name[None]['kind'] == 'recruiter_hr'
+    assert by_name['Damien Mat']['kind'] == 'technical_lead'
+    assert all(c['vacancy_match'] == 'unknown' and c['company_match'] == 'unknown' for c in useful)
+    assert all(c['deliverability'] == 'not_checked' for c in useful)
+    assert next(c for c in candidates if c['email'] == 'media@employer.test')['excluded']

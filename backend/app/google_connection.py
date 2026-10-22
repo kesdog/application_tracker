@@ -16,6 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models import ExternalConnection, utc_now
+from app.authorized_api import AuthorizedApiClient, AuthorizedRequestError, TokenLease
 
 SCOPES = {
     'drive': 'https://www.googleapis.com/auth/drive.appdata',
@@ -39,6 +40,9 @@ class CallbackLogFilter(logging.Filter):
 
 class GoogleConnectionError(ValueError):
     """Only fixed, non-sensitive messages are exposed to API callers."""
+    def __init__(self, message, *, kind='authorization', retry_after=None):
+        super().__init__(message)
+        self.kind, self.retry_after = kind, retry_after
 
 
 class GoogleStart(BaseModel):
@@ -131,6 +135,9 @@ def verify_identity(encoded, audience):
 class GoogleConnection:
     def __init__(self, engine, settings, *, store=None, transport=None, verifier=None):
         self.engine, self.settings = engine, settings
+        if store is None and settings.app_credential_key_file:
+            from app.secret_store import EncryptedFileSecretStore
+            store = EncryptedFileSecretStore(settings.app_data_dir, settings.app_credential_key_file)
         self.store = store or NativeSecretStore(settings.app_data_dir)
         self.transport = transport
         self.verifier = verifier or verify_identity
@@ -223,28 +230,31 @@ class GoogleConnection:
             return secret['access_token'], item.generation
 
     def api(self, capability, method, path, **kwargs):
-        token, generation = self.access_token(capability)
-        headers = {**kwargs.pop('headers', {}), 'Authorization': 'Bearer ' + token}
-        response = self._http(method, 'https://www.googleapis.com/' + path,
-                              headers=headers, **kwargs)
-        if response.status_code in {401, 403}:
+        def rejected(capability, lease, error):
             with Session(self.engine) as session:
                 session.execute(text('BEGIN IMMEDIATE'))
                 item = session.get(ExternalConnection, 1)
-                if item and item.generation == generation:
-                    if response.status_code == 401:
+                if item and item.generation == lease.generation:
+                    if error.status == 401:
                         item.status = 'RECONNECT_REQUIRED'
                     else:
                         item.scopes = [scope for scope in item.scopes if scope != SCOPES[capability]]
                         item.status = 'PARTIAL'
                     item.updated_at = utc_now()
                     session.commit()
-            raise GoogleConnectionError('Google rejected this capability. Check API enablement and reauthorize in Settings.')
-        if not 200 <= response.status_code < 300:
-            raise GoogleConnectionError('Google could not complete this request. Reconcile any uncertain draft before retrying.')
+        leases = []
+        def acquire(capability):
+            lease = TokenLease(*self.access_token(capability))
+            leases.append(lease)
+            return lease
+        client = AuthorizedApiClient('https://www.googleapis.com/', acquire, self._http, rejected)
+        try:
+            response = client.call(capability, method, path, **kwargs)
+        except AuthorizedRequestError as exc:
+            raise GoogleConnectionError(str(exc), kind=exc.kind, retry_after=exc.retry_after) from None
         with Session(self.engine) as session:
             item = session.get(ExternalConnection, 1)
-            if item and item.generation == generation:
+            if item and item.generation == leases[0].generation:
                 item.verified_at = utc_now()
                 session.commit()
         return response
@@ -271,6 +281,36 @@ class GoogleMailProvider:
         value = MailLookup(message_id=reference)
         account = urlencode({'authuser': self.connection.status()['email'] or ''})
         return 'https://mail.google.com/mail/?' + account + '#all/' + value.message_id
+
+    def application_messages(self, page_token=None):
+        # Fixed query: read application evidence, never mutate mailbox labels or messages.
+        params = {'q': '-in:spam -in:trash -in:drafts {candidature application postulé "CV a été envoyé" interview entretien}',
+                  'maxResults': 100, 'fields': 'messages(id,threadId),nextPageToken'}
+        if page_token:
+            params['pageToken'] = page_token
+        return self.connection.api('gmail_read', 'GET', 'gmail/v1/users/me/messages', params=params).json()
+
+    def application_message(self, message_id):
+        data = MailLookup(message_id=message_id)
+        value = self.connection.api('gmail_read', 'GET', f'gmail/v1/users/me/messages/{data.message_id}',
+            params={'format': 'full', 'fields': 'id,threadId,internalDate,payload(mimeType,headers,body,parts)'}).json()
+        # Bounded MIME body, no attachments or instruction execution. HTML is parsed locally.
+        def content(part, depth=0):
+            if depth > 12 or part.get('filename'):
+                return ''
+            if part.get('mimeType') in ('text/html', 'text/plain'):
+                try:
+                    raw = part.get('body', {}).get('data', '')[:180000]
+                    decoded = base64.urlsafe_b64decode(raw + '=' * (-len(raw) % 4)).decode('utf-8', errors='replace')
+                    if part.get('mimeType') == 'text/plain':
+                        from html import escape
+                        return '<pre>' + escape(decoded[:120000]) + '</pre>'
+                    return decoded[:120000]
+                except (ValueError, TypeError):
+                    return ''
+            return ''.join(content(child, depth + 1) for child in part.get('parts', [])[:30])[:120000]
+        return {'id': value['id'], 'thread_id': value.get('threadId', ''), 'internal_date': value.get('internalDate'),
+                'headers': value.get('payload', {}).get('headers', []), 'content': content(value.get('payload', {}))}
 
     def search(self, query, limit=10):
         data = MailSearch(query=query, limit=limit)

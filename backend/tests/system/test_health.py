@@ -6,6 +6,7 @@ from sqlalchemy.exc import OperationalError
 
 from app.config import PROJECT_ROOT, Settings
 from app.main import create_app
+from app import __version__
 
 
 def test_health_initializes_database_and_enables_wal(tmp_path):
@@ -16,7 +17,7 @@ def test_health_initializes_database_and_enables_wal(tmp_path):
         response = client.get("/api/health")
         assert response.status_code == 200
         assert response.json() == {
-            "status": "ok", "version": "0.11.0", "database": "connected"
+            "status": "ok", "version": __version__, "database": "connected"
         }
         assert (data_dir / "tracker.sqlite3").is_file()
         with application.state.engine.connect() as connection:

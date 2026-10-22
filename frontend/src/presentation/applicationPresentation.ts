@@ -6,7 +6,7 @@ export type Tone = AppearanceColor | 'neutral'
 export interface PresentationMeta { label: string; tone: Tone; icon?: string }
 
 export const applicationStatusMeta: Record<Application['status'], PresentationMeta> = {
-  SUBMITTED: { label: 'Submitted', tone: 'submitted', icon: 'pi pi-send' },
+  SUBMITTED: { label: 'Submitted', tone: 'submitted', icon: 'pi pi-file-check' },
   INTERVIEW: { label: 'Interview', tone: 'interview', icon: 'pi pi-calendar' },
   CLOSED: { label: 'Closed', tone: 'postingClosed', icon: 'pi pi-lock' },
 }
@@ -34,6 +34,16 @@ export const contractOptions = [
   { value: 'APPRENTICESHIP_INTERNSHIP', label: 'Apprenticeship / Internship (Alternance / Stage)' },
 ]
 export const contractLabel = (value: string | null) => contractOptions.find(option => option.value === value)?.label ?? value ?? '—'
+// Imported titles can repeat contract metadata at either edge. Keep role words intact.
+export function positionLabel(title: string): string {
+  const contract = '(?:CDI|CDD|full[ -]time|part[ -]time|temps partiel|fixed[ -]term|alternance|apprenticeship|internship|stage(?: \\d+ mois(?: ou alternance)?)?)'
+  const prefix = new RegExp(`^\\s*(?:\\(${contract}\\)|\\[${contract}\\]|${contract})(?:\\s*[-–—:|]\\s*|\\s+)`, 'i')
+  const suffix = new RegExp(`(?:\\s*[-–—|]\\s*${contract}|\\s+${contract}|\\s*\\(${contract}\\)|\\s*\\[${contract}\\])\\s*$`, 'i')
+  let result = title
+  let prior = ''
+  while (result !== prior) { prior = result; result = result.replace(prefix, '').replace(suffix, '').trim() }
+  return result || title
+}
 export const sourceLabel = jobSourceLabel
 export const statusOptions = Object.entries(applicationStatusMeta).map(([value, meta]) => ({ value, label: meta.label }))
 export const outcomeOptions = Object.entries(applicationOutcomeMeta).map(([value, meta]) => ({ value, label: meta.label }))

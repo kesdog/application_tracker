@@ -45,15 +45,29 @@ Pair each navigation label with a recognizable icon. Active destinations use bot
 
 The expanded desktop sidebar is 238 px wide. Collapsing it produces a 76 px icon rail, giving more room to the main content. Keep every destination accessible in the collapsed state, with hover titles and accessible names. The expand/collapse control remains in the header.
 
-On narrow windows, navigation appears above the content and can fold away completely. Preserve an obvious way to reopen it. Keep navigation transitions brief and respect reduced-motion preferences.
+On narrow windows, navigation opens in a drawer from the left. Keep it closed initially, retain an obvious menu button, and close it after choosing a screen. A backdrop, Escape key, and close control make dismissal predictable. Keep transitions brief and respect reduced-motion preferences.
 
 ## Information density and emphasis
 
 Use compact table rows, aligned headings, and consistent spacing to support comparison between applications. Allow optional columns and row-density choices. Place secondary information below the main value in smaller, readable text.
 
+Keep All applications and Add application as distinct navigation choices. Use the briefcase icon for the list. Make each application row clickable, with a visible keyboard focus, while preserving the behavior of posting and other links inside it. Display contract information in its own optional column, without repeating it in the position title. Use a checked-file icon for Submitted.
+
+Breadcrumbs show the current screen and the application's company. On mobile, use recognizable icons with accessible names to keep the header compact.
+
 Use colored badges with explicit labels for statuses and outcomes. Keep meanings consistent across themes: blue for submitted or upcoming items, purple for interviews, green for successful outcomes, red for unsuccessful or overdue items, amber for near-term urgency, and neutral tones for inactive states.
 
+Beside an application's status, show a light blue check and the completed follow-up count when contact has happened. Count sent messages and completed calls, including archived history. Keep prepared messages separate from this indicator. Use a compact badge with a readable number and a descriptive tooltip in both themes.
+
+Use a compact envelope to show follow-up contact readiness in application lists and the follow-up queue: orange for an unknown target, light blue for potential contacts that need review, light green for an assigned recipient, and dark green for a sent email follow-up. Give each icon a descriptive tooltip and accessible label. Phone-only follow-ups keep their phone label. A sent indicator on an application describes its history; each queue item shows its own state.
+
+On an application, keep the posting link, copy action, applied date, deadline, and numbered email references visible. Label the link “Job posting” rather than showing its URL. Keep contact details, role descriptions, posting research, and recipient research behind short, closed disclosures. Within recipient search settings, show one editable page-limit field and a Save page limit action.
+
+Expanded disclosures use their existing title and border; avoid a second copy of the heading inside. Timeline events use a single left-aligned column with fixed, 32 px circular markers and centered icons. Give event text room to wrap, and show dates and actors once in supporting text. Collapse equivalent mailbox IDs and links into one email reference while preserving separate messages. Show a recipient address once per contact card, and offer a follow-up selector only when there is a choice.
+
 Apply subtle row tints and edge accents for urgency rather than filling entire rows with saturated color. Keep the next action easy to find. Empty states should use a short explanation and a relevant action, without large decorative illustrations.
+
+Use “Sync applications” as the application list's explicit update action. Show one busy state while checking Gmail and then syncing Drive. Report new and updated application counts, keep ambiguous emails behind a review disclosure, and make partial completion and connection setup needs visible. Preserve active list filters when synchronization finishes.
 
 ## Form and wizard interactions
 
@@ -67,6 +81,8 @@ Offer autocomplete for short text and explicit previous-value choices for dates,
 
 Place validation messages beside the affected field. Explain the correction in plain language and keep invalid entries available for editing. Back preserves the draft; Review provides edit links and a clearly labeled final save action. Keep the primary action in a consistent position at the end of each screen.
 
+In the follow-up editor, keep customization focused on language and signature. Language is a free-entry textbox with suggestions. Typing an opening brace in the subject or message opens matching variables; arrow keys navigate, Enter or Tab inserts, and Escape dismisses. Copy uses resolved values and explains any missing data. Write to draft adds an agent task; show a grey disabled button when the agent is unavailable. Avoid a separate sent/completed-time entry in this editor.
+
 ## Readability and accessibility
 
 Target at least 4.5:1 contrast for normal text and 3:1 for large text. Include supporting text, placeholders, links, status text, and tinted rows in this requirement. Solid badges and selected controls use whichever black or white text provides stronger contrast against their fill.
@@ -77,6 +93,6 @@ Provide visible keyboard focus in both themes, including inside the sidebar. Lab
 
 ## Responsive presentation
 
-At widths of 760 px and below, move navigation above the workspace, reduce outer padding, and allow the header controls to wrap. Stack form fields and detail groups when horizontal space becomes limited. Wide tables may scroll horizontally rather than compressing their text into unreadable columns.
+At widths of 760 px and below, use a drawer from the left, reduce outer padding, and allow the header controls to wrap. Stack form fields and detail groups when horizontal space becomes limited. Wide tables may scroll horizontally rather than compressing their text into unreadable columns.
 
 On very narrow screens, the theme's sun or moon can replace its visible name while the switch retains an accessible label. Preserve comfortable control spacing and avoid horizontal overflow in forms and panels.

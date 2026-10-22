@@ -25,12 +25,15 @@ const followups = computed(() => dashboard.value
   ? [...dashboard.value.overdue_followups, ...dashboard.value.due_followups].sort((a, b) => a.due_at.localeCompare(b.due_at))
   : [])
 const visibleFollowups = computed(() => followups.value.slice((followupPage.value - 1) * followupPageSize, followupPage.value * followupPageSize))
+const workPage = ref(1)
+const upcomingWork = computed(() => dashboard.value?.upcoming.filter(item => item.kind !== 'FOLLOWUP') ?? [])
+const visibleWork = computed(() => upcomingWork.value.slice((workPage.value - 1) * 10, workPage.value * 10))
 
 const urgency = (dueAt: string) => urgencyMeta(dueAt).tone
 
 async function load() {
   loading.value = true; error.value = ''
-  try { dashboard.value = await getDashboard(); followupPage.value = 1 }
+  try { dashboard.value = await getDashboard(); followupPage.value = 1; workPage.value = 1 }
   catch (reason) { error.value = reason instanceof Error ? reason.message : 'Unable to load dashboard.' }
   finally { loading.value = false }
 }
@@ -47,6 +50,7 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
     <p v-if="loading && !dashboard" role="status">Loading dashboard…</p>
     <template v-if="dashboard">
       <div class="metrics"><article v-for="card in cards" :key="card.label" class="metric" :class="card.tone"><strong>{{ card.value }}</strong><span>{{ card.label }}</span></article></div>
+      <section class="panel"><h3>Upcoming work &amp; deadlines</h3><p v-if="!upcomingWork.length" class="empty">No tasks, interviews or deadlines in the next seven days.</p><ul v-else class="items"><li v-for="item in visibleWork" :key="`${item.kind}-${item.id}`"><strong>{{ item.title }}</strong><p><a :href="`#/applications/${item.application.id}`">{{ item.application.company }} · {{ item.application.job_title }}</a></p><small>{{ item.kind === 'DEADLINE' ? item.due_at.slice(0, 10) : dateTimeText(item.due_at) }}</small></li></ul><Pagination v-model:page="workPage" :total="upcomingWork.length" :page-size="10" label="upcoming work" /></section>
       <section class="panel followups-panel"><div class="section-heading"><div><h3>Follow-ups</h3><p>Overdue and upcoming reminders in one queue.</p></div><a href="#/followups">All follow-ups ({{ followups.length }} due soon)</a></div><p v-if="!followups.length" class="empty">No follow-ups are due in the next seven days.</p><div v-else class="table-scroll" tabindex="0" role="region" aria-label="Follow-ups"><table><thead><tr><th>Due</th><th>Application</th><th>Company</th><th>Status</th></tr></thead><tbody><tr v-for="item in visibleFollowups" :key="item.id" :class="`urgency-${urgency(item.due_at)}`"><td><strong>{{ relativeDateText(item.due_at, 'due ') }}</strong><small>{{ dateTimeText(item.due_at) }}</small></td><td><a :href="`#/followups/${item.application.id}/${item.id}`">{{ item.application.job_title }}</a></td><td>{{ item.application.company }}</td><td><span class="urgency-badge" :class="urgency(item.due_at)">{{ urgency(item.due_at) }}</span></td></tr></tbody></table><Pagination v-model:page="followupPage" :total="followups.length" :page-size="followupPageSize" label="follow-ups" /></div></section>
       <section class="panel recent-panel"><div class="section-heading"><h3>Recent activity</h3><span>{{ dashboard.recent_activity.length }}</span></div><p v-if="!dashboard.recent_activity.length" class="empty">No recent activity.</p><ol v-else class="items activity"><li v-for="event in dashboard.recent_activity" :key="event.id"><div><strong>{{ event.summary }}</strong><p><a :href="`#/applications/${event.application.id}`">{{ event.application.job_title }}</a> · {{ event.application.company }}</p><small>{{ dateTimeText(event.created_at) }} · {{ event.actor_type }}</small></div></li></ol></section>
     </template>

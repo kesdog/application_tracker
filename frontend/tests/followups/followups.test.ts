@@ -33,6 +33,21 @@ beforeEach(() => {
 })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
+it('renders queue target colours per message without turning earlier sent history into a sent draft', async () => {
+  vi.mocked(api.getFollowUps).mockResolvedValue({ items: [
+    { ...item, id: 'unknown', application: { ...app, followup_target_status: 'SENT', has_potential_recipients: false } },
+    { ...item, id: 'potential', application: { ...app, has_potential_recipients: true } },
+    { ...item, id: 'confirmed', recipient_email: 'hr@example.com', application: app },
+    { ...item, id: 'sent', status: 'SENT', application: app },
+    { ...item, id: 'phone', channel: 'PHONE', application: app },
+  ], total: 5, page: 1, page_size: 20 })
+  const wrapper = mount(FollowUps, { global })
+  await flushPromises()
+  expect(wrapper.findAll('.queue .pi-envelope')).toHaveLength(4)
+  for (const status of ['unknown', 'potential', 'confirmed', 'sent']) expect(wrapper.find(`.queue .target-${status}`).exists()).toBe(true)
+  expect(wrapper.findAll('.queue .target-sent')).toHaveLength(1)
+})
+
 it('highlights variables while keeping pasted markup plain text', () => {
   const wrapper = mount(TemplateField, { props: { modelValue: 'Hello {company_name} <script>alert(1)</script>', label: 'Message', variables } })
   expect(wrapper.get('mark').text()).toBe('{company_name}')

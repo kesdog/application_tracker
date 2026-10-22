@@ -13,6 +13,8 @@ def migrate_database(engine: Engine) -> None:
     with engine.begin() as connection:
         config.attributes["connection"] = connection
         command.upgrade(config, "head")
+    from app.sync.journal import install_journal
+    install_journal(engine)
 
 
 def create_database(data_dir: Path) -> Engine:

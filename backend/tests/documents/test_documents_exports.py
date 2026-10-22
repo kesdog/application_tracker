@@ -3,19 +3,13 @@ from datetime import date
 from io import BytesIO, StringIO
 from pathlib import Path
 
-from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 import pytest
 
-from app.config import Settings
-from app.main import create_app
-
 
 @pytest.fixture
-def client_and_data(tmp_path):
-    with TestClient(create_app(Settings(app_data_dir=tmp_path, _env_file=None))) as client:
-        yield client, tmp_path
-
+def client_and_data(client, tmp_path):
+    return client, tmp_path
 
 def create_application(client, company="Acme", title="Engineer", day="2026-09-18"):
     response = client.post("/api/applications", json={
@@ -126,3 +120,22 @@ def test_xlsx_formatting_dates_colors_and_filtered_rows(client_and_data):
     assert sheet["D2"].fill.fill_type == "solid"
     assert sheet.column_dimensions["C"].width >= 20
     workbook.close()
+
+
+@pytest.mark.parametrize('value', ['=1+1', '+SUM(A1)', '-1+1', '@SUM(A1)', '\t=1+1', '  =1+1'])
+def test_untrusted_export_text_is_not_a_formula(client, value):
+    app = create_application(client)
+    client.patch(f"/api/applications/{app['id']}", json={'company': value})
+    rows = list(csv.DictReader(StringIO(client.get('/api/exports/applications.csv').content.decode('utf-8-sig'))))
+    assert rows[0]['Company'].startswith("'")
+    sheet = load_workbook(BytesIO(client.get('/api/exports/applications.xlsx').content)).active
+    assert sheet['B2'].data_type == 's'
+    assert sheet['B2'].value == value.strip()
+
+
+def test_oversized_document_leaves_no_partial_file_or_record(client, tmp_path, monkeypatch):
+    monkeypatch.setattr('app.documents.MAX_UPLOAD_BYTES', 4)
+    app = create_application(client)
+    assert upload(client, app['id'], content=b'12345').status_code == 422
+    assert client.get(f"/api/applications/{app['id']}/documents").json() == []
+    assert not list((tmp_path / 'documents').rglob('*pdf'))

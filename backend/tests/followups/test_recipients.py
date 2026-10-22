@@ -12,7 +12,6 @@ from app.config import Settings
 from app.main import create_app
 from app import recipient_discovery as discovery
 from app.models import FollowUp, RecipientCandidate, RecipientDiscovery, utc_now
-from app.recipient_research import adapt_candidate, matches_company, usable_url
 
 
 def application(client,**changes):
@@ -149,31 +148,6 @@ def test_background_workers_process_five_at_a_time_and_drain_queue(tmp_path):
         assert researcher.peak == 5
 
 
-def test_research_filters_ads_brokers_wrong_company_and_extracts_text_emails_without_ownership_guess():
-    assert not usable_url('https://www.bing.com/aclick?x=1')
-    assert not usable_url('https://rocketreach.co/person')
-    assert not usable_url('https://user:password@employer.test/contact')
-    assert matches_company('Powens',{'url':'https://careers.powens.com/','title':'Careers','snippet':''})
-    assert not matches_company('Finaxys',{'url':'https://unrelated.org/','title':'Other firm','snippet':'Recruitment'})
-    from webtoolbox.contacts import extract_contacts, assess_employer
-    from webtoolbox import merge_and_rank
-    html = """<p>Write to recrutement@employer.test</p><p>media@employer.test</p>
-    <div class="person"><h3>Justine Michel</h3><p class="role">Chief People Officer</p></div>
-    <div class="person"><h3>Damien Mat</h3><p class="role">Lead Software Engineer</p></div>"""
-    raw = [assess_employer(c, 'Example') for c in extract_contacts(html, 'https://example.com/contact')]
-    candidates = [adapt_candidate(c) for c in merge_and_rank(raw)]
-    useful = [c for c in candidates if not c['excluded']]
-    assert len(useful) == 3
-    by_name = {c['name']: c for c in useful}
-    assert by_name['Justine Michel']['email'] is None
-    assert by_name[None]['email'] == 'recrutement@employer.test' and by_name[None]['kind'] == 'recruiter_hr'
-    assert by_name['Damien Mat']['kind'] == 'technical_lead'
-    assert all(c['vacancy_match'] == 'unknown' and c['company_match'] == 'unknown' for c in useful)
-    assert all(c['deliverability'] == 'not_checked' for c in useful)
-    assert next(c for c in candidates if c['email'] == 'media@employer.test')['excluded']
-
-
-
 def test_shutdown_requeues_inflight_work_and_restart_finishes_it(tmp_path):
     gate=GateResearch()
     settings=Settings(app_data_dir=tmp_path,_env_file=None)
@@ -196,7 +170,7 @@ def test_shutdown_requeues_inflight_work_and_restart_finishes_it(tmp_path):
 
 
 def test_queued_closed_job_never_runs_and_missing_recipient_blocks_mailbox_work(client):
-    from tests.followups.test_draft_tasks import activate
+    from tests.support import activate_agent as activate
     pause(client)
     app=application(client)
     item=followup(client,app)

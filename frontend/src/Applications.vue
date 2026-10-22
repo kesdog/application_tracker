@@ -5,6 +5,7 @@ import ActiveApplicationFilters from './components/applications/ActiveApplicatio
 import { getDashboard, listApplications, type Application, type ApplicationFilters, type DashboardData } from './api'
 import ApplicationFocus from './ApplicationFocus.vue'
 import ApplicationTable from './components/applications/ApplicationTable.vue'
+import ApplicationSyncControl from './components/applications/ApplicationSyncControl.vue'
 import TablePreferences from './components/settings/TablePreferences.vue'
 import ApplicationFilterForm from './ApplicationFilters.vue'
 import { activeFilterLabels, appliedFilters, blankFilters } from './applicationFilters'
@@ -61,12 +62,12 @@ onUnmounted(() => {
 <template>
   <ApplicationFocus v-if="focusedId" :key="focusedId" :id="focusedId" />
   <section v-else aria-labelledby="applications-title">
-    <div class="page-heading"><div><p class="eyebrow">Your pipeline</p><h2 id="applications-title">Applications</h2></div><Button as="a" href="#/applications/new" label="Add application" icon="pi pi-plus" /></div>
+    <div class="page-heading"><div><p class="eyebrow">Your pipeline</p><h2 id="applications-title">All applications</h2></div><Button as="a" href="#/applications/new" label="Add application" icon="pi pi-plus" /></div>
     <p class="intro">Track every role, follow-up, and next step.</p>
     <ApplicationFilterForm :filters="filters" :loading="loading" @apply="applyFilters" @clear="clearFilters" />
     <ActiveApplicationFilters :filters="appliedFilters" :loading="loading" @remove="removeFilter" @clear="clearFilters" />
     <TablePreferences />
-    <div class="list-heading"><span aria-live="polite">{{ applications.length }} {{ applications.length === 1 ? 'application' : 'applications' }}{{ hasFilters ? ' matched' : '' }}</span><Button type="button" severity="secondary" outlined :disabled="loading" :label="loading ? 'Loading…' : 'Refresh list'" icon="pi pi-refresh" @click="refresh()" /></div>
+    <div class="list-heading"><span aria-live="polite">{{ applications.length }} {{ applications.length === 1 ? 'application' : 'applications' }}{{ hasFilters ? ' matched' : '' }}</span><ApplicationSyncControl @changed="refresh()" /></div>
     <p v-if="loadError" class="at-message error" role="alert">{{ loadError }}</p>
     <ApplicationTable :applications="applications" :dashboard="dashboard" :overdue-ids="overdueIds" :loading="loading" :has-filters="hasFilters" :error="Boolean(loadError)" />
   </section>

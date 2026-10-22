@@ -37,8 +37,10 @@ def value_text(value) -> str:
 def create_application(
     session: Session, data: ApplicationCreate, *,
     actor_type: ActorType = ActorType.HUMAN, actor_reference: str | None = None,
-    settings: Settings | None = None,
+    settings: Settings | None = None, commit: bool = True, application_id: str | None = None,
+    possible_matches: list[dict] | None = None,
 ) -> Application:
+    session.info['sync_actor'] = actor_type.value
     if data.source is None:
         data = data.model_copy(update={"source": infer_job_source(data.job_url)})
     if data.source in {"LINKEDIN", "INDEED"}:
@@ -46,8 +48,8 @@ def create_application(
             raise InvalidApplication(
                 "The job URL must be a direct posting URL on the selected LinkedIn or Indeed job board"
             )
-    duplicates = find_possible_duplicates(session, data)
-    application = Application(**data.model_dump())
+    duplicates = find_possible_duplicates(session, data) if possible_matches is None else possible_matches
+    application = Application(**data.model_dump(), **({'id': application_id} if application_id else {}))
     session.add(application)
     session.flush()
     record_event(session, application.id, "APPLICATION_CREATED", "Application record added to tracker", actor_type=actor_type, actor_reference=actor_reference)
@@ -60,7 +62,7 @@ def create_application(
     record_audit(session, application.id, "APPLICATION", application.id, "CREATE", new=data.model_dump(), actor_type=actor_type, actor_reference=actor_reference)
     from app.work import schedule_automatic_followup
     schedule_automatic_followup(session, application, settings or Settings(), actor_type=actor_type, actor_reference=actor_reference)
-    session.commit()
+    session.commit() if commit else session.flush()
     session.refresh(application)
     application.duplicate_warnings = duplicates
     return application
@@ -147,7 +149,7 @@ def get_application(session: Session, application_id: str) -> Application:
 def update_application(
     session: Session, application_id: str, data: ApplicationUpdate, *,
     actor_type: ActorType = ActorType.HUMAN, actor_reference: str | None = None,
-    settings: Settings | None = None,
+    settings: Settings | None = None, commit: bool = True,
 ) -> Application:
     application = get_application(session, application_id)
     changes = data.model_dump(exclude_unset=True)
@@ -204,7 +206,7 @@ def update_application(
             from app.work import reschedule_pending_automatic_followups
             reschedule_pending_automatic_followups(session, application, settings or Settings())
     try:
-        session.commit()
+        session.commit() if commit else session.flush()
     except StaleDataError:
         session.rollback()
         current = get_application(session, application_id)

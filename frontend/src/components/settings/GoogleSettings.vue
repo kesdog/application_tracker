@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import Button from 'primevue/button'
 import { testGoogleDrive, type GoogleCapability, type GoogleConnection } from '../../api'
 import { googleLogin } from '../../googleAuth'
+import SyncSettings from '../sync/SyncSettings.vue'
 
 const connection = ref<GoogleConnection | null>(null)
 const choices = ref<GoogleCapability[]>([])
@@ -59,6 +60,7 @@ onMounted(load)
       <details v-if="connection.capabilities.drive"><summary>Test encrypted Drive app data</summary><p>Use a 32-byte base64 recovery key you generated and saved yourself. Keep it separate from your tracker and Google credentials. This verifies and removes one encrypted test object. Phone sync is not enabled.</p><label for="drive-recovery-key">Your recovery key</label><input id="drive-recovery-key" v-model="recoveryKey" type="password" autocomplete="off" spellcheck="false" /><Button type="button" :disabled="busy || !recoveryKey.trim()" @click="driveTest">Test encrypted app data</Button></details>
     </template>
     <p v-if="error" class="at-message error" role="alert">{{ error }}</p><p v-if="notice" class="at-message success" role="status">{{ notice }}</p>
+    <SyncSettings :drive-ready="Boolean(connection?.capabilities.drive)" />
   </section>
 </template>
 

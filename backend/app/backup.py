@@ -6,6 +6,9 @@ import os
 from pathlib import Path, PurePosixPath, PureWindowsPath
 import shutil
 import sqlite3
+from contextlib import closing
+import tempfile
+from zipfile import ZipFile
 from datetime import datetime, timezone
 
 
@@ -28,7 +31,7 @@ def backup_workspace(data_dir: Path, target: Path) -> dict:
         raise ValueError("Choose a backup directory outside the application data directory")
     target.mkdir(parents=True, exist_ok=False)
     database = target / "tracker.sqlite3"
-    with sqlite3.connect(source.as_uri() + "?mode=ro", uri=True) as src, sqlite3.connect(database) as dst:
+    with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as src, closing(sqlite3.connect(database)) as dst:
         src.backup(dst)
         if dst.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise ValueError("Database integrity check failed")
@@ -37,6 +40,8 @@ def backup_workspace(data_dir: Path, target: Path) -> dict:
         shutil.copytree(data_dir / "documents", target / "documents")
     metadata = {"version": 1, "created_at": datetime.now(timezone.utc).isoformat(), "source_data_dir": str(data_dir),
                 "source_platform": os.name, "database_sha256": checksum(database)}
+    metadata['documents_sha256'] = {path.relative_to(target).as_posix(): checksum(path)
+        for path in (target / 'documents').rglob('*') if path.is_file()}
     (target / "backup.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     return metadata
 
@@ -49,6 +54,10 @@ def restore_workspace(source: Path, data_dir: Path):
     database = source / "tracker.sqlite3"
     if checksum(database) != metadata["database_sha256"]:
         raise ValueError("Backup database checksum does not match")
+    for name, expected in metadata.get('documents_sha256', {}).items():
+        path = (source / name).resolve()
+        if not path.is_relative_to(source / 'documents') or not path.is_file() or checksum(path) != expected:
+            raise ValueError('A backup document is missing, changed or unsafe')
     if data_dir.exists() and any(data_dir.iterdir()):
         raise ValueError("Restore requires an empty data directory; existing records are never overwritten")
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -56,7 +65,7 @@ def restore_workspace(source: Path, data_dir: Path):
         no_symlinks(source / "documents")
         shutil.copytree(source / "documents", data_dir / "documents")
     target = data_dir / "tracker.sqlite3"
-    with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as src, sqlite3.connect(target) as dst:
+    with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as src, closing(sqlite3.connect(target)) as dst:
         src.backup(dst)
         if dst.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise ValueError("Backup database integrity check failed")
@@ -77,6 +86,9 @@ def restore_workspace(source: Path, data_dir: Path):
             dst.execute("DELETE FROM human_sessions")
         if 'external_connections' in tables:
             dst.execute("UPDATE external_connections SET secret_reference=NULL, status='DISCONNECTED', scopes='[]', generation=generation+1, verified_at=NULL")
+        if 'sync_workspace' in tables:
+            from uuid import uuid4
+            dst.execute("UPDATE sync_workspace SET device_id=?, next_seq=1, secret_reference=NULL, cursor=NULL, restored=1, last_success=NULL, last_error=NULL, retry_at=NULL", (str(uuid4()),))
         if "push_deliveries" in tables:
             dst.execute("DELETE FROM push_deliveries")
         if "push_devices" in tables:
@@ -84,6 +96,21 @@ def restore_workspace(source: Path, data_dir: Path):
         if "login_attempts" in tables:
             dst.execute("DELETE FROM login_attempts")
         dst.commit()
+
+
+def restore_bundle(source: Path, data_dir: Path):
+    """Validate paths and expansion before restoring to a new empty directory."""
+    with tempfile.TemporaryDirectory(prefix='tracker-bundle-') as temporary:
+        root = Path(temporary).resolve()
+        with ZipFile(source) as bundle:
+            if sum(item.file_size for item in bundle.infolist()) > 1024 * 1024 * 1024:
+                raise ValueError('The expanded backup exceeds 1 GiB')
+            for item in bundle.infolist():
+                target = (root / item.filename).resolve()
+                if not target.is_relative_to(root) or '\\' in item.filename or item.external_attr >> 16 & 0o170000 == 0o120000:
+                    raise ValueError('The backup contains an unsafe path')
+            bundle.extractall(root)
+        restore_workspace(root, data_dir)
 
 
 def run():
@@ -101,7 +128,7 @@ def run():
             backup_workspace(Settings().app_data_dir, args.output)
             print(f"Backup created: {args.output}")
         else:
-            restore_workspace(args.source, args.data_dir)
+            (restore_bundle if args.source.is_file() else restore_workspace)(args.source, args.data_dir)
             print(f"Workspace restored: {args.data_dir}. Start the app to apply migrations; sign in again.")
     except (OSError, ValueError, KeyError, sqlite3.Error) as exc:
         parser.error(str(exc))

@@ -129,6 +129,21 @@ class TaskRead(Read):
 
 
 class FollowUpRead(Read):
+    content_available: bool = True
+
+    @model_validator(mode='before')
+    @classmethod
+    def local_message_availability(cls, value):
+        from app.models import FollowUp
+        from sqlalchemy.orm import object_session
+        if isinstance(value, FollowUp):
+            from app.sync.domain import imported_record
+            session = object_session(value)
+            available = not session or not imported_record(session, 'followup', value.id)
+            return {**{name: getattr(value, name) for name in cls.model_fields if name != 'content_available'},
+                    'content_available': available}
+        return value
+
     recipient_email: str | None = None
     recipient_name: str | None = None
     recipient_source_url: str | None = None

@@ -18,28 +18,9 @@ from app.main import create_app
 from app.mcp_server import create_mcp_server
 from app.models import AgentCredential, ExternalConnection
 
+from tests.support import MemorySecrets
+
 ORIGIN = 'http://127.0.0.1:8000'
-
-
-class MemorySecrets:
-    def __init__(self):
-        self.values = {}
-        self.fail = False
-
-    def get(self, key):
-        if self.fail:
-            raise GoogleConnectionError('Credential store locked')
-        return self.values.get(key)
-
-    def put(self, key, value):
-        if self.fail:
-            raise GoogleConnectionError('Credential store locked')
-        self.values[key] = dict(value)
-
-    def delete(self, key):
-        if self.fail:
-            raise GoogleConnectionError('Credential store locked')
-        self.values.pop(key, None)
 
 
 @pytest.fixture

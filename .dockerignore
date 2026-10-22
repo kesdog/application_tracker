@@ -1,6 +1,7 @@
 .git
 .venv
 .run
+/test.md
 .env
 .env.*
 deploy/secrets

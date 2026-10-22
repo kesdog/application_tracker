@@ -30,6 +30,7 @@ def record_event(
     metadata: dict[str, Any] | None = None,
     occurred_at: datetime | None = None,
 ) -> TimelineEvent:
+    session.info['sync_actor'] = actor_type.value
     event = TimelineEvent(
         application_id=application_id,
         event_type=event_type,
@@ -56,6 +57,7 @@ def record_audit(
     actor_reference: str | None = None,
     reversible: bool = False,
 ) -> AuditEntry:
+    session.info['sync_actor'] = actor_type.value
     entry = AuditEntry(
         application_id=application_id,
         entity_type=entity_type,

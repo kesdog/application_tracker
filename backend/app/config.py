@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     google_client_id: str | None = None
     google_client_secret: SecretStr | None = None
     google_redirect_uri: str | None = None
+    app_credential_key_file: Path | None = None
 
     @model_validator(mode="after")
     def validate_google_callback(self):

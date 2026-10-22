@@ -13,6 +13,7 @@ export interface Health {
   database: 'connected'
 }
 
+export type FollowUpTargetStatus = 'UNKNOWN' | 'POTENTIAL' | 'CONFIRMED' | 'SENT'
 export interface ApplicationCreate {
   job_title: string
   company: string
@@ -63,6 +64,9 @@ export interface Application extends ApplicationCreate {
   max_followup_suggestions: number | null
   deleted_at: string | null
   duplicate_warnings: DuplicateMatch[]
+  completed_followup_count?: number
+  has_potential_recipients?: boolean
+  followup_target_status?: FollowUpTargetStatus
 }
 export interface DuplicateMatch { id: string; job_title: string; company: string; date_applied: string; reasons: string[] }
 export interface ApplicationFilters {
@@ -80,6 +84,7 @@ export type FollowUpChannel = 'EMAIL' | 'PHONE' | 'BOTH'
 export interface FollowUpInput { due_at: string | null; template_reference: string | null; channel: FollowUpChannel }
 export interface Customization { language?: string | null; tone?: string | null; signature?: string | null }
 export interface FollowUp extends FollowUpInput {
+  content_available?: boolean
   id: string; application_id: string; sequence_number: number; status: 'PREPARED' | 'READY' | 'SENT'; is_automatic: boolean; sent_at: string | null
   subject: string; body: string; instructions: string; customization: Customization; revision: number; approved_revision: number | null
   template_snapshot: Record<string, unknown>; variable_snapshot: Record<string, string>; prepared_at: string | null; updated_at: string
@@ -149,7 +154,7 @@ export interface TimelineEntryInput { summary: string; occurred_at: string }
 export interface Timeline { events: TimelineEvent[]; undo_available: boolean }
 export interface UndoResult { audit_id: string; entity_type: string; entity_id: string; fields: string[] }
 export interface DashboardCounts { active_applications: number; followups_due: number; followups_overdue: number; tasks_due: number; tasks_overdue: number; upcoming_interviews: number }
-export interface UpcomingItem { id: string; kind: 'TASK' | 'FOLLOWUP' | 'INTERVIEW'; title: string; due_at: string; status: string; application: ApplicationSummary }
+export interface UpcomingItem { id: string; kind: 'TASK' | 'FOLLOWUP' | 'INTERVIEW' | 'DEADLINE'; title: string; due_at: string; status: string; application: ApplicationSummary }
 export interface RecentActivity { id: string; event_type: string; summary: string; actor_type: ActorType; created_at: string; application: ApplicationSummary }
 export interface DashboardData { counts: DashboardCounts; upcoming: UpcomingItem[]; due_followups: UpcomingItem[]; overdue_followups: UpcomingItem[]; recent_activity: RecentActivity[] }
 export type DocumentType = 'CV' | 'COVER_LETTER'
@@ -169,6 +174,14 @@ export interface IntegrationStatus { mail: { connected: boolean }; calendar: { c
 export type GoogleCapability = 'drive' | 'gmail_read' | 'gmail_drafts'
 export interface GoogleConnection { configured: boolean; status: string; email: string | null; capabilities: Record<GoogleCapability, boolean>; updated_at: string | null; verified_at: string | null; message: string | null }
 export function getConnections(): Promise<{ google: GoogleConnection }> { return request('/api/connections') }
+export interface ApplicationSyncStatus {
+  id: string | null; state: 'IDLE' | 'RUNNING' | 'COMPLETED' | 'PARTIAL'; phase: 'GMAIL' | 'DRIVE' | null
+  checked: number; created: number; updated: number; review_count: number
+  gmail: string; drive: string; warnings: string[]; finished_at: string | null
+  reviews?: { message_id: string; subject: string; reason: string; url: string }[]
+}
+export const getApplicationSync = (): Promise<ApplicationSyncStatus> => request('/api/applications/sync/status')
+export const startApplicationSync = (): Promise<ApplicationSyncStatus> => request('/api/applications/sync', { method: 'POST' })
 export function startGoogle(capabilities: GoogleCapability[]): Promise<{ authorization_url: string; expires_in: number }> {
   return request('/api/connections/google/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ capabilities }) })
 }
@@ -277,9 +290,9 @@ export function listTasks(): Promise<TaskListItem[]> {
   return request('/api/tasks')
 }
 
-export type ApplicationUpdate = Partial<Omit<Application, 'id' | 'revision'>> & { expected_revision?: number }
+export type ApplicationUpdate = Partial<Omit<Application, 'id' | 'revision' | 'completed_followup_count' | 'has_potential_recipients' | 'followup_target_status'>> & { expected_revision?: number }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 8000)
   try {

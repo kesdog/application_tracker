@@ -45,6 +45,29 @@ def test_lists_newest_application_date_first(client):
     assert [item["date_applied"] for item in client.get("/api/applications").json()] == ["2026-09-18", "2026-09-01", "2026-08-01"]
 
 
+def test_completed_followup_count_includes_calls_and_sent_history_not_drafts(client):
+    app = client.post('/api/applications', json=payload(phone_number='+33612345678', max_followup_suggestions=0)).json()
+    root = f"/api/applications/{app['id']}"
+    assert app['completed_followup_count'] == 0
+    sent = []
+    for channel in ('EMAIL', 'PHONE', 'BOTH'):
+        item = client.post(root + '/followups', json={'channel': channel, 'subject': 'Hello', 'body': 'Checking in'}).json()
+        saved = client.patch(root + '/followups/' + item['id'], json={'status': 'SENT'}).json()
+        assert saved['status'] == 'SENT'
+        sent.append(item['id'])
+    # Archiving a completed message keeps the evidence that contact happened.
+    assert client.patch(root + '/followups/' + sent[0], json={'archived': True}).status_code == 200
+    prepared = client.post(root + '/followups', json={'subject': 'Draft', 'body': 'Not sent'}).json()
+    assert client.patch(root + '/followups/' + prepared['id'], json={'status': 'READY'}).status_code == 200
+    assert client.post(root + '/followups', json={'subject': 'Draft', 'body': 'Still not sent'}).status_code == 201
+    for endpoint in (root, '/api/applications', '/api/applications?company=Example'):
+        result = client.get(endpoint).json()
+        assert (result[0] if isinstance(result, list) else result)['completed_followup_count'] == 3
+    # Correcting a recorded send updates the derived count immediately.
+    assert client.patch(root + '/followups/' + sent[1], json={'status': 'PREPARED'}).status_code == 200
+    assert client.get(root).json()['completed_followup_count'] == 2
+
+
 def test_phone_is_optional_validated_and_normalized_for_human_updates(client):
     created = client.post("/api/applications", json=payload(phone_number="06 12 34 56 78"))
     assert created.status_code == 201

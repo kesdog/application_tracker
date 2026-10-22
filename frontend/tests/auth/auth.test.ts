@@ -12,7 +12,7 @@ beforeEach(() => {
   localStorage.clear()
 })
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
-const global = { stubs: { App: { template: '<div>Workspace content<button @click="$emit(\'signout\')">Sign out</button></div>' } } }
+const global = { stubs: { WelcomeExperience: true, App: { template: '<div>Workspace content<button @click="$emit(\'signout\')">Sign out</button></div>' } } }
 const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
 
 it('holds private workspace components until the session check succeeds', async () => {

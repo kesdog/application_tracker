@@ -1,5 +1,7 @@
 # Application Tracker — V1 Implementation Plan
 
+Compact two-way Google Drive synchronization: [implementation and remaining gates](SYNC_PLAN.md).
+
 Current implementation extension: [Shared agent and Google integration](SHARED_AGENT_GOOGLE_PLAN.md).
 
 Login/session refactor: [class ownership and function-by-function workflow](LOGIN_WORKFLOW.md).

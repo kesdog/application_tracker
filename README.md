@@ -1,5 +1,11 @@
 # Application Tracker
 
+Version **0.12.0** adds **Settings → Data & recovery**: reviewed CSV/XLSX import, a persistent email-review inbox, duplicate consolidation, Trash restoration, complete backup downloads and isolated recovery verification. Imports preview column mappings and errors before saving; exact retries are replay-safe. Consolidation retains original history in Trash, archives copied unsent follow-ups and pauses reminders for review. Restoring a deleted application also pauses reminders.
+
+Posting checks now catch up from persisted check times after restart. Spreadsheet exports treat text as literal data, document uploads are limited to 20 MiB, and the dashboard includes application/selection deadlines. See [RELEASE_READINESS_PLAN.md](RELEASE_READINESS_PLAN.md) for delivered phases and remaining live-service/mobile gates.
+
+**Sync applications** replaces the application list refresh action. It checks existing Drive records, reads application-related Gmail messages across all result pages, matches updates to existing records, adds clear confirmations, then synchronizes compact Drive data again. Enable Gmail read permission and initialize Drive sync in Settings first. Each phase reports completion or setup/failure separately. Equivalent messages are deduplicated per account, original email dates and source references are preserved, and ambiguous messages appear under **emails need review**. The importer uses conservative confirmation and explicit interview/rejection patterns; unsupported formats need manual review. It does not send mail, read attachments, or change Gmail labels. Message receipts and record changes commit together so retries do not create duplicate applications or timeline events.
+
 Version **0.11.0** simplifies posting discovery to **Search manually** and **Agent search**, with a portable search prompt and clickable email references throughout application details, interviews and email timeline entries.
 
 The frontend uses PrimeVue 5 with Aura and a shared appearance layer. **Settings → Appearance** previews and saves colors locally, warns about low text contrast, and offers Default, Dark, High Contrast, Soft and Minimal presets. Presets remain editable. **Table preferences** controls optional columns, density and page size; Date, Company, Position and Status remain visible. Table sorting and pagination apply to the loaded results; filtering and full filtered exports remain backend-owned. Next actions use the existing dashboard window. Server-side pagination is deferred until data volume requires it.
@@ -40,8 +46,8 @@ Use Python 3.11+ (tested with 3.12), Node.js 22.12+ (tested with 24), and pnpm 1
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.lock
-.\.venv\Scripts\python.exe -m pip install --no-deps -e '.[dev]'
+.\.venv\Scripts\python.exe -m pip install --require-hashes -r requirements-dev.lock
+.\.venv\Scripts\python.exe -m pip install --no-deps --no-build-isolation -e '.[dev]' -e './libs/portable-webtoolbox-embedded-v0.7.0/webtoolbox-embedded[search]'
 .\.venv\Scripts\python.exe -m playwright install chromium
 pnpm --dir frontend install --frozen-lockfile
 Copy-Item .env.example .env
@@ -107,7 +113,7 @@ Relative data paths resolve against the project root, regardless of the terminal
 `GET /api/health` checks the live database connection and returns:
 
 ```json
-{"status":"ok","version":"0.11.0","database":"connected"}
+{"status":"ok","version":"0.12.0","database":"connected"}
 ```
 
 It returns HTTP 503 if the database query fails. The Settings page checks on load and when **Check again** is clicked, with a five-second timeout. It clears stale version/database values on a failed check. Continuous polling is not part of this release.
@@ -373,7 +379,7 @@ Manual checks:
 3. Create and update an application through the agent REST path or MCP while the Applications page remains open. Confirm its table updates without a browser reload.
 4. Regenerate the token; confirm the previous token receives HTTP 401 or an MCP tool error immediately.
 5. Confirm an agent delete operation is unavailable, and the Settings page never shows the old token again.
-6. Expand **System status** and confirm backend version **0.11.0** and **SQLite · Connected**.
+6. Expand **System status** and confirm backend version **0.12.0** and **SQLite · Connected**.
 
 The 0.9 agent-token flow remains available but has not been activated in the user's database. The Python test client emits one upstream deprecation warning from Starlette; tests pass.
 

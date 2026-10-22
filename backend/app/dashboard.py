@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -46,6 +46,12 @@ def dashboard(session: Session) -> dict:
         {"id": item.id, "kind": "INTERVIEW", "title": f"{item.type.value.title()} interview", "due_at": item.scheduled_at, "status": "SCHEDULED", "application": summary(application)}
         for item, application in interview_rows
     ]
+    deadline_rows = session.scalars(select(Application).where(
+        Application.deleted_at.is_(None), Application.status != ApplicationStatus.CLOSED,
+        Application.deadline.is_not(None), Application.deadline <= horizon.date(),
+    )).all()
+    upcoming.extend({'id': item.id, 'kind': 'DEADLINE', 'title': 'First-round selection' if item.deadline_kind and item.deadline_kind.value == 'FIRST_ROUND' else 'Applications close',
+        'due_at': datetime.combine(item.deadline, time(12)), 'status': 'DATE_ONLY', 'application': summary(item)} for item in deadline_rows)
     upcoming.sort(key=lambda item: (item["due_at"], item["kind"], item["id"]))
     due_followups = [item for item in upcoming if item["kind"] == "FOLLOWUP" and item["due_at"] >= now]
     overdue_followups = [item for item in upcoming if item["kind"] == "FOLLOWUP" and item["due_at"] < now]

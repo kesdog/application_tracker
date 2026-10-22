@@ -81,6 +81,8 @@ def draft_followup(
         return DraftResult.model_validate(receipt.result)
     application = get_application(session, application_id)
     item = child(session, FollowUp, application_id, followup_id)
+    from app.sync.domain import require_local_message
+    require_local_message(session, followup_id)
     if data.expected_revision is not None and item.revision != data.expected_revision:
         raise RevisionConflict('The follow-up changed. Reload and review before drafting.')
     if item.channel == FollowUpChannel.PHONE:

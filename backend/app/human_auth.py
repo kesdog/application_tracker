@@ -15,6 +15,7 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
 from app.models import HumanSession, LoginAttempt, utc_now
+from app.session_manager import SessionGrant, SessionManager, digest
 
 COOKIE = "__Host-tracker-session"
 N, R, P = 32768, 8, 3
@@ -46,10 +47,6 @@ def verify_password(password: str, encoded: str) -> bool:
     return hmac.compare_digest(derived, bytes.fromhex(expected))
 
 
-def digest(value: str) -> str:
-    return hashlib.sha256(value.encode()).hexdigest()
-
-
 def fingerprint(settings) -> str:
     return digest(settings.app_password_hash.get_secret_value())
 
@@ -71,22 +68,48 @@ def check_transport(request, settings):
         raise HTTPException(400, "Use HTTPS to access this workspace")
 
 
+class SqlHumanSessionStore:
+    """Tracker persistence adapter for the framework-independent session manager."""
+    def __init__(self, engine):
+        self.engine = engine
+
+    def load(self, reference):
+        with Session(self.engine) as session:
+            item = session.get(HumanSession, reference)
+            return SessionGrant(item.token_hash, item.credential_fingerprint, item.created_at, item.expires_at) if item else None
+
+    def replace(self, grant, old_reference, capacity):
+        with Session(self.engine) as session:
+            session.execute(text('BEGIN IMMEDIATE'))
+            session.execute(delete(HumanSession).where(HumanSession.expires_at <= grant.created_at))
+            if old_reference:
+                session.execute(delete(HumanSession).where(HumanSession.token_hash == old_reference))
+            existing = session.scalars(select(HumanSession).order_by(HumanSession.created_at.desc(), HumanSession.token_hash)).all()
+            for item in existing[capacity - 1:]:
+                session.delete(item)
+            session.add(HumanSession(token_hash=grant.reference, credential_fingerprint=grant.binding,
+                created_at=grant.created_at, expires_at=grant.expires_at))
+            session.commit()
+
+    def revoke(self, reference):
+        with Session(self.engine) as session:
+            session.execute(delete(HumanSession).where(HumanSession.token_hash == reference))
+            session.commit()
+
+
 class HumanSessionManager:
     """Own browser session persistence, expiry, revocation and cookie lifecycle."""
     def __init__(self, engine, settings):
         self.engine, self.settings = engine, settings
+        self.authority = SessionManager(SqlHumanSessionStore(engine), lambda: fingerprint(settings),
+            lifetime=timedelta(hours=settings.app_session_hours), clock=utc_now)
 
     def is_authenticated_reference(self, reference: str) -> bool:
         """Validate a server-held session digest, including pending OAuth owners."""
-        if not reference or len(reference) != 64:
-            return False
-        with Session(self.engine) as session:
-            item = session.get(HumanSession, reference)
-            return bool(item and item.expires_at > utc_now()
-                and hmac.compare_digest(item.credential_fingerprint, fingerprint(self.settings)))
+        return self.authority.valid_reference(reference)
 
     def is_authenticated(self, token: str | None) -> bool:
-        return bool(token and len(token) <= 100 and self.is_authenticated_reference(digest(token)))
+        return self.authority.valid(token)
 
     def status(self, token: str | None) -> dict:
         if self.settings.app_mode == 'local':
@@ -95,25 +118,10 @@ class HumanSessionManager:
         return {'enabled': True, 'authenticated': valid, 'csrf_token': csrf_token(token) if valid else None}
 
     def create(self, old_token: str | None = None) -> str:
-        now, token = utc_now(), secrets.token_urlsafe(32)
-        with Session(self.engine) as session:
-            session.execute(text('BEGIN IMMEDIATE'))
-            session.execute(delete(HumanSession).where(HumanSession.expires_at <= now))
-            if old_token:
-                session.execute(delete(HumanSession).where(HumanSession.token_hash == digest(old_token)))
-            existing = session.scalars(select(HumanSession).order_by(HumanSession.created_at.desc())).all()
-            for item in existing[19:]:
-                session.delete(item)
-            session.add(HumanSession(token_hash=digest(token), credential_fingerprint=fingerprint(self.settings),
-                expires_at=now + timedelta(hours=self.settings.app_session_hours)))
-            session.commit()
-        return token
+        return self.authority.create(old_token)
 
     def revoke(self, token: str | None):
-        if token:
-            with Session(self.engine) as session:
-                session.execute(delete(HumanSession).where(HumanSession.token_hash == digest(token)))
-                session.commit()
+        self.authority.revoke(token)
 
     def set_cookie(self, response, token: str):
         response.set_cookie(COOKIE, token, max_age=self.settings.app_session_hours * 3600,

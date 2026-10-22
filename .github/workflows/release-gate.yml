@@ -1,0 +1,89 @@
+name: Release gate
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release-gate-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  platform:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.13.17'
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24.19.0'
+      - name: Install the locked environment
+        run: |
+          python -m venv .venv
+          if [ "$RUNNER_OS" = Windows ]; then cygpath -w "$PWD/.venv/Scripts" >> "$GITHUB_PATH"; py=.venv/Scripts/python.exe; else echo "$PWD/.venv/bin" >> "$GITHUB_PATH"; py=.venv/bin/python; fi
+          "$py" -m pip install --require-hashes -r requirements-dev.lock
+          "$py" -m pip install --no-deps --no-build-isolation -e . -e libs/portable-webtoolbox-embedded-v0.7.0/webtoolbox-embedded
+          npm install -g pnpm@11.19.0
+          pnpm --dir frontend install --frozen-lockfile
+      - name: Complete offline gate
+        run: |
+          mkdir -p .run
+          set -o pipefail
+          python scripts/test.py --full 2>&1 | tee .run/ci-gate.log
+      - name: Installed distribution smoke
+        run: python scripts/artifact_smoke.py
+      - name: Build Windows distribution
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./build-windows.ps1
+          $env:APP_DATA_DIR = Join-Path $env:RUNNER_TEMP 'tracker-packaged-smoke'
+          $env:APP_PORT = '18080'
+          $env:APP_DESKTOP_SMOKE = '1'
+          $env:APP_DESKTOP_NO_BROWSER = '1'
+          $packaged = Start-Process -FilePath './build/windows/ApplicationTracker/ApplicationTracker.exe' -PassThru -WindowStyle Hidden
+          if (-not $packaged.WaitForExit(60000)) { $packaged.Kill(); throw 'Packaged app timed out' }
+          if ($packaged.ExitCode -ne 0) { throw 'Packaged app failed' }
+          Compress-Archive -Path build/windows/ApplicationTracker -DestinationPath .run/ApplicationTracker-windows.zip
+          (Get-FileHash .run/ApplicationTracker-windows.zip -Algorithm SHA256).Hash | Set-Content .run/ApplicationTracker-windows.sha256
+      - name: Build and exercise Linux image
+        if: runner.os == 'Linux'
+        run: |
+          docker build --tag application-tracker:${GITHUB_SHA} .
+          docker run --rm --entrypoint python application-tracker:${GITHUB_SHA} scripts/artifact_smoke.py
+          docker image inspect application-tracker:${GITHUB_SHA} --format '{{json .Id}}' > .run/image-id.json
+          docker save application-tracker:${GITHUB_SHA} | gzip > .run/ApplicationTracker-linux-image.tar.gz
+          sha256sum .run/ApplicationTracker-linux-image.tar.gz > .run/ApplicationTracker-linux.sha256
+      - name: Retain verification and candidate artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: candidate-${{ matrix.os }}-${{ github.sha }}
+          path: |
+            .run/ci-gate.log
+            .run/ApplicationTracker-*
+            .run/image-id.json
+          retention-days: 14
+          include-hidden-files: true
+  release-gate:
+    name: release-gate
+    needs: platform
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require both platforms
+        env:
+          RESULT: ${{ needs.platform.result }}
+        run: test "$RESULT" = success

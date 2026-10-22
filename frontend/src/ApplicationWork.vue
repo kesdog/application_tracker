@@ -108,7 +108,7 @@ onMounted(load)
     <p v-if="notice" class="at-message success" role="status">{{ notice }}</p>
     <p v-if="!work && busy" role="status">Loading notes, tasks, and follow-ups…</p>
     <template v-if="work">
-      <RecipientPicker :application-id="applicationId" :closed="closed" @changed="emit('changed'); load()" />
+      <details class="recipient-panel"><summary>Follow-up recipients</summary><RecipientPicker :application-id="applicationId" :closed="closed" embedded @changed="emit('changed'); load()" /></details>
       <p v-if="work.outcome_review?.needs_review" class="at-message warning" role="status">Possibly unsuccessful: {{ work.outcome_review.unanswered_sent_count }} follow-ups recorded without an employer reply. This application remains open. Record a reply below or review its outcome in application details.</p>
       <div class="actions"><Button v-if="!work.notes.length && !noteOpen" type="button" :disabled="busy" @click="editNote()">Add note</Button><Button v-if="!work.tasks.length && !taskOpen" type="button" :disabled="busy" @click="taskOpen = true">Add task</Button><Button v-if="!work.followups.length && !followupOpen" type="button" :disabled="busy" @click="followupOpen = true">Add follow-up</Button></div>
       <section v-if="work.notes.length || noteOpen" class="panel" aria-labelledby="notes-title">
@@ -159,13 +159,13 @@ onMounted(load)
           </fieldset>
         </form>
         <article v-for="item in visibleFollowups" :key="item.id" class="item" :aria-label="`Follow-up ${item.sequence_number}`">
-          <div class="section-heading"><strong>{{ item.is_automatic ? 'Automatic ' : '' }}Follow-up #{{ item.sequence_number }} · {{ item.channel === 'BOTH' ? 'Email + phone' : item.channel === 'PHONE' ? 'Phone call' : 'Email' }}</strong><AppTag v-bind="followupStatusMeta[item.status]" :label="item.status === 'SENT' && item.channel !== 'EMAIL' ? 'Completed' : followupStatusMeta[item.status].label" /></div>
+          <div class="section-heading"><strong :title="item.is_automatic ? 'Automatically scheduled' : 'Manually scheduled'">#{{ item.sequence_number }} · {{ item.channel === 'BOTH' ? 'Email + phone' : item.channel === 'PHONE' ? 'Phone call' : 'Email' }}</strong><AppTag v-bind="followupStatusMeta[item.status]" :label="item.status === 'SENT' && item.channel !== 'EMAIL' ? 'Completed' : followupStatusMeta[item.status].label" /></div>
           <p class="meta">Due: {{ dateText(item.due_at) }}<template v-if="item.sent_at"> · {{ item.channel === 'EMAIL' ? 'Sent' : 'Completed' }} {{ dateText(item.sent_at) }}</template></p>
           <p v-if="item.template_reference && item.template_reference !== 'Automatic follow-up reminder'" class="content">Template: {{ item.template_reference }}</p>
           <p v-if="item.channel !== 'EMAIL' && phoneNumber" class="meta">Call: <a :href="`tel:${phoneNumber}`">{{ phoneNumber }}</a></p>
           <p v-if="item.archived_at" class="muted">Archived</p>
           <p v-if="item.channel !== 'PHONE'" class="meta">{{ item.recipient_email ? `To: ${item.recipient_email}` : 'Recipient needed' }}</p>
-          <div class="actions"><Button as="a" :href="`#/followups/${applicationId}/${item.id}`">Review message and reminders</Button></div>
+          <div class="actions"><Button as="a" :href="`#/followups/${applicationId}/${item.id}`">Open follow-up</Button></div>
         </article>
         <Pagination v-if="work.followups.length > followupPageSize" v-model:page="followupPage" :total="work.followups.length" :page-size="followupPageSize" label="follow-ups" />
       </section>
@@ -176,6 +176,7 @@ onMounted(load)
 <style scoped>
 @layer legacy {
 .work { margin-top: 32px; }
+.recipient-panel { margin:16px 0; padding:16px 18px; border:1px solid var(--at-border); border-radius:8px; background:var(--at-surface); }.recipient-panel > summary { cursor:pointer; font-weight:600; }
 .work-tags { display:flex; flex-wrap:wrap; gap:6px; }
 .work-heading, .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 h3 span { color: var(--at-text-muted); font-size: 13px; font-weight: 400; }

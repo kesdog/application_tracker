@@ -9,7 +9,7 @@ import { appliedFilters, blankFilters } from '../../src/applicationFilters'
 import { resetTablePreferences, updateTablePreferences } from '../../src/settings/tablePreferences'
 import { getDashboard, listApplications, type Application, type DashboardData } from '../../src/api'
 
-vi.mock('../../src/api', async importOriginal => ({ ...await importOriginal<typeof import('../../src/api')>(), listApplications: vi.fn(), getDashboard: vi.fn() }))
+vi.mock('../../src/api', async importOriginal => ({ ...await importOriginal<typeof import('../../src/api')>(), listApplications: vi.fn(), getDashboard: vi.fn(), getApplicationSync: vi.fn().mockResolvedValue({ state: 'IDLE' }) }))
 enableAutoUnmount(afterEach)
 const global = { plugins: [[PrimeVue, { unstyled: true }] as [typeof PrimeVue, { unstyled: boolean }]] }
 const emptyDashboard: DashboardData = { counts: { active_applications: 0, followups_due: 0, followups_overdue: 0, tasks_due: 0, tasks_overdue: 0, upcoming_interviews: 0 }, upcoming: [], due_followups: [], overdue_followups: [], recent_activity: [] }
@@ -38,6 +38,26 @@ it('sorts the entire result set before pagination and keeps focus links and core
   await flushPromises()
   expect(wrapper.classes()).toContain('density-comfortable')
   expect(wrapper.text()).toContain('Next action')
+})
+
+it('shows a tick and completed follow-up count even when optional columns are hidden', async () => {
+  updateTablePreferences({ columns: [] })
+  const wrapper = mount(ApplicationTable, { props: { applications: [{ ...application(0), completed_followup_count: 2 }, application(1)], dashboard: emptyDashboard, overdueIds: new Set<string>(), loading: false, hasFilters: false, error: false }, global })
+  expect(wrapper.findAll('.completed-followups')).toHaveLength(1)
+  expect(wrapper.get('.completed-followups').attributes('aria-label')).toBe('2 completed follow-ups')
+  expect(wrapper.get('.completed-followups').text()).toBe('2')
+  expect(wrapper.find('.completed-followups .pi-check').exists()).toBe(true)
+  await wrapper.setProps({ applications: [{ ...application(0), completed_followup_count: 1 }] })
+  expect(wrapper.get('.completed-followups').attributes('title')).toBe('1 completed follow-up')
+  await wrapper.setProps({ applications: [{ ...application(0), completed_followup_count: 0 }] })
+  expect(wrapper.find('.completed-followups').exists()).toBe(false)
+})
+
+it('keeps target readiness visible with optional columns hidden', () => {
+  updateTablePreferences({ columns: [] })
+  const statuses = ['UNKNOWN', 'POTENTIAL', 'CONFIRMED', 'SENT'] as const
+  const wrapper = mount(ApplicationTable, { props: { applications: statuses.map((followup_target_status, index) => ({ ...application(index), followup_target_status })), dashboard: emptyDashboard, overdueIds: new Set<string>(), loading: false, hasFilters: false, error: false }, global })
+  for (const status of statuses) expect(wrapper.find(`.followup-target.target-${status.toLowerCase()}`).exists()).toBe(true)
 })
 
 it('preserves active filters on a failed removal and refreshes the applied query on SSE invalidation', async () => {
@@ -69,4 +89,19 @@ it('ignores an older response after a newer invalidation finishes', async () => 
   await flushPromises()
   expect(wrapper.find('a[href="#/applications/0"]').exists()).toBe(true)
   expect(wrapper.find('a[href="#/applications/1"]').exists()).toBe(false)
+})
+
+it('opens the whole record with mouse and keyboard while preserving external links', async () => {
+  const record = { ...application(0), job_title: 'CDI - Engineer', job_url: 'https://example.com/job' }
+  const wrapper = mount(ApplicationTable, { props: { applications: [record], dashboard: emptyDashboard, overdueIds: new Set<string>(), loading: false, hasFilters: false, error: false }, global })
+  expect(wrapper.get('a.position').text()).toBe('Engineer')
+  expect(wrapper.find('.pi-file-check').exists()).toBe(true)
+  await wrapper.get('tbody td').trigger('click')
+  expect(window.location.hash).toBe('#/applications/0')
+  window.location.hash = '#/applications'
+  await wrapper.get('tbody tr').trigger('keydown', { key: 'Enter' })
+  expect(window.location.hash).toBe('#/applications/0')
+  window.location.hash = '#/applications'
+  await wrapper.get('a[target="_blank"]').trigger('click')
+  expect(window.location.hash).toBe('#/applications')
 })
