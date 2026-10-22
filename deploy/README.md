@@ -2,6 +2,10 @@
 
 ## Live environment configuration
 
+The container sets `APP_PROJECT_ROOT=/app` so an installed wheel finds the copied
+`alembic.ini`, migrations and UI instead of deriving those paths from site-packages.
+Source and frozen Windows installs keep their existing default resource root.
+
 Copy `deploy/hosted.env.example` to the ignored `deploy/hosted.env`. Set `TRACKER_DOMAIN` there for Compose. The root `.env` is used for local/source installations; its Google placeholders are linked to `.env.example`. Desktop/browser OAuth client IDs and the phone HTTPS origin are intentionally blank until you configure the Google project. Reserved `GOOGLE_WEB_CLIENT_ID`/`GOOGLE_WEB_ORIGIN` values document the future phone target; they do not enable the unfinished independent phone client.
 
 For hosted Google access, set `GOOGLE_CLIENT_ID` and, if required by that client type, `GOOGLE_CLIENT_SECRET` in `deploy/hosted.env`. The Google overlay binds the callback to `https://TRACKER_DOMAIN/api/connections/google/callback`. Register that exact URI with Google. Keep Drive/Gmail permissions optional and run the real cross-client sync gate before phone implementation.

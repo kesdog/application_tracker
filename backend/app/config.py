@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-PROJECT_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
+PROJECT_ROOT = Path(os.environ.get('APP_PROJECT_ROOT') or getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2])).resolve()
 DEFAULT_DATA_DIR = (Path(os.environ.get("LOCALAPPDATA", Path.home())) / "ApplicationTracker") if getattr(sys, "frozen", False) else PROJECT_ROOT / "data"
 
 

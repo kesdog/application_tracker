@@ -12,6 +12,7 @@
 - Add an optional encrypted hosted credential vault, `.env` setup and a Google Compose overlay. Local OS-vault behavior remains the default.
 - Include the pending desktop sync, onboarding and UI improvements in the reviewed release baseline.
 - Add hashed runtime/development locks, pinned container bases and a paired Linux/Windows CI candidate gate.
+- Give non-editable container installs an explicit migration/UI resource root, verified by the installed-image smoke check.
 - Exercise installed artifacts and the Windows executable, including startup, migrations, persistence, uploads and backup/recovery.
 
 Live Google/HTTPS/physical-phone acceptance, the independent offline phone replica, stable publication/signing, and opt-in upgrade installation remain gated work. This release does not claim those capabilities complete.

@@ -38,6 +38,15 @@ def test_health_reports_database_failure(tmp_path):
         assert response.json() == {"detail": "Database unavailable"}
 
 
+def test_installed_distribution_can_use_an_explicit_migration_and_asset_root(tmp_path):
+    import os
+    import subprocess
+    import sys
+    result = subprocess.run([sys.executable, '-c', 'from app.config import PROJECT_ROOT; print(PROJECT_ROOT)'],
+        env={**os.environ, 'APP_PROJECT_ROOT': str(tmp_path)}, capture_output=True, text=True, check=True)
+    assert result.stdout.strip() == str(tmp_path.resolve())
+
+
 def test_settings_load_dotenv_and_environment_takes_precedence(tmp_path, monkeypatch):
     for name in ("APP_HOST", "APP_PORT", "APP_ENV", "APP_DATA_DIR", "LOG_LEVEL"):
         monkeypatch.delenv(name, raising=False)

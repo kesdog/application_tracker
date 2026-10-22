@@ -7,7 +7,7 @@ Review date: 22 October 2026. Implementation authorized on 22 October; delivery 
 | Phase | Current state |
 | --- | --- |
 | 0 | Existing local feature work reconciled into the release baseline. Single-workspace/local-first boundaries retained. The supplied SSH credential has not been used; rotation remains an owner action. |
-| 1 | Export literal handling, persisted posting-check catch-up, stale-source rejection, upload limits, complete hashed locks and clean Windows installation implemented. Windows parser/runtime data omissions found through executable testing and fixed. Paired Linux/Windows CI added; remote Linux acceptance remains pending until its first run. |
+| 1 | Export literal handling, persisted posting-check catch-up, stale-source rejection, upload limits, complete hashed locks and clean Windows installation implemented. Windows parser/runtime data omissions found through executable testing and fixed. Paired Linux/Windows CI added. Windows CI passed; Linux source checks passed and its installed-image test exposed a resource-root bug, now fixed with APP_PROJECT_ROOT=/app. The current commit's CI result is the authoritative remote acceptance gate. |
 | 2 | Settings now supports reviewed CSV/XLSX import, replay-safe saving, persistent account-scoped mail review, explicit reply/reminder choices, duplicate consolidation, Trash restoration, full backup downloads and isolated recovery verification. Packaged and source recovery commands restore into a new empty directory. Deadlines appear in upcoming work. Restored/consolidated reminders require review. |
 | 3 | Optional authenticated encrypted server credential store and Compose overlay implemented; live values linked through `.env.example`, private `.env` placeholders and `deploy/hosted.env.example`. User confirmed clients/hosting are not configured. Real consent, cross-client Drive behavior, HTTPS and physical devices remain required gates. |
 | 4 | Not started: the approved plan requires successful live desktop/web Google compatibility before implementing the independent phone client. Compact sync privacy boundaries are unchanged. |
@@ -148,7 +148,7 @@ Defer multi-user SaaS, native mobile stores, additional mail providers, multiple
 
 ### Implementation delivery checks
 
-- Final clean-environment push gate: **555 Python tests passed, 2 live-Google tests skipped, 135 frontend tests passed across 25 files**. Build/type-check and `pip check` pass; exit status **0**. Log: `.run/release-push-gate.log`.
+- Final clean-environment push gate: **556 Python tests passed, 2 live-Google tests skipped, 135 frontend tests passed across 25 files**. Build/type-check and `pip check` pass; exit status **0**. Log: `.run/container-fix-full-gate.log`.
 - Official PrimeVue MCP validation: **71 component usages, 0 requiring review**.
 - Fresh hashed-dependency installation and installed-artifact smoke pass: production UI, health, migrations, restart persistence, document upload, backup download and isolated recovery verification.
 - Rebuilt Windows executable passes ZIP recovery into an empty directory, startup/health and clean shutdown. Parser data and the custom Python runtime's CA-policy file are bundled when required. Synthetic result: restore exit 0, startup exit 0.
