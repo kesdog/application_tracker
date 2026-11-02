@@ -74,10 +74,10 @@ jobs:
       - name: Build and exercise installed Linux image
         if: runner.os == 'Linux'
         run: |
-          docker build --tag application-tracker:${GITHUB_SHA} .
-          docker run --rm --entrypoint python application-tracker:${GITHUB_SHA} scripts/artifact_smoke.py
-          docker image inspect application-tracker:${GITHUB_SHA} --format '{{json .Id}}' > .run/image-id.json
-          docker save application-tracker:${GITHUB_SHA} | gzip > .run/ApplicationTracker-linux-image.tar.gz
+          docker build --tag "application-tracker:${GITHUB_SHA}" .
+          docker run --rm --entrypoint python "application-tracker:${GITHUB_SHA}" scripts/artifact_smoke.py
+          docker image inspect "application-tracker:${GITHUB_SHA}" --format '{{json .Id}}' > .run/image-id.json
+          docker save "application-tracker:${GITHUB_SHA}" | gzip > .run/ApplicationTracker-linux-image.tar.gz
       - name: Retain candidate artifacts and verification
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

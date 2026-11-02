@@ -21,8 +21,10 @@ deletion to release owners. Require annotated tags; signed tags are preferred.
 The workflow rejects tags outside main's history and mismatched versions.
 
 Create the following GitHub environments **before enabling releases**. Restrict
-them to protected version tags (or main for phone deployment), add required human
-reviewers and prevent self-approval. A YAML `environment:` name alone does not
+them to protected version tags (or main for phone deployment) and add required
+human reviewers. Enable prevent self-review only when another trusted reviewer
+is available; a sole maintainer otherwise cannot approve their own release.
+A YAML `environment:` name alone does not
 configure approval protection. Credentials belong only in these environments,
 never repository-level secrets available to other workflows or in Git.
 
