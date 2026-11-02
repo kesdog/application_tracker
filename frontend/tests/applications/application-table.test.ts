@@ -92,6 +92,7 @@ it('ignores an older response after a newer invalidation finishes', async () => 
 })
 
 it('opens the whole record with mouse and keyboard while preserving external links', async () => {
+  updateTablePreferences({ columns: ['source'] })
   const record = { ...application(0), job_title: 'CDI - Engineer', job_url: 'https://example.com/job' }
   const wrapper = mount(ApplicationTable, { props: { applications: [record], dashboard: emptyDashboard, overdueIds: new Set<string>(), loading: false, hasFilters: false, error: false }, global })
   expect(wrapper.get('a.position').text()).toBe('Engineer')
@@ -103,5 +104,21 @@ it('opens the whole record with mouse and keyboard while preserving external lin
   expect(window.location.hash).toBe('#/applications/0')
   window.location.hash = '#/applications'
   await wrapper.get('a[target="_blank"]').trigger('click')
+  expect(window.location.hash).toBe('#/applications')
+})
+
+it('keeps one direct email action under each position even with the source column hidden', async () => {
+  updateTablePreferences({ columns: [] })
+  const direct = 'https://mail.google.com/mail/?authuser=owner%40example.com#all/abc123'
+  const record = { ...application(0), email_reference: `Application subject\n${direct}\nhttps://mail.google.com/mail/?authuser=owner%40example.com#all/def456` }
+  const wrapper = mount(ApplicationTable, { props: { applications: [record], dashboard: emptyDashboard, overdueIds: new Set<string>(), loading: false, hasFilters: false, error: false }, global })
+  const links = wrapper.findAll('.application-email a')
+  expect(links).toHaveLength(1)
+  expect(links[0].text()).toBe('Open email')
+  expect(links[0].attributes('href')).toBe(direct)
+  expect(links[0].attributes('target')).toBe('_blank')
+  expect(links[0].attributes('rel')).toBe('noopener noreferrer')
+  expect(links[0].attributes('aria-label')).toContain('Engineer 0 at Company 00')
+  await links[0].trigger('click')
   expect(window.location.hash).toBe('#/applications')
 })

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t, messageText, errorText, intlLocale } from './i18n'
+
 import Select from 'primevue/select'
 import Button from 'primevue/button'
 import Textarea from 'primevue/textarea'
@@ -24,16 +26,16 @@ function localNow() {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
 }
 const checkedAt = ref(localNow())
-const label = computed(() => !props.application.posting_last_checked_at ? 'Not checked'
-  : props.application.posting_status === 'UNKNOWN' || props.application.posting_check_failures > 0 ? 'Unable to verify'
-  : props.application.posting_status === 'LIVE' ? 'Live' : 'Closed')
+const label = computed(() => !props.application.posting_last_checked_at ? t("Not checked")
+  : props.application.posting_status === 'UNKNOWN' || props.application.posting_check_failures > 0 ? t("Unable to verify")
+  : props.application.posting_status === 'LIVE' ? t("Live") : t("Closed"))
 
 watch(() => props.application, async (_application, _previous, onCleanup) => {
   let active = true
   onCleanup(() => { active = false })
   plan.value = null; copyMessage.value = ''; showPrompt.value = false
   try { const nextPlan = await getPostingReview(props.application.id); if (active) plan.value = nextPlan }
-  catch (cause) { if (active) error.value = cause instanceof Error ? cause.message : 'Unable to prepare the search.' }
+  catch (cause) { if (active) error.value = cause instanceof Error ? cause.message : t("Unable to prepare the search.") }
 }, { immediate: true })
 watch([status, samePosition], () => { if (status.value !== 'LIVE' || !samePosition.value) replaceUrl.value = false })
 
@@ -41,17 +43,17 @@ async function agentSearch() {
   if (!plan.value) return
   try {
     await navigator.clipboard.writeText(plan.value.agent_search_prompt)
-    copyMessage.value = 'Search prompt copied. Paste it into your connected agent.'
+    copyMessage.value = t("Search prompt copied. Paste it into your connected agent.")
   } catch {
     showPrompt.value = true
-    copyMessage.value = 'Copy the prepared prompt below and paste it into your connected agent.'
+    copyMessage.value = t("Copy the prepared prompt below and paste it into your connected agent.")
   }
 }
 
 async function check() {
   busy.value = true; error.value = ''
   try { await checkPosting(props.application.id); emit('changed') }
-  catch (cause) { error.value = cause instanceof Error ? cause.message : 'Unable to check the posting.' }
+  catch (cause) { error.value = cause instanceof Error ? cause.message : t("Unable to check the posting.") }
   finally { busy.value = false }
 }
 
@@ -61,48 +63,48 @@ async function saveReview() {
     await recordPostingReview(props.application.id, { status: status.value, evidence_url: evidenceUrl.value,
       notes: notes.value, checked_at: new Date(checkedAt.value).toISOString(), same_position: samePosition.value, replace_job_url: replaceUrl.value })
     emit('changed')
-  } catch (cause) { error.value = cause instanceof Error ? cause.message : 'Unable to save the review.' }
+  } catch (cause) { error.value = cause instanceof Error ? cause.message : t("Unable to save the review.") }
   finally { busy.value = false }
 }
 </script>
 
 <template>
-  <section class="posting-panel" :class="{ embedded }" aria-label="Posting checks and search">
-    <h3 v-if="!embedded">Job posting</h3>
-    <p v-if="(!embedded && application.job_url) || application.posting_last_checked_at"><strong v-if="!embedded">{{ label }}</strong><span v-if="application.posting_last_checked_at">{{ embedded ? 'Last checked ' : ' · ' }}{{ new Date(application.posting_last_checked_at).toLocaleString() }} (local time)</span></p>
-    <p v-if="application.posting_check_failures > 0 && application.posting_status !== 'UNKNOWN'" class="hint">Last confirmed status: {{ application.posting_status }}. The latest check was inconclusive.</p>
+  <section class="posting-panel" :class="{ embedded }" :aria-label="t('Posting checks and search')">
+    <h3 v-if="!embedded">{{ t("Job posting") }}</h3>
+    <p v-if="(!embedded && application.job_url) || application.posting_last_checked_at"><strong v-if="!embedded">{{ messageText(String((label) ?? '')) }}</strong><span v-if="application.posting_last_checked_at">{{ embedded ? t("Last checked ") : ' · ' }}{{ new Date(application.posting_last_checked_at).toLocaleString(intlLocale) }} {{ t("(local time)") }}</span></p>
+    <p v-if="application.posting_check_failures > 0 && application.posting_status !== 'UNKNOWN'" class="hint">{{ t("Last confirmed status:") }} {{ application.posting_status }}{{ t(". The latest check was inconclusive.") }}</p>
     <div v-if="application.job_url" class="step">
-      <h4>Check the saved posting</h4>
-      <p class="hint">Checks the URL, then opens the page in a browser if needed.</p>
-      <Button type="button" :disabled="busy" @click="check">{{ busy ? 'Working…' : 'Check now' }}</Button>
-      <a :href="application.job_url" target="_blank" rel="noopener noreferrer">Open saved posting ↗</a>
+      <h4>{{ t("Check the saved posting") }}</h4>
+      <p class="hint">{{ t("Checks the URL, then opens the page in a browser if needed.") }}</p>
+      <Button type="button" :disabled="busy" @click="check">{{ busy ? t("Working…") : t("Check now") }}</Button>
+      <a :href="application.job_url" target="_blank" rel="noopener noreferrer">{{ t("Open saved posting ↗") }}</a>
     </div>
     <div class="step">
-      <h4>{{ application.job_url ? 'Search for the position' : 'Find the missing job URL' }}</h4>
-      <div class="searches"><a v-if="plan" :href="plan.searches[0]?.url" target="_blank" rel="noopener noreferrer">Search manually</a><Button type="button" :disabled="!plan" @click="agentSearch">Agent search</Button></div>
+      <h4>{{ application.job_url ? t("Search for the position") : t("Find the missing job URL") }}</h4>
+      <div class="searches"><a v-if="plan" :href="plan.searches[0]?.url" target="_blank" rel="noopener noreferrer">{{ t("Search manually") }}</a><Button type="button" :disabled="!plan" @click="agentSearch">{{ t("Agent search") }}</Button></div>
       <p v-if="copyMessage" class="hint" role="status">{{ copyMessage }}</p>
-      <label v-if="showPrompt" class="prepared-prompt">Agent search prompt<Textarea class="at-form-control" :value="plan?.agent_search_prompt" readonly rows="12" @focus="($event.target as HTMLTextAreaElement).select()"></Textarea></label>
+      <label v-if="showPrompt" class="prepared-prompt">{{ t("Agent search prompt") }}<Textarea class="at-form-control" :value="plan?.agent_search_prompt" readonly rows="12" @focus="($event.target as HTMLTextAreaElement).select()"></Textarea></label>
     </div>
     <details class="step">
-      <summary>Record a browser review or update the link</summary>
+      <summary>{{ t("Record a browser review or update the link") }}</summary>
       <form @submit.prevent="saveReview">
         <fieldset :disabled="busy">
-          <label>Conclusion<Select class="at-form-control" aria-label="Conclusion" v-model="status" :disabled="busy" :options="[{ value: 'UNKNOWN', label: 'Unable to verify' }, { value: 'LIVE', label: 'Live — accepting applications' }, { value: 'CLOSED', label: 'Closed — explicit closure evidence' }]" option-label="label" option-value="value" option-disabled="disabled" /></label>
-          <label>Page checked<InputText class="at-form-control" v-model="evidenceUrl" type="url" required maxlength="2048" placeholder="https://…" /></label>
-          <DateTimeField v-model="checkedAt" label="Checked at (local time)" :disabled="busy" required />
-          <label>What did you find?<Textarea class="at-form-control" v-model="notes" required minlength="10" maxlength="500" rows="3" placeholder="Describe the matching role and the evidence for your conclusion."></Textarea></label>
-          <label class="checkbox"><input v-model="samePosition" type="checkbox" />I verified this is the same position and employer.</label>
-          <label class="checkbox"><input v-model="replaceUrl" type="checkbox" :disabled="status !== 'LIVE' || !samePosition" />Use this verified live page as the job posting link.</label>
-          <Button type="submit" :disabled="status !== 'UNKNOWN' && !samePosition">Save review</Button>
+          <label>{{ t("Conclusion") }}<Select class="at-form-control" :aria-label="t('Conclusion')" v-model="status" :disabled="busy" :options="[{ value: 'UNKNOWN', get label() { return t('Unable to verify') } }, { value: 'LIVE', get label() { return t('Live — accepting applications') } }, { value: 'CLOSED', get label() { return t('Closed — explicit closure evidence') } }]" option-label="label" option-value="value" option-disabled="disabled" /></label>
+          <label>{{ t("Page checked") }}<InputText class="at-form-control" v-model="evidenceUrl" type="url" required maxlength="2048" :placeholder="t('https://…')" /></label>
+          <DateTimeField v-model="checkedAt" :label="t('Checked at (local time)')" :disabled="busy" required />
+          <label>{{ t("What did you find?") }}<Textarea class="at-form-control" v-model="notes" required minlength="10" maxlength="500" rows="3" :placeholder="t('Describe the matching role and the evidence for your conclusion.')"></Textarea></label>
+          <label class="checkbox"><input v-model="samePosition" type="checkbox" />{{ t("I verified this is the same position and employer.") }}</label>
+          <label class="checkbox"><input v-model="replaceUrl" type="checkbox" :disabled="status !== 'LIVE' || !samePosition" />{{ t("Use this verified live page as the job posting link.") }}</label>
+          <Button type="submit" :disabled="status !== 'UNKNOWN' && !samePosition">{{ t("Save review") }}</Button>
         </fieldset>
       </form>
     </details>
-    <p v-if="error" class="at-message error" role="alert">{{ error }}</p>
-    <details v-if="application.posting_check_reason" class="step"><summary>Last check details</summary>
-      <p>{{ application.posting_check_reason }}</p><p v-if="application.posting_check_method || application.posting_http_status !== null" class="hint"><template v-if="application.posting_check_method">Method: {{ application.posting_check_method }}</template><template v-if="application.posting_check_method && application.posting_http_status !== null"> · </template><template v-if="application.posting_http_status !== null">HTTP: {{ application.posting_http_status }}</template></p>
-      <a v-if="application.posting_final_url" :href="application.posting_final_url" target="_blank" rel="noopener noreferrer">Last page checked ↗</a>
+    <p v-if="error" class="at-message error" role="alert">{{ errorText(String((error) ?? '')) }}</p>
+    <details v-if="application.posting_check_reason" class="step"><summary>{{ t("Last check details") }}</summary>
+      <p>{{ application.posting_check_reason }}</p><p v-if="application.posting_check_method || application.posting_http_status !== null" class="hint"><template v-if="application.posting_check_method">{{ t("Method:") }} {{ application.posting_check_method }}</template><template v-if="application.posting_check_method && application.posting_http_status !== null"> · </template><template v-if="application.posting_http_status !== null">{{ t("HTTP:") }} {{ application.posting_http_status }}</template></p>
+      <a v-if="application.posting_final_url" :href="application.posting_final_url" target="_blank" rel="noopener noreferrer">{{ t("Last page checked ↗") }}</a>
     </details>
-    <p class="hint">Posting availability does not change the status or outcome of your application.</p>
+    <p class="hint">{{ t("Posting availability does not change the status or outcome of your application.") }}</p>
   </section>
 </template>
 

@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { t, messageText, errorText } from './i18n'
+
+import PageTabs from './components/shared/PageTabs.vue'
 import Select from 'primevue/select'
 import SelectButton from 'primevue/selectbutton'
 import Button from 'primevue/button'
@@ -42,7 +45,7 @@ const confirm = useConfirm()
 const dashboard = ref<DashboardData | null>(null)
 const nextAction = computed(() => nextApplicationAction(props.id, dashboard.value))
 const optionalFields = [
-  { key: 'location', label: 'Location' }, { key: 'contract_type', label: 'Contract type' },
+  { key: 'location', get label() { return t("Location") } }, { key: 'contract_type', get label() { return t("Contract type") } },
 ] as const
 const editableFields = ['job_title', 'company', 'intermediary', 'date_applied', 'job_url', 'email_reference', 'phone_number', 'contact_email', 'contact_name', 'deadline', 'deadline_kind', 'contact_type', 'location', 'remote_policy', 'contract_type', 'source', 'description', 'requirements', 'status', 'outcome', 'followup_delay_days', 'max_followup_suggestions'] as const
 const needsOutcomeClear = computed(() => application.value?.status === 'CLOSED' && application.value.outcome !== null && draft.value !== null && draft.value.status !== 'CLOSED')
@@ -51,7 +54,7 @@ const isKnownJobSource = (value: string | null) => jobSources.some(option => opt
 const hasText = (value: string | null | undefined) => Boolean(value?.trim())
 const visibleOptionalFields = computed(() => optionalFields.filter(field => hasText(application.value?.[field.key])))
 const visibleDescription = computed(() => (application.value?.description ?? '').replace(
-  'Imported from INDEED application confirmation email. The email contains no extractable direct job posting URL. Original source and dated email evidence are preserved in the timeline. The original Indeed source is recorded; the posting URL still needs verification.', '',
+  t("Imported from INDEED application confirmation email. The email contains no extractable direct job posting URL. Original source and dated email evidence are preserved in the timeline. The original Indeed source is recorded; the posting URL still needs verification."), '',
 ).trim())
 
 async function copyJobPosting() {
@@ -59,10 +62,10 @@ async function copyJobPosting() {
   try {
     await navigator.clipboard.writeText(application.value.job_url)
     postingCopyError.value = false
-    postingCopyNotice.value = 'Job posting link copied.'
+    postingCopyNotice.value = t("Job posting link copied.")
   } catch {
     postingCopyError.value = true
-    postingCopyNotice.value = 'Could not copy the link. Right-click Job posting to copy its address.'
+    postingCopyNotice.value = t("Could not copy the link. Right-click Job posting to copy its address.")
   }
 }
 
@@ -74,7 +77,7 @@ async function load() {
     application.value = record
     dashboard.value = summary
   } catch (error) {
-    loadError.value = error instanceof Error ? error.message : 'Unable to load application'
+    loadError.value = error instanceof Error ? error.message : t("Unable to load application")
   } finally {
     loading.value = false
   }
@@ -116,8 +119,8 @@ async function save() {
     timelineVersion.value++
   } catch (error) {
     saveError.value = error instanceof TypeError || (error instanceof Error && error.name === 'AbortError')
-      ? 'Could not confirm the save. Your edits are still here. Cancel editing and reload the record to check its saved state.'
-      : error instanceof Error ? error.message : 'Unable to save changes'
+      ? t("Could not confirm the save. Your edits are still here. Cancel editing and reload the record to check its saved state.")
+      : error instanceof Error ? error.message : t("Unable to save changes")
   } finally {
     saving.value = false
   }
@@ -139,12 +142,12 @@ async function removeApplication() {
     await deleteApplication(props.id)
     window.location.hash = '#/applications'
   } catch (error) {
-    saveError.value = error instanceof Error ? error.message : 'Unable to delete application.'
+    saveError.value = error instanceof Error ? error.message : t("Unable to delete application.")
   } finally { saving.value = false }
 }
 
 function confirmDelete() {
-  confirm.require({ header: 'Delete application?', message: `Delete ${application.value?.job_title} at ${application.value?.company}? This action cannot be undone.`, icon: 'pi pi-exclamation-triangle', rejectProps: { label: 'Keep application', severity: 'secondary', outlined: true }, acceptProps: { label: 'Delete application', severity: 'danger' }, defaultFocus: 'reject', accept: () => { void removeApplication() } })
+  confirm.require({ get header() { return t("Delete application?") }, message: t("Delete {p0} at {p1}? This action cannot be undone.", { p0: application.value?.job_title, p1: application.value?.company }), icon: 'pi pi-exclamation-triangle', rejectProps: { get label() { return t("Keep application") }, severity: 'secondary', outlined: true }, acceptProps: { get label() { return t("Delete application") }, severity: 'danger' }, defaultFocus: 'reject', accept: () => { void removeApplication() } })
 }
 async function workChanged() {
   timelineVersion.value++
@@ -165,89 +168,102 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
 
 <template>
   <section aria-labelledby="focus-title">
-    <a v-if="!draft" class="back" href="#/applications">← All applications</a>
-    <BusyIndicator v-if="loading" label="Loading application…" />
-    <div v-else-if="loadError" role="alert"><p class="at-message error">{{ loadError }}</p><Button type="button" @click="load">Try again</Button></div>
+    <a v-if="!draft" class="back" href="#/applications">{{ t("← All applications") }}</a>
+    <BusyIndicator v-if="loading" :label="t('Loading application…')" />
+    <div v-else-if="loadError" role="alert"><p class="at-message error">{{ errorText(loadError) }}</p><Button type="button" @click="load">{{ t("Try again") }}</Button></div>
     <template v-else-if="application">
-      <div class="focus-heading"><div><p class="eyebrow">{{ application.company }}<template v-if="application.location"> · {{ application.location }}</template><template v-if="application.remote_policy"> · {{ remotePolicyMeta[application.remote_policy]?.label ?? application.remote_policy }}</template></p><h2 id="focus-title">{{ application.job_title }}</h2><div class="badges"><ApplicationStatusTag :status="application.status" /><CompletedFollowUps :count="application.completed_followup_count" /><ApplicationOutcomeTag v-if="application.outcome" :outcome="application.outcome" /></div></div><div v-if="!draft" class="header-actions"><Button type="button" @click="edit">Edit application</Button><Button type="button" severity="danger" outlined :disabled="saving" @click="confirmDelete">Delete application</Button></div></div>
-      <div v-if="!draft && nextAction" class="focus-next"><span>Next step</span><ApplicationNextAction :action="nextAction" /></div>
-      <p v-if="saveError && !draft" class="at-message error" role="alert">{{ saveError }}</p>
-      <p v-if="saved" class="at-message success" role="status">Changes saved.</p>
+      <div class="focus-heading"><div><p class="eyebrow">{{ application.company }}<template v-if="application.location"> · {{ application.location }}</template><template v-if="application.remote_policy"> · {{ messageText(String((remotePolicyMeta[application.remote_policy]?.label ?? application.remote_policy) ?? '')) }}</template></p><h2 id="focus-title">{{ application.job_title }}</h2><div class="badges"><ApplicationStatusTag :status="application.status" /><CompletedFollowUps :count="application.completed_followup_count" /><ApplicationOutcomeTag v-if="application.outcome" :outcome="application.outcome" /></div></div><div v-if="!draft" class="header-actions"><Button type="button" @click="edit">{{ t("Edit application") }}</Button><Button type="button" severity="danger" outlined :disabled="saving" @click="confirmDelete">{{ t("Delete application") }}</Button></div></div>
+      <div v-if="!draft && nextAction" class="focus-next"><span>{{ t("Next step") }}</span><ApplicationNextAction :action="nextAction" /></div>
+      <p v-if="saveError && !draft" class="at-message error" role="alert">{{ errorText(saveError) }}</p>
+      <p v-if="saved" class="at-message success" role="status">{{ t("Changes saved.") }}</p>
 
       <form v-if="draft" class="panel" @submit.prevent="save">
-        <h3>Edit application</h3>
+        <h3>{{ t("Edit application") }}</h3>
         <fieldset :disabled="saving">
-          <legend>Job details</legend>
+          <legend>{{ t("Job details") }}</legend>
           <div class="grid">
-            <label>Job title<InputText class="at-form-control" v-model="draft.job_title" required maxlength="300" /></label>
-            <label>Company<InputText class="at-form-control" v-model="draft.company" required maxlength="300" /></label>
-            <label>Via / intermediary<InputText class="at-form-control" v-model="draft.intermediary" maxlength="300" placeholder="School, recruiter or agency" /></label>
-            <DatePicker v-model="draft.date_applied" label="Date applied" :disabled="saving" required />
-            <label v-for="field in optionalFields" :key="field.key">{{ field.label }}<InputText class="at-form-control" v-model="draft[field.key]" maxlength="300" /></label>
-            <div><label id="focus-remote-label">Remote policy</label><SelectButton class="at-form-control" v-model="draft.remote_policy" :options="remotePolicies" option-label="label" option-value="value" aria-labelledby="focus-remote-label" :disabled="saving" /><small v-if="draft.remote_policy && !isKnownRemotePolicy(draft.remote_policy)">Existing: {{ draft.remote_policy }}. Select an option to replace it.</small></div>
-            <label>Source<Select class="at-form-control" aria-label="Source" v-model="draft.source" :disabled="saving" :options="[{ value: null, label: 'Not specified' }, ...(draft.source && !isKnownJobSource(draft.source) ? [{ value: draft.source, label: 'Existing: ' + draft.source }] : []), ...jobSources]" option-label="label" option-value="value" option-disabled="disabled" /></label>
+            <label>{{ t("Job title") }}<InputText class="at-form-control" v-model="draft.job_title" required maxlength="300" /></label>
+            <label>{{ t("Company") }}<InputText class="at-form-control" v-model="draft.company" required maxlength="300" /></label>
+            <DatePicker v-model="draft.date_applied" :label="t('Date applied')" :disabled="saving" required />
           </div>
-          <p class="hint">Keep at least one source: a job URL or an email reference.</p>
+          <details><summary>{{ t("More role details") }}</summary><div class="grid">
+            <label>{{ t("Via / intermediary") }}<InputText class="at-form-control" v-model="draft.intermediary" maxlength="300" :placeholder="t('School, recruiter or agency')" /></label>
+
+            <label v-for="field in optionalFields" :key="field.key">{{ messageText(String((field.label) ?? '')) }}<InputText class="at-form-control" v-model="draft[field.key]" maxlength="300" /></label>
+            <div><label id="focus-remote-label">{{ t("Remote policy") }}</label><SelectButton class="at-form-control" v-model="draft.remote_policy" :options="remotePolicies" option-label="label" option-value="value" aria-labelledby="focus-remote-label" :disabled="saving" /><small v-if="draft.remote_policy && !isKnownRemotePolicy(draft.remote_policy)">{{ t("Existing:") }} {{ draft.remote_policy }}{{ t(". Select an option to replace it.") }}</small></div>
+            <label>{{ t("Source") }}<Select class="at-form-control" :aria-label="t('Source')" v-model="draft.source" :disabled="saving" :options="[{ value: null, get label() { return t('Not specified') } }, ...(draft.source && !isKnownJobSource(draft.source) ? [{ value: draft.source, label: t('Existing: ') + draft.source }] : []), ...jobSources]" option-label="label" option-value="value" option-disabled="disabled" /></label>
+          </div>
+          </details>
+          <p class="hint">{{ t("Keep at least one source: a job URL or an email reference.") }}</p>
           <div class="grid">
-            <label>Job URL<InputText class="at-form-control" v-model="draft.job_url" type="url" maxlength="2048" @change="onJobUrlChanged" /></label>
-            <label>Email references<Textarea class="at-form-control" v-model="draft.email_reference" maxlength="2048" rows="3" /><small>One message link, ID, or subject per line.</small></label>
-            <label>Contact type<Select class="at-form-control" aria-label="Contact type" v-model="draft.contact_type" :disabled="saving" :options="contactTypes" option-label="label" option-value="value" option-disabled="disabled" /></label>
-            <label>Contact name<InputText class="at-form-control" v-model="draft.contact_name" maxlength="300" /></label>
-            <label>Contact email<InputText class="at-form-control" v-model="draft.contact_email" type="email" maxlength="320" placeholder="name@company.com" /></label>
-            <label>Phone number {{ draft.contact_type === 'PHONE' ? '(required for phone contact)' : '(optional)' }}<InputText class="at-form-control" v-model="draft.phone_number" type="tel" autocomplete="tel" placeholder="+33 6 12 34 56 78" :required="draft.contact_type === 'PHONE'" /><small>French number or +country code for other countries.</small></label>
-            <DatePicker v-model="draft.deadline" label="Posting deadline (optional)" :disabled="saving" @update:model-value="!$event && (draft.deadline_kind = null)" />
-            <div v-if="draft.deadline"><label for="focus-deadline-kind">Deadline type</label><Select input-id="focus-deadline-kind" v-model="draft.deadline_kind" :options="[{ value: 'APPLICATION_CLOSING', label: 'Applications close' }, { value: 'FIRST_ROUND', label: 'First-round selection' }]" option-label="label" option-value="value" :disabled="saving" class="at-form-control" /></div>
+            <label>{{ t("Job URL") }}<InputText class="at-form-control" v-model="draft.job_url" type="url" maxlength="2048" @change="onJobUrlChanged" /></label>
+            <label>{{ t("Email references") }}<Textarea class="at-form-control" v-model="draft.email_reference" maxlength="2048" rows="3" /><small>{{ t("One message link, ID, or subject per line.") }}</small></label>
+          </div><details><summary>{{ t("Contact, deadline & role notes") }}</summary><div class="grid">
+            <label>{{ t("Contact type") }}<Select class="at-form-control" :aria-label="t('Contact type')" v-model="draft.contact_type" :disabled="saving" :options="contactTypes" option-label="label" option-value="value" option-disabled="disabled" /></label>
+            <label>{{ t("Contact name") }}<InputText class="at-form-control" v-model="draft.contact_name" maxlength="300" /></label>
+            <label>{{ t("Contact email") }}<InputText class="at-form-control" v-model="draft.contact_email" type="email" maxlength="320" :placeholder="t('name@company.com')" /></label>
+            <label>{{ t("Phone number") }} {{ draft.contact_type === 'PHONE' ? t("(required for phone contact)") : '(optional)' }}<InputText class="at-form-control" v-model="draft.phone_number" type="tel" autocomplete="tel" placeholder="+33 6 12 34 56 78" :required="draft.contact_type === 'PHONE'" /><small>{{ t("French number or +country code for other countries.") }}</small></label>
+            <DatePicker v-model="draft.deadline" :label="t('Posting deadline (optional)')" :disabled="saving" @update:model-value="!$event && (draft.deadline_kind = null)" />
+            <div v-if="draft.deadline"><label for="focus-deadline-kind">{{ t("Deadline type") }}</label><Select input-id="focus-deadline-kind" v-model="draft.deadline_kind" :options="[{ value: 'APPLICATION_CLOSING', get label() { return t('Applications close') } }, { value: 'FIRST_ROUND', get label() { return t('First-round selection') } }]" option-label="label" option-value="value" :disabled="saving" class="at-form-control" /></div>
           </div>
-          <label class="long-field">Description<Textarea class="at-form-control" v-model="draft.description" rows="4"></Textarea></label>
-          <label class="long-field">Requirements<Textarea class="at-form-control" v-model="draft.requirements" rows="4"></Textarea></label>
+          <label class="long-field">{{ t("Description") }}<Textarea class="at-form-control" v-model="draft.description" rows="4"></Textarea></label>
+          <label class="long-field">{{ t("Requirements") }}<Textarea class="at-form-control" v-model="draft.requirements" rows="4"></Textarea></label>
+          </details>
         </fieldset>
 
         <fieldset :disabled="saving">
-          <legend>Application lifecycle</legend>
+          <legend>{{ t("Application lifecycle") }}</legend>
           <div class="grid">
-            <label>Status<Select class="at-form-control" aria-label="Status" v-model="draft.status" :disabled="saving" :options="statusOptions" option-label="label" option-value="value" option-disabled="disabled" /></label>
-            <label>Outcome<Select class="at-form-control" aria-label="Outcome" v-model="draft.outcome" :disabled="saving || (needsOutcomeClear)" @change="selectOutcome" :options="[{ value: null, label: 'No outcome' }, ...outcomeOptions]" option-label="label" option-value="value" option-disabled="disabled" /></label>
+            <label>{{ t("Status") }}<Select class="at-form-control" :aria-label="t('Status')" v-model="draft.status" :disabled="saving" :options="statusOptions" option-label="label" option-value="value" option-disabled="disabled" /></label>
+            <label>{{ t("Outcome") }}<Select class="at-form-control" :aria-label="t('Outcome')" v-model="draft.outcome" :disabled="saving || (needsOutcomeClear)" @change="selectOutcome" :options="[{ value: null, get label() { return t('No outcome') } }, ...outcomeOptions]" option-label="label" option-value="value" option-disabled="disabled" /></label>
           </div>
-          <p class="hint">Choosing an outcome closes the application. A closed application can also have no outcome.</p>
-          <label v-if="needsOutcomeClear" class="checkbox"><input v-model="clearOutcome" type="checkbox" />Clear the existing {{ application.outcome }} outcome to reopen this application.</label>
+          <p class="hint">{{ t("Choosing an outcome closes the application. A closed application can also have no outcome.") }}</p>
+          <label v-if="needsOutcomeClear" class="checkbox"><input v-model="clearOutcome" type="checkbox" />{{ t("Clear the existing") }} {{ application.outcome }} {{ t("outcome to reopen this application.") }}</label>
         </fieldset>
 
-        <fieldset :disabled="saving">
-          <legend>Follow-up preferences</legend>
-          <p class="hint">Leave blank to use the global defaults. These settings affect new follow-ups; existing due dates stay unchanged.</p>
+        <details><summary>{{ t("Follow-up preferences") }}</summary><fieldset :disabled="saving">
+          <legend class="sr-only">{{ t("Follow-up preferences") }}</legend>
+          <p class="hint">{{ t("Leave blank to use the global defaults. These settings affect new follow-ups; existing due dates stay unchanged.") }}</p>
           <div class="grid">
-            <NumberField v-model="draft.followup_delay_days" label="Follow-up delay (days)" :disabled="saving" :min="0" :max="3650" placeholder="Global default" />
-            <NumberField v-model="draft.max_followup_suggestions" label="Maximum automatic suggestions" :disabled="saving" :min="0" :max="100" placeholder="Global default" />
+            <NumberField v-model="draft.followup_delay_days" :label="t('Follow-up delay (days)')" :disabled="saving" :min="0" :max="3650" :placeholder="t('Global default')" />
+            <NumberField v-model="draft.max_followup_suggestions" :label="t('Maximum automatic suggestions')" :disabled="saving" :min="0" :max="100" :placeholder="t('Global default')" />
           </div>
         </fieldset>
-        <p v-if="saveError" class="at-message error" role="alert">{{ saveError }}</p>
-        <div class="actions"><Button class="primary" type="submit" :disabled="saving || (needsOutcomeClear && !clearOutcome)">{{ saving ? 'Saving…' : 'Save changes' }}</Button><Button type="button" :disabled="saving" @click="draft = null">Cancel</Button></div>
+        </details>
+        <p v-if="saveError" class="at-message error" role="alert">{{ errorText(saveError) }}</p>
+        <div class="actions"><Button class="primary" type="submit" :disabled="saving || (needsOutcomeClear && !clearOutcome)">{{ saving ? t("Saving…") : t("Save changes") }}</Button><Button type="button" :disabled="saving" @click="draft = null">{{ t("Cancel") }}</Button></div>
       </form>
 
-      <template v-else>
-        <section class="panel" aria-label="Application overview">
-          <div class="overview-top"><div class="source-actions"><a v-if="application.job_url" :href="application.job_url" target="_blank" rel="noopener noreferrer">Job posting <i class="pi pi-external-link" aria-hidden="true" /></a><span v-else class="missing-value">Job posting not linked</span><Button v-if="application.job_url" type="button" severity="secondary" outlined size="small" @click="copyJobPosting"><i class="pi pi-copy" aria-hidden="true" />Copy job posting</Button></div><AppTag v-bind="postingStatusMeta[application.posting_status]" /></div>
+      <PageTabs v-else :label="t('Application sections')" :tabs="[
+        { value: 'overview', get label() { return t('Overview') }, icon: 'pi-briefcase' }, { value: 'followups', get label() { return t('Follow-ups') }, icon: 'pi-envelope' }, { value: 'notes', get label() { return t('Notes') }, icon: 'pi-file-edit' }, { value: 'tasks', get label() { return t('Tasks') }, icon: 'pi-check-square' },
+        { value: 'interviews', get label() { return t('Interviews') }, icon: 'pi-calendar' }, { value: 'documents', get label() { return t('Documents') }, icon: 'pi-file' },
+        { value: 'timeline', get label() { return t('Timeline') }, icon: 'pi-history' },
+      ]">
+      <template #overview>
+        <section class="panel" :aria-label="t('Application overview')">
+          <div class="overview-top"><div class="source-actions"><a v-if="application.job_url" :href="application.job_url" target="_blank" rel="noopener noreferrer">{{ t("Job posting") }} <i class="pi pi-external-link" aria-hidden="true" /></a><span v-else class="missing-value">{{ t("Job posting not linked") }}</span><Button v-if="application.job_url" type="button" severity="secondary" outlined size="small" @click="copyJobPosting"><i class="pi pi-copy" aria-hidden="true" />{{ t("Copy job posting") }}</Button></div><AppTag v-bind="postingStatusMeta[application.posting_status]" /></div>
           <p v-if="postingCopyNotice" :role="postingCopyError ? 'alert' : 'status'" class="hint">{{ postingCopyNotice }}</p>
-          <div class="overview-meta"><span>Applied {{ application.date_applied }}</span><span v-if="application.deadline">{{ application.deadline_kind === 'FIRST_ROUND' ? 'First-round selection' : 'Applications close' }} {{ application.deadline }}</span><EmailReference v-if="hasText(application.email_reference)" :reference="application.email_reference" label="Email ref" /></div>
-          <details class="supporting-details"><summary>Application details</summary><dl class="details">
-            <div v-if="hasText(application.contact_name)"><dt>Contact</dt><dd>{{ application.contact_name }}</dd></div>
-            <div v-if="hasText(application.contact_email)"><dt>Contact email</dt><dd><a :href="`mailto:${application.contact_email}`">{{ application.contact_email }}</a></dd></div>
-            <div v-if="application.intermediary"><dt>Via / intermediary</dt><dd>{{ application.intermediary }}</dd></div>
-            <div v-if="hasText(application.phone_number)"><dt>Phone number</dt><dd><a :href="`tel:${application.phone_number}`">{{ application.phone_number }}</a></dd></div>
-            <div v-if="application.contact_type === 'PHONE'"><dt>Contact type</dt><dd>Phone</dd></div>
-            <div v-if="hasText(application.remote_policy)"><dt>Remote policy</dt><dd>{{ remotePolicyLabel(application.remote_policy) }}</dd></div>
-            <div v-if="hasText(application.source) && application.source !== 'OTHER'"><dt>Source</dt><dd>{{ jobSourceLabel(application.source) }}</dd></div>
-            <div v-if="application.followup_delay_days !== null && application.followup_delay_days !== 7"><dt>Follow-up delay</dt><dd>{{ application.followup_delay_days }} days</dd></div>
-            <div v-for="field in visibleOptionalFields" :key="field.key"><dt>{{ field.label }}</dt><dd>{{ application[field.key] }}</dd></div>
+          <div class="overview-meta"><span>{{ t("Applied") }} {{ application.date_applied }}</span><span v-if="application.deadline">{{ application.deadline_kind === 'FIRST_ROUND' ? t("First-round selection") : t("Applications close") }} {{ application.deadline }}</span><EmailReference v-if="hasText(application.email_reference)" :reference="application.email_reference" :context="t('{p0} at {p1}', { p0: application.job_title, p1: application.company })" /></div>
+          <details class="supporting-details"><summary>{{ t("Application details") }}</summary><dl class="details">
+            <div v-if="hasText(application.contact_name)"><dt>{{ t("Contact") }}</dt><dd>{{ application.contact_name }}</dd></div>
+            <div v-if="hasText(application.contact_email)"><dt>{{ t("Contact email") }}</dt><dd><a :href="`mailto:${application.contact_email}`">{{ application.contact_email }}</a></dd></div>
+            <div v-if="application.intermediary"><dt>{{ t("Via / intermediary") }}</dt><dd>{{ application.intermediary }}</dd></div>
+            <div v-if="hasText(application.phone_number)"><dt>{{ t("Phone number") }}</dt><dd><a :href="`tel:${application.phone_number}`">{{ application.phone_number }}</a></dd></div>
+            <div v-if="application.contact_type === 'PHONE'"><dt>{{ t("Contact type") }}</dt><dd>{{ t("Phone") }}</dd></div>
+            <div v-if="hasText(application.remote_policy)"><dt>{{ t("Remote policy") }}</dt><dd>{{ remotePolicyLabel(application.remote_policy) }}</dd></div>
+            <div v-if="hasText(application.source) && application.source !== 'OTHER'"><dt>{{ t("Source") }}</dt><dd>{{ jobSourceLabel(application.source) }}</dd></div>
+            <div v-if="application.followup_delay_days !== null && application.followup_delay_days !== 7"><dt>{{ t("Follow-up delay") }}</dt><dd>{{ application.followup_delay_days }} {{ t("days") }}</dd></div>
+            <div v-for="field in visibleOptionalFields" :key="field.key"><dt>{{ messageText(String((field.label) ?? '')) }}</dt><dd>{{ application[field.key] }}</dd></div>
           </dl></details>
         </section>
-        <details v-if="visibleDescription || hasText(application.requirements)" class="panel"><summary>Role description & requirements</summary><template v-if="visibleDescription"><h3>Description</h3><p class="text-block">{{ visibleDescription }}</p></template><template v-if="hasText(application.requirements)"><h3>Requirements</h3><p class="text-block">{{ application.requirements }}</p></template></details>
-        <details class="posting-tools"><summary>Posting checks & search</summary><PostingReview :application="application" embedded @changed="postingChanged" /></details>
-        <ApplicationDocuments :key="`documents-${contentVersion}`" :application-id="application.id" @changed="timelineVersion++" />
-        <ApplicationInterviews :key="`interviews-${contentVersion}`" :application-id="application.id" @changed="workChanged" />
-        <ApplicationWork :key="`work-${contentVersion}`" :application-id="application.id" :phone-number="application.phone_number" :closed="application.status === 'CLOSED'" @changed="workChanged" />
-        <details class="posting-tools"><summary>Timeline</summary><ApplicationTimeline :key="timelineVersion" :application-id="application.id" embedded @undone="handleUndo" /></details>
+        <details v-if="visibleDescription || hasText(application.requirements)" class="panel"><summary>{{ t("Role description & requirements") }}</summary><template v-if="visibleDescription"><h3>{{ t("Description") }}</h3><p class="text-block">{{ visibleDescription }}</p></template><template v-if="hasText(application.requirements)"><h3>{{ t("Requirements") }}</h3><p class="text-block">{{ application.requirements }}</p></template></details>
+        <details class="posting-tools"><summary>{{ t("Posting checks & search") }}</summary><PostingReview :application="application" embedded @changed="postingChanged" /></details>
       </template>
+      <template v-for="view in (['followups', 'notes', 'tasks'] as const)" :key="view" #[view]><ApplicationWork :key="`${view}-${contentVersion}`" :application-id="application.id" :phone-number="application.phone_number" :view="view" :closed="application.status === 'CLOSED'" @changed="workChanged" /></template>
+      <template #interviews>        <ApplicationInterviews :key="`interviews-${contentVersion}`" :application-id="application.id" @changed="workChanged" /></template>
+      <template #documents>        <ApplicationDocuments :key="`documents-${contentVersion}`" :application-id="application.id" @changed="timelineVersion++" /></template>
+      <template #timeline><ApplicationTimeline :key="timelineVersion" :application-id="application.id" embedded @undone="handleUndo" /></template>
+      </PageTabs>
     </template>
   </section>
 </template>

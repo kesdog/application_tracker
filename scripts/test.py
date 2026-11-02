@@ -9,9 +9,10 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = {'applications', 'activity', 'work', 'followups', 'interviews', 'dashboard',
            'documents', 'posting', 'agent', 'auth', 'notifications', 'migrations', 'system', 'sync'}
-FRONTEND = {'applications', 'work', 'followups', 'api', 'auth', 'notifications', 'appearance', 'shell'}
+FRONTEND = {'applications', 'work', 'followups', 'api', 'auth', 'notifications', 'appearance', 'shell', 'sync'}
 VENDOR = {'toolbox': 'libs/portable-webtoolbox-embedded-v0.7.0/webtoolbox-embedded/tests'}
 SEGMENTS = BACKEND | FRONTEND | VENDOR.keys() | {'tooling'}
+MAILBOX_CONSUMERS = {'applications', 'sync', 'activity', 'migrations', 'followups', 'auth', 'system'}
 
 # Shared persistence, application services/schemas, startup and configuration
 # affect all backend features. Smaller modules list their consumers explicitly.
@@ -21,8 +22,11 @@ BACKEND_MODULES = {
     'application_import': {'applications', 'documents', 'migrations', 'auth'},
     'mail_reviews': {'applications', 'followups', 'auth'},
     'workspace_routes': {'applications', 'documents', 'auth', 'sync', 'migrations'},
-    'application_sync': {'applications', 'sync', 'auth', 'system'},
-    'mailbox_import': {'applications', 'sync', 'activity', 'migrations'},
+    'application_sync': MAILBOX_CONSUMERS,
+    'mailbox_scan': MAILBOX_CONSUMERS,
+    'mailbox_import': MAILBOX_CONSUMERS,
+    'mailbox_evidence': MAILBOX_CONSUMERS,
+    'mailbox_matching': MAILBOX_CONSUMERS,
     'activity': BACKEND,
     'activity_schemas': {'activity', 'agent'},
     'work': BACKEND,
@@ -37,12 +41,15 @@ BACKEND_MODULES = {
     'scheduler': {'dashboard', 'posting', 'system'},
     'followup_templates': BACKEND,
     'followup_ai': {'followups', 'agent', 'activity', 'auth'},
-    'recipient_discovery': {'followups', 'agent', 'activity', 'auth', 'migrations', 'system'},
+    'recipient_discovery': {'followups', 'applications', 'agent', 'activity', 'auth', 'migrations', 'system', 'sync'},
     'recipient_research': {'followups', 'system'},
     'recipient_reports': {'followups', 'agent', 'auth', 'migrations', 'system'},
     'followup_reminders': {'followups', 'notifications', 'dashboard', 'agent'},
     'integrations': {'followups', 'interviews', 'notifications', 'agent', 'auth'},
     'google_login': {'agent', 'followups', 'auth', 'migrations', 'system'},
+    'google_workspace_auth': {'auth'},
+    'ai_connections': {'auth'},
+    'google_client_setup': {'agent', 'followups', 'auth', 'migrations', 'system', 'sync', 'applications'},
     'oauth_sessions': {'agent', 'followups', 'auth', 'migrations', 'system'},
     'google_connection': {'agent', 'followups', 'auth', 'migrations', 'system', 'sync', 'applications'},
     'authorized_api': {'auth', 'agent', 'sync'},
@@ -52,6 +59,7 @@ BACKEND_MODULES = {
     'merge': {'sync'},
     'crypto': {'sync'},
     'drive': {'sync', 'agent'},
+    'probe': {'sync', 'auth'},
     'domain': BACKEND,
     'routes': {'sync', 'auth'},
     'worker': {'sync', 'system'},
@@ -138,7 +146,9 @@ def select(paths, graph=None):
             backend.update(BACKEND)
         elif path.startswith('backend/app/'):
             stem = Path(path).stem
-            if stem in BACKEND_MODULES:
+            if path.startswith('backend/app/mail_scanners/'):
+                backend.update({'applications', 'posting', 'agent', 'sync', 'activity', 'migrations', 'auth', 'system', 'followups'})
+            elif stem in BACKEND_MODULES:
                 backend.update(BACKEND_MODULES[stem])
             elif stem.startswith('agent_') or stem == 'mcp_server':
                 backend.update({'agent', 'posting', 'followups', 'auth'})

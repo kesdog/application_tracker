@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t, messageText, errorText, intlLocale } from './i18n'
+
 import Select from 'primevue/select'
 import Button from 'primevue/button'
 import Textarea from 'primevue/textarea'
@@ -11,7 +13,7 @@ import RecipientPicker from './components/followups/RecipientPicker.vue'
 import AppTag from './components/shared/AppTag.vue'
 import { followupStatusMeta, taskStatusMeta, urgencyMeta } from './presentation/taskPresentation'
 
-const props = defineProps<{ applicationId: string; phoneNumber: string | null; closed?: boolean }>()
+const props = withDefaults(defineProps<{ applicationId: string; phoneNumber: string | null; closed?: boolean; view?: 'notes' | 'tasks' | 'followups' }>(), { view: 'followups' })
 const emit = defineEmits<{ changed: [] }>()
 const work = ref<ApplicationWork | null>(null)
 const busy = ref(false)
@@ -28,14 +30,14 @@ const followupOpen = ref(false)
 const followupPage = ref(1)
 const followupPageSize = 5
 const visibleFollowups = computed(() => (work.value?.followups ?? []).slice((followupPage.value - 1) * followupPageSize, followupPage.value * followupPageSize))
-const dateText = (value: string | null) => value ? new Date(value).toLocaleString() : 'No date set'
+const dateText = (value: string | null) => value ? new Date(value).toLocaleString(intlLocale.value) : t("No date set")
 const isoDate = (value: string) => value ? new Date(value).toISOString() : null
 
 async function load() {
   busy.value = true
   error.value = ''
   try { work.value = await getWork(props.applicationId); followupPage.value = 1 }
-  catch { error.value = 'Unable to load notes, tasks, and follow-ups. Check the backend and try again.' }
+  catch { error.value = t("Unable to load notes, tasks, and follow-ups. Check the backend and try again.") }
   finally { busy.value = false }
 }
 
@@ -47,8 +49,8 @@ async function perform(action: () => Promise<void>, message: string) {
   try { await action(); notice.value = message; emit('changed') }
   catch (cause) {
     error.value = cause instanceof TypeError || (cause instanceof Error && cause.name === 'AbortError')
-      ? 'Could not confirm the save. Your entries are kept. Refresh work below before retrying to check whether it was saved.'
-      : cause instanceof Error ? cause.message : 'Unable to save. Please try again.'
+      ? t("Could not confirm the save. Your entries are kept. Refresh work below before retrying to check whether it was saved.")
+      : cause instanceof Error ? cause.message : t("Unable to save. Please try again.")
   } finally { busy.value = false }
 }
 
@@ -68,7 +70,7 @@ function saveNote() {
     if (employerReply.value) work.value = await getWork(props.applicationId)
     employerReply.value = false
     Object.assign(noteForm, { id: '', content: '', type: 'GENERAL' })
-  }, 'Note saved.')
+  }, t("Note saved."))
 }
 
 function saveTask() {
@@ -78,14 +80,14 @@ function saveTask() {
     work.value!.tasks.sort((a, b) => (a.due_at ?? '9999').localeCompare(b.due_at ?? '9999'))
     Object.assign(taskForm, { title: '', description: '', due_at: '' })
     taskOpen.value = false
-  }, 'Task added.')
+  }, t("Task added."))
 }
 
 function setTaskStatus(task: Task, status: Task['status']) {
   return perform(async () => {
     const saved = await updateTask(props.applicationId, task.id, { status })
     work.value!.tasks = work.value!.tasks.map(item => item.id === saved.id ? saved : item)
-  }, 'Task updated.')
+  }, t("Task updated."))
 }
 
 function saveFollowup() {
@@ -95,7 +97,7 @@ function saveFollowup() {
     followupPage.value = Math.ceil(work.value!.followups.length / followupPageSize)
     Object.assign(followupForm, { due_at: '', template_reference: '', channel: 'EMAIL' })
     followupOpen.value = false
-  }, 'Follow-up added.')
+  }, t("Follow-up added."))
 }
 
 onMounted(load)
@@ -103,79 +105,82 @@ onMounted(load)
 
 <template>
   <div class="work" :aria-busy="busy">
-    <div class="work-heading"><h3>Application work</h3><Button type="button" :disabled="busy" @click="load">{{ busy ? 'Working…' : 'Refresh work' }}</Button></div>
-    <p v-if="error" class="at-message error" role="alert">{{ error }}</p>
-    <p v-if="notice" class="at-message success" role="status">{{ notice }}</p>
-    <p v-if="!work && busy" role="status">Loading notes, tasks, and follow-ups…</p>
+    <div class="work-heading"><span class="muted">{{ view === 'followups' ? t("Messages and reminders") : view === 'notes' ? t("Your notes") : t("Application tasks") }}</span><Button type="button" :disabled="busy" @click="load">{{ busy ? t("Working…") : t("Refresh work") }}</Button></div>
+    <p v-if="error" class="at-message error" role="alert">{{ errorText(String((error) ?? '')) }}</p>
+    <p v-if="notice" class="at-message success" role="status">{{ messageText(String((notice) ?? '')) }}</p>
+    <p v-if="!work && busy" role="status">{{ t("Loading notes, tasks, and follow-ups…") }}</p>
     <template v-if="work">
-      <details class="recipient-panel"><summary>Follow-up recipients</summary><RecipientPicker :application-id="applicationId" :closed="closed" embedded @changed="emit('changed'); load()" /></details>
-      <p v-if="work.outcome_review?.needs_review" class="at-message warning" role="status">Possibly unsuccessful: {{ work.outcome_review.unanswered_sent_count }} follow-ups recorded without an employer reply. This application remains open. Record a reply below or review its outcome in application details.</p>
-      <div class="actions"><Button v-if="!work.notes.length && !noteOpen" type="button" :disabled="busy" @click="editNote()">Add note</Button><Button v-if="!work.tasks.length && !taskOpen" type="button" :disabled="busy" @click="taskOpen = true">Add task</Button><Button v-if="!work.followups.length && !followupOpen" type="button" :disabled="busy" @click="followupOpen = true">Add follow-up</Button></div>
+
+      <p v-if="work.outcome_review?.needs_review" class="at-message warning" role="status">{{ t("Possibly unsuccessful:") }} {{ work.outcome_review.unanswered_sent_count }} {{ t("follow-ups recorded without an employer reply. This application remains open. Record a reply below or review its outcome in application details.") }}</p>
+      <template v-if="view === 'notes'"><Button v-if="!work.notes.length && !noteOpen" type="button" :disabled="busy" @click="editNote()">{{ t("Add note") }}</Button>
       <section v-if="work.notes.length || noteOpen" class="panel" aria-labelledby="notes-title">
-        <div class="section-heading"><h3 id="notes-title">Notes <span v-if="work.notes.length">{{ work.notes.length }}</span></h3><Button v-if="!noteOpen" type="button" :disabled="busy" @click="editNote()">Add note</Button></div>
+        <div class="section-heading"><h3 id="notes-title">{{ t("Notes") }} <span v-if="work.notes.length">{{ work.notes.length }}</span></h3><Button v-if="!noteOpen" type="button" :disabled="busy" @click="editNote()">{{ t("Add note") }}</Button></div>
         <form v-if="noteOpen" @submit.prevent="saveNote">
-          <fieldset :disabled="busy"><legend>{{ noteForm.id ? 'Edit note' : 'New note' }}</legend>
-            <label v-if="!noteForm.id"><input v-model="employerReply" type="checkbox" /> This records an employer reply (resets the unanswered follow-up count)</label>
-            <label>Note type<Select class="at-form-control" aria-label="Note type" v-model="noteForm.type" :disabled="busy" :options="noteTypes.map(value => ({ value, label: value.replaceAll('_', ' ').toLowerCase() }))" option-label="label" option-value="value" option-disabled="disabled" /></label>
-            <label>Note content<Textarea class="at-form-control" v-model="noteForm.content" required rows="4"></Textarea></label>
-            <div class="actions"><Button class="primary" type="submit">Save note</Button><Button type="button" @click="noteOpen = false">Cancel note</Button></div>
+          <fieldset :disabled="busy"><legend>{{ noteForm.id ? t("Edit note") : t("New note") }}</legend>
+            <label v-if="!noteForm.id"><input v-model="employerReply" type="checkbox" /> {{ t("This records an employer reply (resets the unanswered follow-up count)") }}</label>
+            <label>{{ t("Note type") }}<Select class="at-form-control" :aria-label="t('Note type')" v-model="noteForm.type" :disabled="busy" :options="noteTypes.map(value => ({ value, label: messageText(value) }))" option-label="label" option-value="value" option-disabled="disabled" /></label>
+            <label>{{ t("Note content") }}<Textarea class="at-form-control" v-model="noteForm.content" required rows="4"></Textarea></label>
+            <div class="actions"><Button class="primary" type="submit">{{ t("Save note") }}</Button><Button type="button" @click="noteOpen = false">{{ t("Cancel note") }}</Button></div>
           </fieldset>
         </form>
         <article v-for="note in work.notes" :key="note.id" class="item">
-          <div class="section-heading"><strong v-if="note.type !== 'GENERAL'">{{ note.type }}</strong><Button type="button" :disabled="busy" :aria-label="`Edit ${note.type} note`" @click="editNote(note)">Edit note</Button></div>
+          <div class="section-heading"><strong v-if="note.type !== 'GENERAL'">{{ messageText(note.type) }}</strong><Button type="button" :disabled="busy" :aria-label="t('Edit {p0} note', { p0: messageText(note.type) })" @click="editNote(note)">{{ t("Edit note") }}</Button></div>
           <p class="content">{{ note.content }}</p>
-          <p class="meta">{{ note.created_by }} · Created {{ dateText(note.created_at) }} · Updated {{ dateText(note.updated_at) }}</p>
+          <p class="meta">{{ note.created_by }} {{ t("· Created") }} {{ dateText(note.created_at) }} {{ t("· Updated") }} {{ dateText(note.updated_at) }}</p>
         </article>
       </section>
 
+      </template><template v-if="view === 'tasks'"><Button v-if="!work.tasks.length && !taskOpen" type="button" :disabled="busy" @click="taskOpen = true">{{ t("Add task") }}</Button>
       <section v-if="work.tasks.length || taskOpen" class="panel" aria-labelledby="tasks-title">
-        <div class="section-heading"><h3 id="tasks-title">Tasks <span v-if="work.tasks.length">{{ work.tasks.length }}</span></h3><Button v-if="!taskOpen" type="button" :disabled="busy" @click="taskOpen = true">Add task</Button></div>
+        <div class="section-heading"><h3 id="tasks-title">{{ t("Tasks") }} <span v-if="work.tasks.length">{{ work.tasks.length }}</span></h3><Button v-if="!taskOpen" type="button" :disabled="busy" @click="taskOpen = true">{{ t("Add task") }}</Button></div>
         <form v-if="taskOpen" @submit.prevent="saveTask">
-          <fieldset :disabled="busy"><legend>New task</legend>
-            <label>Task title<InputText class="at-form-control" v-model="taskForm.title" required maxlength="300" /></label>
-            <label>Task description<Textarea class="at-form-control" v-model="taskForm.description" rows="3"></Textarea></label>
-            <DateTimeField v-model="taskForm.due_at" label="Task due (local time)" :disabled="busy" />
-            <div class="actions"><Button class="primary" type="submit">Save task</Button><Button type="button" @click="taskOpen = false">Cancel task</Button></div>
+          <fieldset :disabled="busy"><legend>{{ t("New task") }}</legend>
+            <label>{{ t("Task title") }}<InputText class="at-form-control" v-model="taskForm.title" required maxlength="300" /></label>
+            <label>{{ t("Task description") }}<Textarea class="at-form-control" v-model="taskForm.description" rows="3"></Textarea></label>
+            <DateTimeField v-model="taskForm.due_at" :label="t('Task due (local time)')" :disabled="busy" />
+            <div class="actions"><Button class="primary" type="submit">{{ t("Save task") }}</Button><Button type="button" @click="taskOpen = false">{{ t("Cancel task") }}</Button></div>
           </fieldset>
         </form>
         <article v-for="task in work.tasks" :key="task.id" class="item" :aria-label="task.title">
           <div class="section-heading"><strong>{{ task.title }}</strong><div class="work-tags"><AppTag v-bind="taskStatusMeta[task.status]" /><AppTag v-if="task.status === 'PENDING' && task.due_at" v-bind="urgencyMeta(task.due_at)" /></div></div>
           <p v-if="task.description" class="content">{{ task.description }}</p>
-          <p v-if="task.due_at || task.completed_at" class="meta"><template v-if="task.due_at">Due: {{ dateText(task.due_at) }}</template><template v-if="task.due_at && task.completed_at"> · </template><template v-if="task.completed_at">Completed {{ dateText(task.completed_at) }}</template></p>
-          <div class="actions"><Button v-if="task.status !== 'COMPLETED'" type="button" :disabled="busy" @click="setTaskStatus(task, 'COMPLETED')">Complete task</Button><Button v-if="task.status === 'PENDING'" type="button" :disabled="busy" @click="setTaskStatus(task, 'CANCELLED')">Cancel task</Button><Button v-if="task.status !== 'PENDING'" type="button" :disabled="busy" @click="setTaskStatus(task, 'PENDING')">Reopen task</Button></div>
+          <p v-if="task.due_at || task.completed_at" class="meta"><template v-if="task.due_at">{{ t("Due:") }} {{ dateText(task.due_at) }}</template><template v-if="task.due_at && task.completed_at"> · </template><template v-if="task.completed_at">{{ t("Completed") }} {{ dateText(task.completed_at) }}</template></p>
+          <div class="actions"><Button v-if="task.status !== 'COMPLETED'" type="button" :disabled="busy" @click="setTaskStatus(task, 'COMPLETED')">{{ t("Complete task") }}</Button><Button v-if="task.status === 'PENDING'" type="button" :disabled="busy" @click="setTaskStatus(task, 'CANCELLED')">{{ t("Cancel task") }}</Button><Button v-if="task.status !== 'PENDING'" type="button" :disabled="busy" @click="setTaskStatus(task, 'PENDING')">{{ t("Reopen task") }}</Button></div>
         </article>
       </section>
 
+      </template><template v-if="view === 'followups'"><Button v-if="!work.followups.length && !followupOpen" type="button" :disabled="busy" @click="followupOpen = true">{{ t("Add follow-up") }}</Button>
       <section v-if="work.followups.length || followupOpen" class="panel" aria-labelledby="followups-title">
-        <div class="section-heading"><h3 id="followups-title">Follow-ups <span v-if="work.followups.length">{{ work.followups.length }}</span></h3><Button v-if="!followupOpen" type="button" :disabled="busy" @click="followupOpen = true">Add follow-up</Button></div>
+        <div class="section-heading"><h3 id="followups-title">{{ t("Follow-ups") }} <span v-if="work.followups.length">{{ work.followups.length }}</span></h3><Button v-if="!followupOpen" type="button" :disabled="busy" @click="followupOpen = true">{{ t("Add follow-up") }}</Button></div>
         <form v-if="followupOpen" @submit.prevent="saveFollowup">
-          <fieldset :disabled="busy"><legend>New follow-up</legend>
-            <DateTimeField v-model="followupForm.due_at" label="Follow-up due (local time)" :disabled="busy" />
-            <label>Contact by<Select class="at-form-control" aria-label="Contact by" v-model="followupForm.channel" :disabled="busy" :options="[{ value: 'EMAIL', label: 'Email' }, { value: 'PHONE', label: 'Phone call', disabled: !phoneNumber }, { value: 'BOTH', label: 'Email and phone call', disabled: !phoneNumber }]" option-label="label" option-value="value" option-disabled="disabled" /></label>
-            <p v-if="!phoneNumber" class="muted">Add a phone number to the application to plan a call.</p>
-            <p class="muted">Leave the date blank for {{ work.followup_delay_days }} days from now.</p>
-            <label>Template reference<InputText class="at-form-control" v-model="followupForm.template_reference" maxlength="2048" placeholder="Optional name or reference" /></label>
-            <div class="actions"><Button class="primary" type="submit">Save follow-up</Button><Button type="button" @click="followupOpen = false">Cancel follow-up</Button></div>
+          <fieldset :disabled="busy"><legend>{{ t("New follow-up") }}</legend>
+            <DateTimeField v-model="followupForm.due_at" :label="t('Follow-up due (local time)')" :disabled="busy" />
+            <label>{{ t("Contact by") }}<Select class="at-form-control" :aria-label="t('Contact by')" v-model="followupForm.channel" :disabled="busy" :options="[{ value: 'EMAIL', get label() { return t('Email') } }, { value: 'PHONE', get label() { return t('Phone call') }, disabled: !phoneNumber }, { value: 'BOTH', get label() { return t('Email and phone call') }, disabled: !phoneNumber }]" option-label="label" option-value="value" option-disabled="disabled" /></label>
+            <p v-if="!phoneNumber" class="muted">{{ t("Add a phone number to the application to plan a call.") }}</p>
+            <p class="muted">{{ t("Leave the date blank for") }} {{ work.followup_delay_days }} {{ t("days from now.") }}</p>
+            <label>{{ t("Template reference") }}<InputText class="at-form-control" v-model="followupForm.template_reference" maxlength="2048" :placeholder="t('Optional name or reference')" /></label>
+            <div class="actions"><Button class="primary" type="submit">{{ t("Save follow-up") }}</Button><Button type="button" @click="followupOpen = false">{{ t("Cancel follow-up") }}</Button></div>
           </fieldset>
         </form>
-        <article v-for="item in visibleFollowups" :key="item.id" class="item" :aria-label="`Follow-up ${item.sequence_number}`">
-          <div class="section-heading"><strong :title="item.is_automatic ? 'Automatically scheduled' : 'Manually scheduled'">#{{ item.sequence_number }} · {{ item.channel === 'BOTH' ? 'Email + phone' : item.channel === 'PHONE' ? 'Phone call' : 'Email' }}</strong><AppTag v-bind="followupStatusMeta[item.status]" :label="item.status === 'SENT' && item.channel !== 'EMAIL' ? 'Completed' : followupStatusMeta[item.status].label" /></div>
-          <p class="meta">Due: {{ dateText(item.due_at) }}<template v-if="item.sent_at"> · {{ item.channel === 'EMAIL' ? 'Sent' : 'Completed' }} {{ dateText(item.sent_at) }}</template></p>
-          <p v-if="item.template_reference && item.template_reference !== 'Automatic follow-up reminder'" class="content">Template: {{ item.template_reference }}</p>
-          <p v-if="item.channel !== 'EMAIL' && phoneNumber" class="meta">Call: <a :href="`tel:${phoneNumber}`">{{ phoneNumber }}</a></p>
-          <p v-if="item.archived_at" class="muted">Archived</p>
-          <p v-if="item.channel !== 'PHONE'" class="meta">{{ item.recipient_email ? `To: ${item.recipient_email}` : 'Recipient needed' }}</p>
-          <div class="actions"><Button as="a" :href="`#/followups/${applicationId}/${item.id}`">Open follow-up</Button></div>
+        <article v-for="item in visibleFollowups" :key="item.id" class="item" :aria-label="t('Follow-up {p0}', { p0: item.sequence_number })">
+          <div class="section-heading"><strong :title="messageText(String((item.is_automatic ? t('Automatically scheduled') : t('Manually scheduled')) ?? ''))">#{{ item.sequence_number }} · {{ item.channel === 'BOTH' ? t("Email + phone") : item.channel === 'PHONE' ? t("Phone call") : t("Email") }}</strong><AppTag v-bind="followupStatusMeta[item.status]" :label="messageText(String((item.status === 'SENT' && item.channel !== 'EMAIL' ? t('Completed') : followupStatusMeta[item.status].label) ?? ''))" /></div>
+          <p class="meta">{{ t("Due:") }} {{ dateText(item.due_at) }}<template v-if="item.sent_at"> · {{ item.channel === 'EMAIL' ? t("Sent") : t("Completed") }} {{ dateText(item.sent_at) }}</template></p>
+          <p v-if="item.template_reference && item.template_reference !== 'Automatic follow-up reminder'" class="content">{{ t("Template:") }} {{ item.template_reference }}</p>
+          <p v-if="item.channel !== 'EMAIL' && phoneNumber" class="meta">{{ t("Call:") }} <a :href="`tel:${phoneNumber}`">{{ phoneNumber }}</a></p>
+          <p v-if="item.archived_at" class="muted">{{ t("Archived") }}</p>
+          <p v-if="item.channel !== 'PHONE'" class="meta">{{ item.recipient_email ? t("To: {p0}", { p0: item.recipient_email }) : t("Recipient needed") }}</p>
+          <div class="actions"><Button as="a" :href="`#/followups/${applicationId}/${item.id}`">{{ t("Open follow-up") }}</Button></div>
         </article>
-        <Pagination v-if="work.followups.length > followupPageSize" v-model:page="followupPage" :total="work.followups.length" :page-size="followupPageSize" label="follow-ups" />
+        <Pagination v-if="work.followups.length > followupPageSize" v-model:page="followupPage" :total="work.followups.length" :page-size="followupPageSize" :label="t('follow-ups')" />
       </section>
+      <details class="recipient-panel"><summary>{{ t("Find or review recipients") }}</summary><RecipientPicker :application-id="applicationId" :closed="closed" embedded @changed="emit('changed'); load()" /></details></template>
     </template>
   </div>
 </template>
 
 <style scoped>
 @layer legacy {
-.work { margin-top: 32px; }
+.work { margin-top: 0; }
 .recipient-panel { margin:16px 0; padding:16px 18px; border:1px solid var(--at-border); border-radius:8px; background:var(--at-surface); }.recipient-panel > summary { cursor:pointer; font-weight:600; }
 .work-tags { display:flex; flex-wrap:wrap; gap:6px; }
 .work-heading, .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }

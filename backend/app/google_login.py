@@ -33,9 +33,9 @@ class GoogleLoginManager:
 
     def start(self, capabilities, binding, owner):
         if not self.connection.configured:
-            raise GoogleConnectionError('Configure GOOGLE_CLIENT_ID and GOOGLE_REDIRECT_URI before connecting Google.')
-        if not capabilities or set(capabilities) - SCOPES.keys():
-            raise GoogleConnectionError('Choose Drive, Gmail read and/or Gmail drafts.')
+            raise GoogleConnectionError('Google needs its one-time registration. Open Connect Google and finish setup in the app.')
+        if set(capabilities) - SCOPES.keys():
+            raise GoogleConnectionError('Choose only the available optional Drive or Gmail permissions.')
         probe = 'probe-' + str(uuid4())
         self.connection.store.put(probe, {'probe': secrets.token_hex(8)})
         self.connection.store.delete(probe)

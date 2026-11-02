@@ -1,5 +1,7 @@
 # Application Tracker
 
+Version **0.13.0** adds an independent offline phone app with encrypted Google Drive sync and desktop QR pairing, optional Google/ChatGPT/Claude connections, and English/French interface settings. Follow-up messages have their own language and saved versions for review. Mailbox scanning and recipient research include matching, date-boundary, pause and priority controls. See [PHONE_SYNC.md](PHONE_SYNC.md), [AI_CONNECTIONS.md](AI_CONNECTIONS.md), [docs/MAIL_SYNC.md](docs/MAIL_SYNC.md) and [CHANGELOG.md](CHANGELOG.md) for setup and details. Local tracking remains available without sign-in; live providers and physical devices have separate acceptance checks.
+
 Version **0.12.0** adds **Settings → Data & recovery**: reviewed CSV/XLSX import, a persistent email-review inbox, duplicate consolidation, Trash restoration, complete backup downloads and isolated recovery verification. Imports preview column mappings and errors before saving; exact retries are replay-safe. Consolidation retains original history in Trash, archives copied unsent follow-ups and pauses reminders for review. Restoring a deleted application also pauses reminders.
 
 Posting checks now catch up from persisted check times after restart. Spreadsheet exports treat text as literal data, document uploads are limited to 20 MiB, and the dashboard includes application/selection deadlines. See [RELEASE_READINESS_PLAN.md](RELEASE_READINESS_PLAN.md) for delivered phases and remaining live-service/mobile gates.
@@ -113,7 +115,7 @@ Relative data paths resolve against the project root, regardless of the terminal
 `GET /api/health` checks the live database connection and returns:
 
 ```json
-{"status":"ok","version":"0.12.0","database":"connected"}
+{"status":"ok","version":"0.13.0","database":"connected"}
 ```
 
 It returns HTTP 503 if the database query fails. The Settings page checks on load and when **Check again** is clicked, with a five-second timeout. It clears stale version/database values on a failed check. Continuous polling is not part of this release.
@@ -379,7 +381,7 @@ Manual checks:
 3. Create and update an application through the agent REST path or MCP while the Applications page remains open. Confirm its table updates without a browser reload.
 4. Regenerate the token; confirm the previous token receives HTTP 401 or an MCP tool error immediately.
 5. Confirm an agent delete operation is unavailable, and the Settings page never shows the old token again.
-6. Expand **System status** and confirm backend version **0.12.0** and **SQLite · Connected**.
+6. Expand **System status** and confirm backend version **0.13.0** and **SQLite · Connected**.
 
 The 0.9 agent-token flow remains available but has not been activated in the user's database. The Python test client emits one upstream deprecation warning from Starlette; tests pass.
 

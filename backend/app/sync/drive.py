@@ -61,3 +61,14 @@ class DriveTransport:
                 + f'\r\n--{boundary}--\r\n'.encode())
         return self.connection.api('drive', 'POST', 'upload/drive/v3/files', params={'uploadType': 'multipart', 'fields': 'id'},
             content=body, headers={'Content-Type': 'multipart/related; boundary=' + boundary}).json()['id']
+
+    def remove_probe(self, file_id, workspace_id, key, batch_id):
+        """Delete only an authenticated empty probe, never a workspace journal."""
+        from app.sync.crypto import open_envelope
+        batch = open_envelope(self.download(file_id), key, workspace_id)
+        if batch.kind != 'ack' or batch.mutations or str(batch.batch_id) != batch_id:
+            raise ValueError('Refusing to remove a file that is not the expected disposable probe.')
+        metadata = self.connection.api('drive', 'GET', f'drive/v3/files/{file_id}', params={'fields': 'name'}).json()
+        if metadata.get('name') != PREFIX + batch_id:
+            raise ValueError('Probe metadata changed; preserve this file for review.')
+        self.connection.api('drive', 'DELETE', f'drive/v3/files/{file_id}')

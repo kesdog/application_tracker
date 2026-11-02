@@ -9,6 +9,7 @@ from app.authorized_api import AuthorizedApiClient, AuthorizedRequestError, Toke
     (401, '', 'authorization', True), (403, 'insufficientPermissions', 'authorization', True),
     (403, 'userRateLimitExceeded', 'rate_limit', False), (429, '', 'rate_limit', False),
     (403, 'storageQuotaExceeded', 'storage_full', False), (503, '', 'unavailable', False),
+    (403, 'accessNotConfigured', 'setup_required', False),
     (410, '', 'invalid_cursor', False), (404, '', 'missing', False),
 ])
 def test_typed_failures_only_invalidate_actual_authorization(status, reason, kind, invalidated):
@@ -37,6 +38,20 @@ def test_destination_is_validated_before_acquiring_a_credential():
             client.call('storage', 'GET', path)
     with pytest.raises(ValueError):
         client.call('storage', 'GET', 'objects', follow_redirects=True)
+
+
+def test_disabled_service_error_info_keeps_the_authorization_lease():
+    def rejected(*_):
+        raise AssertionError('A disabled API must not invalidate account access')
+    response = httpx.Response(403, json={'error': {'status': 'PERMISSION_DENIED', 'details': [
+        {'@type': 'type.googleapis.com/google.rpc.ErrorInfo', 'reason': 'SERVICE_DISABLED',
+         'metadata': {'service': 'gmail.googleapis.com', 'private': 'never expose'}}]}})
+    client = AuthorizedApiClient('https://provider.example/', lambda _: TokenLease('secret', 1),
+                                 lambda *args, **kwargs: response, rejected)
+    with pytest.raises(AuthorizedRequestError) as caught:
+        client.call('mail', 'GET', 'messages')
+    assert caught.value.kind == 'setup_required'
+    assert 'Enable it' in str(caught.value) and 'private' not in str(caught.value)
 
 
 def test_network_failure_does_not_leak_provider_or_token():

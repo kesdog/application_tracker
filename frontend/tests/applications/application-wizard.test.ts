@@ -104,3 +104,17 @@ it('reuses legacy phone-only contacts without changing the employer or requiring
   await advance(wrapper); await advance(wrapper)
   expect(createApplication).toHaveBeenCalledWith(expect.objectContaining({ company: 'Example', contact_name: 'Recruiter', contact_type: 'PHONE', phone_number: '+33612345678' }))
 })
+
+it('saves optional notes and reminder values selected directly without redundant opt-in checkboxes', async () => {
+  vi.mocked(listApplications).mockResolvedValue([{ id: 'previous', description: 'A reusable role note', followup_delay_days: 0 }] as Application[])
+  const wrapper = mount(AddApplication, { global })
+  await flushPromises()
+  await fillRole(wrapper); await fillPosting(wrapper)
+  expect(wrapper.find('#has-notes').exists()).toBe(false)
+  expect(wrapper.find('#custom-followups').exists()).toBe(false)
+  wrapper.findAllComponents(Select).find(select => select.props('ariaLabel') === 'Reuse previous description')!.vm.$emit('update:modelValue', 'A reusable role note')
+  wrapper.findAllComponents(Select).find(select => select.props('ariaLabel') === 'Reuse a follow-up delay')!.vm.$emit('update:modelValue', '0')
+  await flushPromises()
+  await advance(wrapper); await advance(wrapper)
+  expect(createApplication).toHaveBeenCalledWith(expect.objectContaining({ description: 'A reusable role note', followup_delay_days: 0 }))
+})

@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import Root from '../../src/Root.vue'
-import { checkHumanSession, humanSession, withSessionHeaders } from '../../src/auth'
+import { checkHumanSession, humanSession, withSessionHeaders, workspaceLogin } from '../../src/auth'
 import { updateFollowUp, listApplications } from '../../src/api'
 
 enableAutoUnmount(afterEach)
@@ -12,7 +12,7 @@ beforeEach(() => {
   localStorage.clear()
 })
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
-const global = { stubs: { WelcomeExperience: true, App: { template: '<div>Workspace content<button @click="$emit(\'signout\')">Sign out</button></div>' } } }
+const global = { stubs: { WelcomeExperience: true, ProviderSignIn: true, App: { template: '<div>Workspace content<button @click="$emit(\'signout\')">Sign out</button></div>' } } }
 const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
 
 it('holds private workspace components until the session check succeeds', async () => {
@@ -57,6 +57,30 @@ it('cannot unlock the workspace from a malformed session response', async () => 
   await checkHumanSession()
   expect(humanSession.loaded).toBe(false)
   expect(humanSession.authenticated).toBe(false)
+})
+
+it('exchanges a Google credential through the shared session client without storing it', async () => {
+  const fetch = vi.fn().mockResolvedValue(reply({ enabled: true, authenticated: true, csrf_token: 'google-csrf' }))
+  vi.stubGlobal('fetch', fetch)
+  await workspaceLogin.signInGoogle('signed-google-credential', 'single-use-state')
+  expect(fetch).toHaveBeenCalledWith('/api/auth/google/credential', expect.objectContaining({ method: 'POST', credentials: 'same-origin', cache: 'no-store', body: JSON.stringify({ credential: 'signed-google-credential', state: 'single-use-state' }) }))
+  expect(humanSession.authenticated).toBe(true)
+  expect(humanSession.csrf).toBe('google-csrf')
+  expect(localStorage.length).toBe(0)
+})
+
+it('unlocks password fallback after a successful Google transition and subsequent logout', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(reply({ enabled: true, authenticated: false, csrf_token: null })).mockResolvedValueOnce(reply({ authenticated: false })))
+  const wrapper = mount(Root, { global })
+  await flushPromises()
+  wrapper.getComponent({ name: 'ProviderSignIn' }).vm.$emit('busy', true)
+  await flushPromises()
+  expect(wrapper.get('input[type=password]').attributes('disabled')).toBeDefined()
+  Object.assign(humanSession, { enabled: true, authenticated: true, csrf: 'google-csrf' })
+  await flushPromises()
+  await wrapper.get('button').trigger('click')
+  await flushPromises()
+  expect(wrapper.get('input[type=password]').attributes('disabled')).toBeUndefined()
 })
 
 it('adds the current CSRF token to writes and leaves multipart content type alone', async () => {

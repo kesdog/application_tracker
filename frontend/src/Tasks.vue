@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { t, messageText, errorText } from './i18n'
+
+import PageTabs from './components/shared/PageTabs.vue'
 import Button from 'primevue/button'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { listTasks, updateTask, type TaskListItem } from './api'
@@ -21,7 +24,7 @@ const visibleFinished = computed(() => finished.value.slice((finishedPage.value 
 async function load() {
   loading.value = true; error.value = ''
   try { tasks.value = await listTasks(); pendingPage.value = 1; finishedPage.value = 1 }
-  catch (reason) { error.value = reason instanceof Error ? reason.message : 'Unable to load tasks.' }
+  catch (reason) { error.value = reason instanceof Error ? reason.message : t("Unable to load tasks.") }
   finally { loading.value = false }
 }
 
@@ -30,7 +33,7 @@ async function setStatus(item: TaskListItem, status: TaskListItem['status']) {
   try {
     const saved = await updateTask(item.application_id, item.id, { status })
     tasks.value = tasks.value.map(row => row.id === saved.id ? { ...row, ...saved } : row)
-  } catch (reason) { error.value = reason instanceof Error ? reason.message : 'Unable to update task.' }
+  } catch (reason) { error.value = reason instanceof Error ? reason.message : t("Unable to update task.") }
   finally { loading.value = false }
 }
 
@@ -41,18 +44,21 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
 
 <template>
   <section aria-labelledby="tasks-page-title">
-    <div class="page-heading"><div><p class="eyebrow">Upcoming work</p><h2 id="tasks-page-title">Tasks</h2></div><Button type="button" :disabled="loading" @click="load">{{ loading ? 'Working…' : 'Refresh' }}</Button></div>
-    <p class="intro">See every application task in due-date order.</p>
-    <p v-if="error" class="at-message error" role="alert">{{ error }}</p>
-    <p v-if="loading && !tasks.length" role="status">Loading tasks…</p>
-    <div v-else-if="!tasks.length" class="empty-panel">No tasks yet. Add one from an application.</div>
+    <div class="page-heading"><div><h2 id="tasks-page-title">{{ t("Tasks") }}</h2></div><Button type="button" :disabled="loading" @click="load">{{ loading ? t("Working…") : t("Refresh") }}</Button></div>
+    <p class="intro">{{ t("See every application task in due-date order.") }}</p>
+    <p v-if="error" class="at-message error" role="alert">{{ errorText(String((error) ?? '')) }}</p>
+    <p v-if="loading && !tasks.length" role="status">{{ t("Loading tasks…") }}</p>
+    <div v-else-if="!tasks.length" class="empty-panel">{{ t("No tasks yet. Add one from an application.") }}</div>
     <template v-else>
-      <h3 class="group-title">To do <span>{{ pending.length }}</span></h3>
+      <PageTabs :label="t('Tasks views')" :tabs="[{ value: 'current', get label() { return t('To do') }, count: pending.length }, { value: 'history', get label() { return t('History') }, count: finished.length }]">
+      <template #current><p v-if="!pending.length" class="empty-panel">{{ t("Nothing to do right now.") }}</p>
+
       <div class="task-list"><article v-for="item in visiblePending" :key="item.id" class="task-row" :class="{ overdue: urgencyMeta(item.due_at).tone === 'overdue' }">
-        <div><p class="due">{{ item.title }} — {{ item.due_at ? relativeDateText(item.due_at, 'due ') : 'no due date' }}</p><AppTag v-bind="urgencyMeta(item.due_at)" /><p class="context"><a :href="`#/applications/${item.application.id}`">{{ item.application.job_title }}</a> · {{ item.application.company }}</p><p v-if="item.description" class="description">{{ item.description }}</p><p v-if="item.due_at" class="exact">{{ dateTimeText(item.due_at) }}</p></div>
-        <div class="actions"><Button type="button" :disabled="loading" @click="setStatus(item, 'COMPLETED')">Complete</Button><Button type="button" :disabled="loading" @click="setStatus(item, 'CANCELLED')">Cancel</Button></div>
-      </article><Pagination v-model:page="pendingPage" :total="pending.length" :page-size="pageSize" label="tasks" /></div>
-      <template v-if="finished.length"><h3 class="group-title finished-title">Completed or cancelled <span>{{ finished.length }}</span></h3><div class="task-list"><article v-for="item in visibleFinished" :key="item.id" class="task-row muted-row"><div><p class="due">{{ item.title }}</p><AppTag v-bind="taskStatusMeta[item.status]" /><p class="context"><a :href="`#/applications/${item.application.id}`">{{ item.application.job_title }}</a> · {{ item.application.company }}</p></div><Button type="button" :disabled="loading" @click="setStatus(item, 'PENDING')">Reopen</Button></article><Pagination v-model:page="finishedPage" :total="finished.length" :page-size="pageSize" label="completed tasks" /></div></template>
+        <div><p class="due">{{ item.title }} — {{ item.due_at ? relativeDateText(item.due_at, 'due ') : t("no due date") }}</p><AppTag v-bind="urgencyMeta(item.due_at)" /><p class="context"><a :href="`#/applications/${item.application.id}`">{{ item.application.job_title }}</a> · {{ item.application.company }}</p><details v-if="item.description || item.due_at" class="task-details"><summary>{{ t("Details") }}</summary><p v-if="item.description" class="description">{{ item.description }}</p><p v-if="item.due_at" class="exact">{{ dateTimeText(item.due_at) }}</p></details></div>
+        <div class="actions"><Button type="button" :disabled="loading" @click="setStatus(item, 'COMPLETED')">{{ t("Complete") }}</Button><Button type="button" :disabled="loading" @click="setStatus(item, 'CANCELLED')">{{ t("Cancel") }}</Button></div>
+      </article><Pagination v-model:page="pendingPage" :total="pending.length" :page-size="pageSize" :label="t('tasks')" /></div>
+      </template><template #history><p v-if="!finished.length" class="empty-panel">{{ t("No history yet.") }}</p><template v-if="finished.length"><div class="task-list"><article v-for="item in visibleFinished" :key="item.id" class="task-row muted-row"><div><p class="due">{{ item.title }}</p><AppTag v-bind="taskStatusMeta[item.status]" /><p class="context"><a :href="`#/applications/${item.application.id}`">{{ item.application.job_title }}</a> · {{ item.application.company }}</p></div><Button type="button" :disabled="loading" @click="setStatus(item, 'PENDING')">{{ t("Reopen") }}</Button></article><Pagination v-model:page="finishedPage" :total="finished.length" :page-size="pageSize" :label="t('completed tasks')" /></div></template>
+      </template></PageTabs>
     </template>
   </section>
 </template>
@@ -69,4 +75,5 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
 .empty-panel { background: var(--at-surface); border: 1px solid var(--at-border); border-radius: 8px; padding: 32px; color: var(--at-text-muted); }
 @media (max-width: 600px) { .task-row { flex-direction: column; } }
 }
+summary { cursor:pointer; font-size:13px; color:var(--at-text-muted); margin-top:10px; }
 </style>

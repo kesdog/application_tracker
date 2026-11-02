@@ -62,6 +62,20 @@ def test_google_connection_management_uses_human_session_csrf_and_callback_bindi
     assert client.get('/api/connections/google/callback?code=x&state=x').status_code == 409
 
 
+def test_google_setup_requires_hosted_login_and_csrf(hosted):
+    from tests.support import MemorySecrets
+    client, app, _ = hosted
+    app.state.google.store = MemorySecrets()
+    registration = {'client_id': '123456-fixture.apps.googleusercontent.com', 'client_secret': 'private-fixture'}
+    assert client.get('/api/connections/google/setup').status_code == 401
+    assert client.put('/api/connections/google/setup', json=registration, headers={'Origin': ORIGIN}).status_code == 401
+    login(client)
+    assert client.put('/api/connections/google/setup', json=registration, headers={'Origin': ORIGIN}).status_code == 403
+    response = client.put('/api/connections/google/setup', json=registration, headers=headers(client))
+    assert response.status_code == 200 and response.json()['redirect_uri'] == ORIGIN + '/api/connections/google/callback'
+    assert 'private-fixture' not in response.text
+
+
 def test_password_hashes_and_fail_closed_configuration(tmp_path, password_hash):
     assert validate_password_hash(password_hash)
     assert verify_password(PASSWORD, password_hash) and not verify_password("wrong", password_hash)
@@ -236,6 +250,7 @@ def test_google_callback_without_strict_cookie_requires_the_active_initiating_se
     google = app.state.google
     settings.google_client_id = 'test-client'
     settings.google_redirect_uri = ORIGIN + '/api/connections/google/callback'
+    settings.google_login_subjects = 'google-owner'
     credentials = {}
     google.store = SimpleNamespace(put=lambda key, value: credentials.update({key: value}),
         get=credentials.get, delete=lambda key: credentials.pop(key, None))
@@ -267,9 +282,13 @@ def test_google_callback_without_strict_cookie_requires_the_active_initiating_se
         client.cookies.set(COOKIE, app.state.human_sessions.create())
     callback = {'state': params['state'][0], 'code': 'test-code'}
     response = client.get('/api/connections/google/callback', params=callback, follow_redirects=False)
-    assert response.status_code == (303 if context == 'valid' else 409)
+    assert response.status_code == (200 if context == 'valid' else 409)
     assert len(credentials) == (1 if context == 'valid' else 0)
     if context == 'valid':
+        assert response.headers['content-type'].startswith('text/html')
+        assert response.headers['referrer-policy'] == 'no-referrer'
+        assert 'script src="/google-return.js"' in response.text
+        assert client.get('/google-return.js').status_code == 200
         assert client.get('/api/connections/google/callback', params=callback, follow_redirects=False).status_code == 409
 
 
@@ -285,3 +304,100 @@ def test_session_managers_share_persistence_and_revocation(hosted):
     assert first.is_authenticated(replacement)
     second.revoke(replacement)
     assert not first.is_authenticated_reference(digest(replacement))
+
+
+def google_signin_start(hosted):
+    client, app, settings = hosted
+    settings.google_client_id = 'fixture-web-client'
+    settings.google_login_subjects = 'allowed-subject, another-subject'
+    response = client.post('/api/auth/google/start', json={}, headers={'Origin': ORIGIN})
+    assert response.status_code == 200
+    return response.json()
+
+
+def google_signin_claims(challenge):
+    return {'iss': 'https://accounts.google.com', 'aud': 'fixture-web-client',
+            'sub': 'allowed-subject', 'email_verified': True, 'nonce': challenge['nonce']}
+
+
+def test_google_gis_creates_only_a_human_session_and_rejects_replay(hosted):
+    client, app, _ = hosted
+    challenge = google_signin_start(hosted)
+    claims = google_signin_claims(challenge)
+    seen = []
+    def verifier(token, audience):
+        seen.append((token, audience))
+        return claims
+    app.state.google_workspace_login.verifier = verifier
+    request = {'credential': 'signed-fixture-token', 'state': challenge['state']}
+    response = client.post('/api/auth/google/credential', json=request, headers={'Origin': ORIGIN})
+    assert response.status_code == 200
+    assert response.json()['authenticated'] is True
+    assert seen == [('signed-fixture-token', 'fixture-web-client')]
+    assert 'HttpOnly' in response.headers['set-cookie'] and 'Secure' in response.headers['set-cookie']
+    assert client.get('/api/auth/session').json()['authenticated'] is True
+    assert client.get('/api/applications').status_code == 200
+    assert client.get('/api/connections').json()['google']['email'] is None
+    assert client.post('/api/agent/tools/list_applications', json={}).status_code == 401
+    assert client.post('/api/auth/google/credential', json=request, headers={'Origin': ORIGIN}).status_code == 401
+    assert client.post('/api/auth/logout', headers=headers(client)).status_code == 200
+    assert client.get('/api/applications').status_code == 401
+
+
+@pytest.mark.parametrize('failure', ['signature', 'issuer', 'audience', 'subject', 'email', 'nonce', 'missing_nonce', 'missing_browser', 'other_browser', 'expired', 'state'])
+def test_google_gis_fails_closed_on_identity_or_transaction_failure(hosted, failure):
+    from app.google_connection import GoogleConnectionError
+    from app.google_workspace_auth import CHALLENGE_COOKIE
+    client, app, _ = hosted
+    challenge = google_signin_start(hosted)
+    claims = google_signin_claims(challenge)
+    field = {'issuer': 'iss', 'audience': 'aud', 'subject': 'sub', 'email': 'email_verified', 'nonce': 'nonce'}.get(failure)
+    if field:
+        claims[field] = False if failure == 'email' else 'wrong'
+    if failure == 'missing_nonce':
+        claims.pop('nonce')
+    if failure == 'missing_browser':
+        client.cookies.clear()
+    if failure == 'other_browser':
+        client.cookies.clear()
+        client.cookies.set(CHALLENGE_COOKIE, 'another-browser')
+    if failure == 'expired':
+        app.state.google_workspace_login.pending.clock = lambda: float('inf')
+    def verifier(*_):
+        if failure == 'signature':
+            raise GoogleConnectionError('Internal verifier details must stay private')
+        return claims
+    app.state.google_workspace_login.verifier = verifier
+    response = client.post('/api/auth/google/credential', json={'credential': 'test-token', 'state': 'wrong-state' if failure == 'state' else challenge['state']}, headers={'Origin': ORIGIN})
+    assert response.status_code == 401
+    assert 'Internal verifier details' not in response.text
+    assert client.get('/api/auth/session').json()['authenticated'] is False
+    assert client.get('/api/applications').status_code == 401
+
+
+def test_google_gis_requires_configuration_origin_json_and_rate_limits(hosted):
+    from app.google_workspace_auth import CHALLENGE_COOKIE
+    client, app, settings = hosted
+    assert client.get('/api/auth/providers').json() == {'google': {'available': False, 'client_id': None}}
+    assert client.post('/api/auth/google/start', json={}, headers={'Origin': ORIGIN}).status_code == 409
+    settings.google_client_id = 'fixture-client'
+    # No allowlist means no Google user can sign in, even with a configured client.
+    assert client.get('/api/auth/providers').json()['google']['available'] is False
+    challenge = google_signin_start(hosted)
+    assert challenge['nonce'] != challenge['state']
+    assert client.cookies.get(CHALLENGE_COOKIE)
+    providers = client.get('/api/auth/providers')
+    assert providers.json() == {'google': {'available': True, 'client_id': 'fixture-web-client'}}
+    assert 'allowed-subject' not in providers.text
+    assert providers.headers['cache-control'] == 'no-store'
+    assert 'https://accounts.google.com/gsi/client' in providers.headers['content-security-policy']
+    assert 'frame-src' in providers.headers['content-security-policy']
+    assert providers.headers['cross-origin-opener-policy'] == 'same-origin-allow-popups'
+    assert providers.headers['referrer-policy'] == 'strict-origin-when-cross-origin'
+    for endpoint, body in [('start', {}), ('credential', {'credential': 'test', 'state': challenge['state']})]:
+        assert client.post('/api/auth/google/' + endpoint, json=body).status_code == 403
+        assert client.post('/api/auth/google/' + endpoint, json=body, headers={'Origin': 'https://evil.test'}).status_code == 403
+    assert client.post('/api/auth/google/start', content='{}', headers={'Origin': ORIGIN}).status_code == 415
+    for _ in range(9):
+        assert client.post('/api/auth/google/start', json={}, headers={'Origin': ORIGIN}).status_code == 200
+    assert client.post('/api/auth/google/start', json={}, headers={'Origin': ORIGIN}).status_code == 429

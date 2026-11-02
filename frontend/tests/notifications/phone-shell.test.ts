@@ -15,7 +15,7 @@ function worker() {
 
 it('never intercepts private API requests, writes, or other sites', () => {
   const { handlers, caches, fetch } = worker()
-  for (const request of [{ url: 'https://tracker.test/api/applications', method: 'GET', mode: 'navigate' }, { url: 'https://tracker.test/api/settings/general', method: 'POST', mode: 'cors' }, { url: 'https://elsewhere.test/', method: 'GET', mode: 'navigate' }]) {
+  for (const request of [{ url: 'https://tracker.test/api/applications', method: 'GET', mode: 'navigate' }, { url: 'https://tracker.test/api/connections/google/callback?code=fixture&state=fixture', method: 'GET', mode: 'navigate' }, { url: 'https://tracker.test/google-return.js', method: 'GET', mode: 'no-cors' }, { url: 'https://tracker.test/api/settings/general', method: 'POST', mode: 'cors' }, { url: 'https://elsewhere.test/', method: 'GET', mode: 'navigate' }]) {
     const respondWith = vi.fn()
     handlers.get('fetch')!({ request, respondWith })
     expect(respondWith).not.toHaveBeenCalled()

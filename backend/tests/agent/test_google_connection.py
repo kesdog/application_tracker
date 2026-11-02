@@ -39,7 +39,7 @@ def google(tmp_path):
             return httpx.Response(200, json={'access_token': 'access-secret', 'refresh_token': 'refresh-secret',
                 'id_token': 'signed-token', 'scope': ' '.join(state['scopes']), 'expires_in': 3600})
         if state['api_status'] != 200:
-            return httpx.Response(state['api_status'], json={'error': 'private error access-secret'})
+            return httpx.Response(state['api_status'], json={'error': state.get('api_error', 'private error access-secret')})
         if request.url.path.endswith('/drafts'):
             state['drafts'] += 1
             if state.get('draft_timeout'):
@@ -89,7 +89,34 @@ def finish(google, params):
 
 
 def connect(google, capabilities=None):
-    assert finish(google, begin(google, capabilities)).status_code == 303
+    assert finish(google, begin(google, capabilities)).status_code == 200
+
+
+def test_account_connection_does_not_require_gmail_or_drive_permissions(google):
+    client, _, _, _, state, _ = google
+    started = client.post('/api/connections/google/start', json={'capabilities': []}, headers={'Origin': ORIGIN})
+    assert started.status_code == 200
+    parameters = parse_qs(urlsplit(started.json()['authorization_url']).query)
+    assert set(parameters['scope'][0].split()) == {'openid', 'email'}
+    state['nonce'] = parameters['nonce'][0]
+    state['scopes'] = []
+    returned = finish(google, parameters)
+    assert returned.status_code == 200
+    assert returned.headers['content-type'].startswith('text/html')
+    assert returned.headers['cache-control'] == 'no-store'
+    assert returned.headers['referrer-policy'] == 'no-referrer'
+    assert 'location' not in returned.headers
+    assert '/google-return.js' in returned.text
+    assert 'href="/#/settings?tab=connections"' in returned.text
+    assert parameters['state'][0] not in returned.text
+    script = client.get('/google-return.js')
+    assert script.status_code == 200 and script.headers['content-type'].startswith('application/javascript')
+    assert script.headers['cache-control'] == 'no-store'
+    assert "window.location.replace('/#/settings?tab=connections')" in script.text
+    status = client.get('/api/connections').json()['google']
+    assert status['status'] == 'CONNECTED' and status['email'] == 'owner@example.com'
+    assert status['capabilities'] == {'drive': False, 'gmail_read': False, 'gmail_drafts': False}
+    assert call(google, 'search_mail', {'query': 'x'}).status_code == 409
 
 
 def call(google, operation, args=None):
@@ -159,7 +186,7 @@ def test_reauthorization_pins_account_and_invalidates_old_attempts(google):
     old = begin(google)
     latest = begin(google)
     assert finish(google, old).status_code == 409
-    assert finish(google, latest).status_code == 303
+    assert finish(google, latest).status_code == 200
     assert finish(google, latest).status_code == 409
     pending = begin(google)
     assert client.post('/api/connections/google/disconnect', headers={'Origin': ORIGIN}).status_code == 200
@@ -191,6 +218,22 @@ def test_refused_and_revoked_scopes_and_locked_store_keep_offline_app(google):
     assert client.get('/api/connections').json()['google']['status'] == 'RECONNECT_REQUIRED'
     assert call(google, 'list_applications').status_code == 200
     assert not app.state.mail_provider.is_connected()
+
+
+@pytest.mark.parametrize(('capability', 'api_name'), [('gmail_read', 'Gmail'), ('drive', 'Google Drive')])
+def test_disabled_google_api_preserves_granted_capabilities_and_can_retry(google, capability, api_name):
+    client, app, _, _, state, _ = google
+    connect(google, [capability])
+    state['api_status'] = 403
+    state['api_error'] = {'errors': [{'reason': 'accessNotConfigured'}],
+                          'details': [{'reason': 'SERVICE_DISABLED'}], 'message': 'private provider details'}
+    with pytest.raises(GoogleConnectionError, match=f'Enable the {api_name} API') as caught:
+        app.state.google.api(capability, 'GET', 'gmail/v1/users/me/messages')
+    assert caught.value.kind == 'setup_required' and 'private' not in str(caught.value)
+    status = client.get('/api/connections').json()['google']
+    assert status['status'] == 'CONNECTED' and status['capabilities'][capability]
+    state['api_status'] = 200
+    assert app.state.google.api(capability, 'GET', 'gmail/v1/users/me/messages').status_code == 200
 
 
 def test_connection_management_requires_origin_host_and_cannot_be_agent_tool(google):
@@ -256,6 +299,11 @@ def test_callback_log_redacts_codes_and_state():
         ('127.0.0.1', 'GET', '/api/connections/google/callback?code=private-code&state=private-state', '1.1', 303), None)
     assert CallbackLogFilter().filter(record)
     assert 'private-code' not in record.getMessage() and 'private-state' not in record.getMessage()
+    from uvicorn.logging import AccessFormatter
+    formatted = AccessFormatter(fmt='%(request_line)s %(status_code)s', use_colors=False).format(record)
+    assert 'private-code' not in formatted and 'private-state' not in formatted
+    assert '/api/connections/google/callback?[redacted]' in formatted
+    assert len(record.args) == 5
 
 
 def test_google_draft_receipt_prevents_duplicate_side_effects_and_payload_reuse(google):

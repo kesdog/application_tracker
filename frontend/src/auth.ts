@@ -1,3 +1,4 @@
+import { t } from './i18n'
 import { reactive } from 'vue'
 
 export interface SessionStatus { enabled: boolean; authenticated: boolean; csrf_token: string | null }
@@ -13,14 +14,14 @@ export class BrowserSessionManager {
 
   accept(body: SessionStatus, revision = this.revision) {
     if (!this.isCurrent(revision)) return
-    if (typeof body?.enabled !== 'boolean' || typeof body?.authenticated !== 'boolean' || (body.enabled && body.authenticated && (typeof body.csrf_token !== 'string' || !body.csrf_token))) throw new Error('Unexpected sign-in response. Try again.')
+    if (typeof body?.enabled !== 'boolean' || typeof body?.authenticated !== 'boolean' || (body.enabled && body.authenticated && (typeof body.csrf_token !== 'string' || !body.csrf_token))) throw new Error(t("Unexpected sign-in response. Try again."))
     Object.assign(this.state, { enabled: body.enabled, authenticated: body.authenticated, csrf: body.csrf_token ?? '', loaded: true, checking: false, error: '' })
   }
 
   withHeaders(options: RequestInit): RequestInit {
     if (!this.state.csrf || ['GET', 'HEAD', 'OPTIONS'].includes((options.method ?? 'GET').toUpperCase())) return options
     const headers = new Headers(options.headers)
-    headers.set('X-CSRF-Token', this.state.csrf)
+    headers.set("X-CSRF-Token", this.state.csrf)
     return { ...options, headers }
   }
 
@@ -44,7 +45,7 @@ export class WorkspaceLoginClient {
     const response = await this.request(path, { ...options, cache: 'no-store', credentials: 'same-origin', signal: AbortSignal.timeout(8000) })
     if (!response.ok) {
       const body = await response.json().catch(() => null)
-      throw new Error(typeof body?.detail === 'string' ? body.detail : `Sign-in request failed (${response.status})`)
+      throw new Error(typeof body?.detail === 'string' ? body.detail : t("Sign-in request failed ({p0})", { p0: response.status }))
     }
     return response.json()
   }
@@ -55,7 +56,7 @@ export class WorkspaceLoginClient {
     try { this.sessions.accept(await this.authRequest('/api/auth/session'), revision) }
     catch (error) {
       if (this.sessions.isCurrent(revision)) {
-        this.sessions.state.error = error instanceof Error ? error.message : 'Unable to reach your workspace.'
+        this.sessions.state.error = error instanceof Error ? error.message : t("Unable to reach your workspace.")
         this.sessions.state.checking = false
       }
     }
@@ -66,10 +67,15 @@ export class WorkspaceLoginClient {
     this.sessions.accept(await this.authRequest('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) }), revision)
   }
 
+  async signInGoogle(credential: string, state: string) {
+    const revision = this.sessions.beginTransition()
+    this.sessions.accept(await this.authRequest('/api/auth/google/credential', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential, state }) }), revision)
+  }
+
   async signOut() {
     const revision = this.sessions.beginTransition()
     const result = await this.authRequest('/api/auth/logout', this.sessions.withHeaders({ method: 'POST' }))
-    if (result?.authenticated !== false) throw new Error('Unable to confirm sign-out. Try again.')
+    if (result?.authenticated !== false) throw new Error(t("Unable to confirm sign-out. Try again."))
     this.sessions.confirmSignOut(revision)
   }
 }

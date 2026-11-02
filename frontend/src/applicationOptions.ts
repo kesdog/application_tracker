@@ -1,21 +1,22 @@
+import { t } from './i18n'
 export type ContactType = 'EMAIL' | 'PHONE'
 export type RemotePolicy = 'FULL_REMOTE' | 'HYBRID' | 'IN_PERSON'
 export type JobSource = 'INDEED' | 'LINKEDIN' | 'FREEWORK' | 'HELLOWORK' | 'OTHER'
 
 export const contactTypes: { value: ContactType; label: string }[] = [
-  { value: 'EMAIL', label: 'Email' }, { value: 'PHONE', label: 'Phone' },
+  { value: 'EMAIL', get label() { return t("Email") } }, { value: 'PHONE', get label() { return t("Phone") } },
 ]
 export const remotePolicies: { value: RemotePolicy; label: string }[] = [
-  { value: 'FULL_REMOTE', label: 'Full remote' },
-  { value: 'HYBRID', label: 'Hybrid' },
-  { value: 'IN_PERSON', label: 'In person' },
+  { value: 'FULL_REMOTE', get label() { return t("Full remote") } },
+  { value: 'HYBRID', get label() { return t("Hybrid") } },
+  { value: 'IN_PERSON', get label() { return t("In person") } },
 ]
 export const jobSources: { value: JobSource; label: string }[] = [
-  { value: 'INDEED', label: 'Indeed' },
-  { value: 'LINKEDIN', label: 'LinkedIn' },
-  { value: 'FREEWORK', label: 'Free-Work' },
-  { value: 'HELLOWORK', label: 'HelloWork' },
-  { value: 'OTHER', label: 'Other' },
+  { value: 'INDEED', get label() { return t("Indeed") } },
+  { value: 'LINKEDIN', get label() { return t("LinkedIn") } },
+  { value: 'FREEWORK', get label() { return t("Free-Work") } },
+  { value: 'HELLOWORK', get label() { return t("HelloWork") } },
+  { value: 'OTHER', get label() { return t("Other") } },
 ]
 
 const boardDomains: { source: JobSource; domains: string[] }[] = [
@@ -36,5 +37,5 @@ export function detectJobSource(rawUrl: string): JobSource {
   }
 }
 
-export const remotePolicyLabel = (value: string | null) => remotePolicies.find(option => option.value === value)?.label ?? value ?? 'Not provided'
-export const jobSourceLabel = (value: string | null) => jobSources.find(option => option.value === value)?.label ?? value ?? 'Not provided'
+export const remotePolicyLabel = (value: string | null) => remotePolicies.find(option => option.value === value)?.label ?? value ?? t("Not provided")
+export const jobSourceLabel = (value: string | null) => jobSources.find(option => option.value === value)?.label ?? value ?? t("Not provided")

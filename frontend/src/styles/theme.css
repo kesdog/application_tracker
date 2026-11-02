@@ -17,6 +17,10 @@
   .at-message.error { border-color: var(--at-unsuccessful); background: color-mix(in srgb, var(--at-unsuccessful) 8%, var(--at-surface)); }
   .at-message.warning { border-color: var(--at-due-soon); background: color-mix(in srgb, var(--at-due-soon) 8%, var(--at-surface)); }
   .at-message.success { border-color: var(--at-successful); background: color-mix(in srgb, var(--at-successful) 8%, var(--at-surface)); }
+  .page-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+  .page-heading > div { min-width:0; }
+  .page-heading h2 { margin-bottom:0; }
+  .page-heading + .intro { margin-top:10px; }
   .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
   .sidebar { background: var(--at-nav-background); border-color: color-mix(in srgb, var(--at-nav-text) 24%, var(--at-nav-background)); transition: width .18s ease, flex-basis .18s ease; overflow-x: hidden; }
   .sidebar .brand, .sidebar .brand small, .sidebar .primary-nav a, .sidebar .settings-nav a { color: var(--at-nav-text); }

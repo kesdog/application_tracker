@@ -6,7 +6,7 @@ from sqlalchemy import func, select, text
 
 from app import applications
 from app.activity import record_audit, record_event
-from app.models import ApplicationDocument, FollowUp, FollowUpStatus, Interview, MailImportReceipt, Note, Task, utc_now
+from app.models import ApplicationDocument, FollowUp, FollowUpMessageVersion, FollowUpStatus, Interview, MailImportReceipt, Note, Task, utc_now
 from app.schemas import ApplicationRead, ApplicationUpdate
 
 FIELDS = {'job_title', 'company', 'date_applied', 'intermediary', 'phone_number', 'contact_email', 'contact_name',
@@ -66,6 +66,12 @@ def merge(session, settings, target_id, data):
                     status=FollowUpStatus.SENT if item.status == FollowUpStatus.SENT else FollowUpStatus.PREPARED,
                     archived_at=item.archived_at or (None if item.status == FollowUpStatus.SENT else utc_now()))
             session.add(kind(**values))
+    session.flush()
+    for original_id, copied_id in remap.items():
+        for version in session.scalars(select(FollowUpMessageVersion).where(FollowUpMessageVersion.followup_id == original_id)).all():
+            values = {column.name: getattr(version, column.name) for column in FollowUpMessageVersion.__table__.columns
+                      if column.name not in {'id', 'followup_id'}}
+            session.add(FollowUpMessageVersion(id=str(uuid4()), followup_id=copied_id, **values))
     for receipt in session.scalars(select(MailImportReceipt).where(MailImportReceipt.application_id == source.id)):
         receipt.application_id = target_id
     source.deleted_at = utc_now()

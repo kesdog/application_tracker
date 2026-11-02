@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t, messageText } from '../../i18n'
+
 import { computed } from 'vue'
 import Button from 'primevue/button'
 import Chip from 'primevue/chip'
@@ -11,13 +13,13 @@ const active = computed(() => activeFilterLabels(props.filters))
 </script>
 
 <template>
-  <div v-if="active.length" class="active-filters" aria-label="Active application filters">
+  <div v-if="active.length" class="active-filters" :aria-label="t('Active application filters')">
     <!-- Keep chips visible until the backend accepts the changed filters. -->
     <Chip v-for="filter in active" :key="filter.key">
-      <span>{{ filter.label }}</span>
-      <Button type="button" icon="pi pi-times" :aria-label="`Remove ${filter.label}`" severity="secondary" text rounded size="small" :disabled="loading" @click="emit('remove', filter.key)" />
+      <span>{{ messageText(String((filter.label) ?? '')) }}</span>
+      <Button type="button" icon="pi pi-times" :aria-label="t('Remove {p0}', { p0: filter.label })" severity="secondary" text rounded size="small" :disabled="loading" @click="emit('remove', filter.key)" />
     </Chip>
-    <Button type="button" label="Clear all" severity="secondary" text :disabled="loading" @click="emit('clear')" />
+    <Button type="button" :label="t('Clear all')" severity="secondary" text :disabled="loading" @click="emit('clear')" />
   </div>
 </template>
 

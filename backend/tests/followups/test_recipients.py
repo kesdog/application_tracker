@@ -59,7 +59,7 @@ def test_bulk_queue_deduplicates_by_job_and_excludes_phone_closed_sent_and_archi
     record=followup(client,archived)
     client.patch(f"/api/applications/{archived['id']}/followups/{record['id']}",json={'archived':True})
     result=client.post('/api/recipients/queue-missing').json()
-    assert result == {'queued':1,'applications':1,'concurrency_limit':5}
+    assert result == {'queued':0,'applications':1,'concurrency_limit':5}  # Already queued when its message was prepared.
     assert client.post('/api/recipients/queue-missing').json()['queued'] == 0
     assert client.post(f"/api/applications/{closed['id']}/recipients/fetch").status_code == 422
     assert client.get('/api/recipients/queue').json()['missing_followups'] == 2
@@ -83,6 +83,57 @@ def test_claims_are_globally_limited_and_expired_work_recovers(client):
     assert recovered
     assert not discovery.complete(engine,old,{'candidates':[],'outcome':'COMPLETED'})
     assert client.get('/api/recipients/queue').json()['running'] == 5
+
+
+def test_creation_queues_after_message_preparation_and_known_recipients_skip_discovery(client):
+    pause(client)
+    app = application(client)
+    state = client.get(f"/api/applications/{app['id']}/recipients").json()
+    item = followup(client, app)
+    assert item['subject'] and item['body'] and item['prepared_at']
+    assert state['job']['state'] == 'QUEUED'
+    known = application(client, contact_email='known@example.com')
+    assert client.get(f"/api/applications/{known['id']}/recipients").json()['job'] is None
+
+
+def test_pause_persists_and_prioritization_revokes_old_leases_without_accepting_late_results(client):
+    pause(client)
+    oldest = application(client, date_applied='2026-01-02')
+    newest = application(client, date_applied='2026-10-27')
+    engine = client.app.state.engine
+    running = discovery.claim(engine)
+    assert running['application_id'] == newest['id']
+    assert client.post('/api/recipients/pause').json()['paused']
+    assert discovery.claim(engine) is None
+    assert not discovery.complete(engine, running, {'outcome':'COMPLETED','candidates':[{'email':'late@example.com'}]})
+    client.post(f"/api/applications/{oldest['id']}/recipients/prioritize")
+    assert client.get('/api/recipients/queue').json()['paused']
+    client.post('/api/recipients/resume')
+    prioritized = discovery.claim(engine)
+    assert prioritized['application_id'] == oldest['id']
+    client.post(f"/api/applications/{oldest['id']}/recipients/pause")
+    assert not discovery.complete(engine, prioritized, {'outcome':'COMPLETED','candidates':[]})
+    assert client.get(f"/api/applications/{oldest['id']}/recipients").json()['job']['state'] == 'PAUSED'
+    assert discovery.claim(engine)['application_id'] == newest['id']
+
+
+def test_run_next_interrupts_one_running_search_and_claims_the_selected_application(client):
+    pause(client)
+    apps = [application(client, company=f'Company {n}') for n in range(6)]
+    engine = client.app.state.engine
+    running = [discovery.claim(engine) for _ in range(5)]
+    waiting = next(app for app in apps if app['id'] not in {job['application_id'] for job in running})
+    client.post(f"/api/applications/{waiting['id']}/recipients/prioritize")
+    assert sum(discovery.owns_lease(engine, job) for job in running) == 4
+    assert discovery.claim(engine)['application_id'] == waiting['id']
+
+
+def test_followup_pages_show_newest_application_first_with_stable_pagination(client):
+    old = application(client, date_applied='2026-01-02')
+    new = application(client, date_applied='2026-10-27')
+    latest = client.get('/api/followups?page_size=1').json()
+    assert latest['items'][0]['application']['id'] == new['id']
+    assert client.get('/api/followups?page_size=1&page=2').json()['items'][0]['application']['id'] == old['id']
 
 
 def test_stale_job_results_are_discarded_and_selection_is_scoped_revision_checked(client):
@@ -129,11 +180,40 @@ class GateResearch:
             self.active-=1
 
 
+def test_live_pause_interrupts_research_without_killing_workers_and_resume_retries(tmp_path):
+    researcher = GateResearch()
+    with TestClient(create_app(Settings(app_data_dir=tmp_path, _env_file=None), recipient_researcher=researcher)) as client:
+        app = application(client)
+        deadline = time.monotonic() + 4
+        while researcher.active != 1 and time.monotonic() < deadline:
+            time.sleep(.02)
+        assert researcher.active == 1
+        assert client.post('/api/recipients/pause').json()['paused']
+        deadline = time.monotonic() + 4
+        while researcher.active and time.monotonic() < deadline:
+            time.sleep(.02)
+        assert researcher.active == 0
+        assert client.get('/api/recipients/queue').json()['running'] == 0
+        client.post('/api/recipients/resume')
+        deadline = time.monotonic() + 4
+        while researcher.active != 1 and time.monotonic() < deadline:
+            time.sleep(.02)
+        assert researcher.active == 1
+        client.portal.call(researcher.gate.set)
+        deadline = time.monotonic() + 4
+        while time.monotonic() < deadline:
+            state = client.get(f"/api/applications/{app['id']}/recipients").json()
+            if state['job']['state'] == 'NO_RESULTS':
+                break
+            time.sleep(.02)
+        assert state['job']['state'] == 'NO_RESULTS' and state['job']['attempts'] == 2
+
+
 def test_background_workers_process_five_at_a_time_and_drain_queue(tmp_path):
     researcher=GateResearch()
     with TestClient(create_app(Settings(app_data_dir=tmp_path,_env_file=None),recipient_researcher=researcher)) as client:
         for _ in range(8):application(client)
-        assert client.post('/api/recipients/queue-missing').json()['queued'] == 8
+        assert client.post('/api/recipients/queue-missing').json()['queued'] == 0
         assert researcher.five_started.wait(4)
         queue=client.get('/api/recipients/queue').json()
         assert queue['running'] == 5 and queue['queued'] == 3

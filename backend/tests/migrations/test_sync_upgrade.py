@@ -2,7 +2,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import create_database, migrate_database
-from app.models import Application, ExternalConnection, MailImportReceipt
+from app.models import Application, ExternalConnection, MailImportReceipt, MailSyncBoundary, MailSyncScope
 from app.sync.models import SyncWorkspace
 from uuid import uuid4
 import json
@@ -41,6 +41,24 @@ def test_populated_google_database_upgrades_without_enrolling_or_changing_creden
         engine.dispose()
 
 
+def test_mail_boundary_upgrade_preserves_receipts_without_inventing_a_checkpoint(legacy_database, tmp_path):
+    with legacy_database('0026_import_batches') as connection:
+        connection.execute(text("INSERT INTO mail_import_receipts(account,message_id,thread_id,state,subject,reason) VALUES ('account','abc','thread','REVIEW','Saved email','Needs review')"))
+    engine = create_database(tmp_path)
+    try:
+        migrate_database(engine)
+        with Session(engine) as session:
+            assert session.get(MailImportReceipt, ('account', 'abc')).state == 'REVIEW'
+            assert session.get(MailSyncBoundary, 'account') is None
+            session.add(MailSyncBoundary(account='account', checked_through=1800000000))
+            session.commit()
+        migrate_database(engine)
+        with Session(engine) as session:
+            assert session.get(MailSyncBoundary, 'account').checked_through == 1800000000
+    finally:
+        engine.dispose()
+
+
 def test_existing_sync_history_is_queued_once_when_incremental_indexes_are_added(legacy_database, tmp_path):
     entity_id, event_id, workspace_id, device_id = (str(uuid4()) for _ in range(4))
     with legacy_database('0023_compact_sync') as connection:
@@ -55,5 +73,22 @@ def test_existing_sync_history_is_queued_once_when_incremental_indexes_are_added
         migrate_database(engine)
         with engine.connect() as connection:
             assert connection.execute(text('SELECT count(*) FROM sync_dirty')).scalar_one() == 1
+    finally:
+        engine.dispose()
+
+
+def test_first_scan_scope_upgrade_preserves_existing_checkpoint_and_saves_new_account_scope(legacy_database, tmp_path):
+    with legacy_database('0027_mail_sync_boundary') as connection:
+        connection.execute(text("INSERT INTO mail_sync_boundaries(account,checked_through,updated_at) VALUES ('existing',1800000000,CURRENT_TIMESTAMP)"))
+    engine = create_database(tmp_path)
+    try:
+        migrate_database(engine)
+        with Session(engine) as session:
+            assert session.get(MailSyncBoundary, 'existing').checked_through == 1800000000
+            assert session.get(MailSyncScope, 'existing') is None
+            session.add(MailSyncScope(account='new', scan_after=1790000000, lookback_months=3)); session.commit()
+        migrate_database(engine)
+        with Session(engine) as session:
+            assert session.get(MailSyncScope, 'new').scan_after == 1790000000
     finally:
         engine.dispose()

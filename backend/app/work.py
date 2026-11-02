@@ -63,11 +63,14 @@ def schedule_automatic_followup(
     session.add(item)
     session.flush()
     templates.prepare(session, application, item, settings)
+    templates.remember_message(session, item, activated=True)
     record_event(
         session, application.id, "FOLLOWUP_CREATED", f"Automatic follow-up #{sequence} scheduled for {item.due_at.date().isoformat()}",
         actor_type=actor_type, actor_reference=actor_reference,
         metadata={"followup_id": item.id, "automatic": True, "due_at": item.due_at},
     )
+    from app.recipient_discovery import enqueue_prepared
+    enqueue_prepared(session, application, item)
     return item
 
 
@@ -100,6 +103,7 @@ def ensure_initial_followups(session: Session, settings: Settings) -> int:
                 note = session.get(Note, event.event_metadata.get("note_id"))
                 if note and note.application_id == application.id:
                     item.body = note.content
+        templates.remember_message(session, item, activated=True)
     session.commit()
     return created
 
@@ -271,14 +275,17 @@ def create_followup(
         item.subject = templates.render(templates.normalize(data.subject), item.variable_snapshot)["text"]
     if data.body is not None:
         item.body = templates.render(templates.normalize(data.body), item.variable_snapshot)["text"]
+    templates.remember_message(session, item, activated=True)
     record_event(session, application_id, "FOLLOWUP_CREATED", f"Follow-up #{sequence} created", actor_type=actor_type, actor_reference=actor_reference, metadata={"followup_id": item.id})
     record_audit(session, application_id, "FOLLOWUP", item.id, "CREATE", new={"sequence_number": sequence, "due_at": due_at, "template_reference": data.template_reference, "channel": data.channel}, actor_type=actor_type, actor_reference=actor_reference)
+    from app.recipient_discovery import enqueue_prepared
+    enqueue_prepared(session, application, item)
     return finish(session, item)
 
 
 def update_followup(
     session: Session, application_id: str, item_id: str, data: FollowUpUpdate, *,
-    actor_type: ActorType = ActorType.HUMAN, actor_reference: str | None = None, settings: Settings | None = None, template_metadata: dict | None = None, commit: bool = True,
+    actor_type: ActorType = ActorType.HUMAN, actor_reference: str | None = None, settings: Settings | None = None, template_metadata: dict | None = None, commit: bool = True, resolve_variables: bool = True,
 ) -> FollowUp:
     if commit:
         session.execute(text("BEGIN IMMEDIATE"))
@@ -315,10 +322,16 @@ def update_followup(
         raise InvalidApplication("A sent follow-up requires its actual send time")
     if item.status == FollowUpStatus.SENT and any(k in changes for k in ("subject", "body", "instructions", "customization", "recipient_email", "recipient_name", "recipient_source_url")):
         raise InvalidApplication("Reopen the follow-up before editing sent content")
-    content_changes = {k for k in ("subject", "body", "instructions", "customization", "channel", "template_snapshot", "variable_snapshot", "recipient_email", "recipient_name", "recipient_source_url") if k in changes and changes[k] != getattr(item, k)}
+    if any(name in changes and changes[name] != getattr(item, name) for name in ("subject", "body")) and "message_language" not in changes:
+        requested_language = (changes.get("customization") or {}).get("language")
+        if actor_type == ActorType.AGENT:
+            requested_language = templates.effective_preferences(application, item, item.template_snapshot or templates.current_settings(session, settings))["language"]
+        if requested_language:
+            changes["message_language"] = templates.language_code(requested_language)
+    content_changes = {k for k in ("subject", "body", "instructions", "customization", "channel", "message_language", "template_snapshot", "variable_snapshot", "recipient_email", "recipient_name", "recipient_source_url") if k in changes and changes[k] != getattr(item, k)}
     if content_changes and item.status == FollowUpStatus.READY:
         changes.update(status=FollowUpStatus.PREPARED, approved_revision=None)
-    if any(templates.TAG.search(changes.get(k, "")) for k in ("subject", "body")):
+    if resolve_variables and any(templates.TAG.search(changes.get(k, "")) for k in ("subject", "body")):
         values = templates.context_values(session, application, item, item.template_snapshot or templates.current_settings(session, settings))
         values.update({k: v for k, v in changes.get("customization", {}).items() if v is not None})
         for name in ("subject", "body"):
@@ -342,8 +355,12 @@ def update_followup(
         if changes.get("status", item.status) == FollowUpStatus.READY:
             changes["approved_revision"] = changes["revision"]
     previous = {name: getattr(item, name) for name in changes}
+    if content_changes:
+        templates.remember_message(session, item)
     for name, value in changes.items():
         setattr(item, name, value)
+    if content_changes:
+        templates.remember_message(session, item, activated=True)
     if changes:
         status = changes.get("status")
         event_type = "FOLLOWUP_SENT" if status == FollowUpStatus.SENT else "FOLLOWUP_READY" if status == FollowUpStatus.READY else "FOLLOWUP_DRAFTED" if {"subject", "body"} & set(changes) else "FOLLOWUP_CHANGED"
@@ -393,6 +410,7 @@ def proposed_message(session: Session, application_id: str, item_id: str, settin
     application = get_application(session, application_id)
     general = templates.current_settings(session, settings)
     snapshot = general if latest or not item.template_snapshot else item.template_snapshot
+    snapshot = templates.localized_defaults(snapshot, templates.effective_preferences(application, item, snapshot)["language"])
     values = templates.context_values(session, application, item, snapshot)
     return {"subject": templates.render(snapshot["subject_template"], values), "body": templates.render(snapshot["body_template"], values),
             "template_snapshot": {k: snapshot[k] for k in ("subject_template", "body_template", "revision", "language", "tone", "signature", "instructions")},
@@ -402,7 +420,125 @@ def proposed_message(session: Session, application_id: str, item_id: str, settin
 def apply_message(session: Session, application_id: str, item_id: str, settings: Settings, expected_revision: int, *, latest=True):
     proposed = proposed_message(session, application_id, item_id, settings, latest=latest)
     return update_followup(session, application_id, item_id, FollowUpUpdate(subject=proposed["subject"]["text"], body=proposed["body"]["text"], expected_revision=expected_revision), settings=settings,
-                           template_metadata={"template_snapshot": proposed["template_snapshot"], "variable_snapshot": proposed["variable_snapshot"]})
+                           template_metadata={"template_snapshot": proposed["template_snapshot"], "variable_snapshot": proposed["variable_snapshot"],
+                                              "message_language": templates.language_code(proposed["variable_snapshot"]["language"])})
+
+
+def message_versions(session: Session, application_id: str, item_id: str) -> dict:
+    from app.models import FollowUpMessageVersion
+    from app.sync.domain import require_local_message
+    require_local_message(session, item_id)
+    item = child(session, FollowUp, application_id, item_id)
+    current = templates.message_fingerprint(item)
+    rows = session.scalars(select(FollowUpMessageVersion).where(FollowUpMessageVersion.followup_id == item_id)
+        .order_by(FollowUpMessageVersion.last_used_at.desc(), FollowUpMessageVersion.created_at.desc(), FollowUpMessageVersion.id)).all()
+    return {"current_language": item.message_language, "versions": [
+        {"id": row.id, "language": row.language, "subject": row.subject, "body": row.body,
+         "created_at": row.created_at.replace(tzinfo=timezone.utc), "source_revision": row.source_revision,
+         "active": row.fingerprint == current} for row in rows]}
+
+
+def check_message_switch(session: Session, application_id: str, item_id: str, expected_revision: int):
+    from app.sync.domain import require_local_message
+    require_local_message(session, item_id)
+    item = child(session, FollowUp, application_id, item_id)
+    application = get_application(session, application_id)
+    if item.revision != expected_revision:
+        raise templates.RevisionConflict("This follow-up changed in another session. Reload before saving.")
+    if item.channel == FollowUpChannel.PHONE or item.status == FollowUpStatus.SENT or item.archived_at or application.status == ApplicationStatus.CLOSED:
+        raise InvalidApplication("Reopen the application and email follow-up before switching message versions")
+    return item, application
+
+
+def activate_message_version(session: Session, application: Application, item: FollowUp, settings: Settings, language: str, *, version=None, pin_language=True):
+    """Switch exact saved content, or generate a new standard message without destroying prior text."""
+    from app.models import FollowUpMessageVersion
+    templates.remember_message(session, item)
+    if version is None:
+        version = session.scalar(select(FollowUpMessageVersion).where(
+            FollowUpMessageVersion.followup_id == item.id, FollowUpMessageVersion.language == language)
+            .order_by(FollowUpMessageVersion.last_used_at.desc(), FollowUpMessageVersion.created_at.desc(), FollowUpMessageVersion.id).limit(1))
+    if version:
+        subject, body = version.subject, version.body
+        snapshot, context = version.template_snapshot, version.variable_snapshot
+        instructions = version.instructions
+        customization = {**version.customization}
+    else:
+        general = templates.current_settings(session, settings)
+        prefs = templates.effective_preferences(application, item, item.template_snapshot or general)
+        subject_template, body_template = templates.LOCALIZED_TEMPLATES[language]
+        snapshot = {**general, **{name: prefs[name] for name in ("signature", "tone")},
+                    "language": {"en": "English", "fr": "French"}[language],
+                    "subject_template": subject_template, "body_template": body_template}
+        context = templates.context_values(session, application, item, snapshot)
+        context["language"] = snapshot["language"]
+        subject, body = templates.render(subject_template, context)["text"], templates.render(body_template, context)["text"]
+        instructions, customization = item.instructions, {**(item.customization or {})}
+    if pin_language:
+        customization["language"] = {"en": "English", "fr": "French"}.get(language, language)
+    else:
+        customization["language"] = None
+    # Do not re-resolve a restored version against changed application data: preserve its exact text.
+    return update_followup(session, application.id, item.id, FollowUpUpdate(
+        subject=subject, body=body, instructions=instructions, customization=customization,
+        expected_revision=item.revision, status=FollowUpStatus.PREPARED,
+    ), settings=settings, template_metadata={"template_snapshot": snapshot, "variable_snapshot": context,
+        "message_language": language}, commit=False, resolve_variables=False)
+
+
+def switch_message_language(session: Session, application_id: str, item_id: str, data: templates.MessageLanguageInput, settings: Settings):
+    session.execute(text("BEGIN IMMEDIATE"))
+    item, application = check_message_switch(session, application_id, item_id, data.expected_revision)
+    item = activate_message_version(session, application, item, settings, data.language)
+    return finish(session, item)
+
+
+def restore_message_version(session: Session, application_id: str, item_id: str, version_id: str, data: templates.RestoreMessageInput, settings: Settings):
+    from app.models import FollowUpMessageVersion
+    session.execute(text("BEGIN IMMEDIATE"))
+    item, application = check_message_switch(session, application_id, item_id, data.expected_revision)
+    version = session.scalar(select(FollowUpMessageVersion).where(
+        FollowUpMessageVersion.followup_id == item_id, FollowUpMessageVersion.id == version_id))
+    if version is None:
+        raise ApplicationNotFound("Message version not found for this follow-up")
+    item = activate_message_version(session, application, item, settings, version.language, version=version)
+    return finish(session, item)
+
+
+def change_followup_language(session: Session, data: templates.FollowUpLanguageInput, settings: Settings) -> dict:
+    """Select email defaults independently from UI locale; preserve explicit job/message preferences.
+
+    No provider calls or mailbox writes occur. Every rewritten message loses approval.
+    The existing audit, sync and revision contracts apply to each changed follow-up.
+    """
+    session.execute(text("BEGIN IMMEDIATE"))
+    general = templates.current_settings(session, settings)
+    if general["revision"] != data.expected_revision:
+        raise templates.RevisionConflict("Settings changed in another session. Reload before saving.")
+    from app.models import GeneralSettings
+    from app.sync.domain import imported_record
+    subject, body = templates.LOCALIZED_TEMPLATES[data.language]
+    general.update(language={"en": "English", "fr": "French"}[data.language], subject_template=subject, body_template=body)
+    record = session.get(GeneralSettings, 1)
+    values = {k: v for k, v in general.items() if k != "revision"}
+    if record.values != values:
+        record.values = values
+        record.revision += 1
+    general["revision"] = record.revision
+    rewritten = 0
+    if data.rewrite_existing:
+        rows = session.execute(select(FollowUp, Application).join(Application).where(
+            FollowUp.status.in_([FollowUpStatus.PREPARED, FollowUpStatus.READY]),
+            FollowUp.archived_at.is_(None), FollowUp.channel != FollowUpChannel.PHONE,
+            Application.deleted_at.is_(None), Application.status != ApplicationStatus.CLOSED,
+        ).order_by(FollowUp.id)).all()
+        for item, application in rows:
+            if imported_record(session, "followup", item.id) or (application.followup_customization or {}).get("language") or (item.customization or {}).get("language"):
+                continue
+            activate_message_version(session, application, item, settings, data.language, pin_language=False)
+            rewritten += 1
+    session.commit()
+    return {"settings": templates.current_settings(session, settings), "rewritten": rewritten}
 
 
 def ai_request(session: Session, application_id: str, item_id: str, settings: Settings) -> dict:

@@ -62,6 +62,19 @@ def pair(peers):
     return left, right
 
 
+def test_pair_phone_requires_explicit_human_action_and_never_caches_recovery(http_replicas):
+    peers, remote = http_replicas
+    client = peers[0][0]
+    assert client.post('/api/sync/pair-phone', json={'confirm_encrypted_google_storage': False}).status_code == 422
+    assert client.post('/api/sync/pair-phone', json={'confirm_encrypted_google_storage': True}, headers={'Authorization': 'Bearer agent'}).status_code == 403
+    response = client.post('/api/sync/pair-phone', json={'confirm_encrypted_google_storage': True})
+    assert response.status_code == 200, response.text
+    assert response.headers['cache-control'] == 'no-store'
+    assert response.json()['recovery_export'].startswith('ats1.')
+    assert response.json()['status']['last_success']
+    assert 'recovery_export' not in client.get('/api/sync/status').json()
+
+
 def test_offline_api_edits_paginated_drive_conflict_resolution_and_private_fields(http_replicas):
     peers, remote = http_replicas
     left, right = pair(peers)
@@ -94,6 +107,13 @@ def test_offline_api_edits_paginated_drive_conflict_resolution_and_private_field
     assert right.get('/api/sync/status').json()['conflicts'] == 0
     work = right.get('/api/applications/' + entity_id + '/work').json()
     assert len(work['followups']) == 1 and work['followups'][0]['content_available'] is False
+    followup_id = work['followups'][0]['id']
+    assert left.get(f'/api/applications/{entity_id}/followups/{followup_id}/versions').json()['versions']
+    assert right.get(f'/api/applications/{entity_id}/followups/{followup_id}/versions').status_code == 422
+    from sqlalchemy import select
+    from app.models import FollowUpMessageVersion
+    with Session(peers[1][1].state.engine) as session:
+        assert session.scalar(select(FollowUpMessageVersion).where(FollowUpMessageVersion.followup_id == followup_id)) is None
     assert remote.upload_bytes > 0 and remote.download_bytes > 0
     assert not any('/gmail/' in path for _, path in remote.calls)
 
@@ -144,3 +164,45 @@ def test_followup_sequence_resolution_unblocks_both_replicas_without_another_edi
         assert client.get('/api/sync/status').json()['conflicts'] == 0
         followups = client.get('/api/applications/' + item['id'] + '/work').json()['followups']
         assert sorted(row['sequence_number'] for row in followups) == [1, 2, 3]
+
+
+def test_human_live_probe_exchanges_through_production_drive_adapters_and_cleanup_does_not_block_sync(http_replicas):
+    from uuid import uuid4
+    from app.sync.crypto import decode_key, open_envelope, seal
+    from app.sync.drive import DriveTransport
+    from app.sync.schemas import Batch
+    peers, remote = http_replicas
+    left, _ = pair(peers)
+    existing = set(remote.files)
+    phone = DriveTransport(peers[1][1].state.google)
+    cursor = phone.start_cursor()
+    response = left.post('/api/sync/probe/start', json={'phone_client_id': 'phone.apps.googleusercontent.com'})
+    assert response.status_code == 200, response.text
+    challenge = response.json()
+    assert challenge['desktop_file_id'] in {file['id'] for file in phone.list_files()}
+    batch = open_envelope(phone.download(challenge['desktop_file_id']), decode_key(challenge['test_key']), challenge['workspace_id'])
+    assert str(batch.batch_id) == challenge['desktop_batch_id']
+    observed = set()
+    while True:
+        files, _, cursor, more = phone.changes(cursor)
+        observed.update(file['id'] for file in files)
+        if not more:
+            break
+    assert challenge['desktop_file_id'] in observed
+    answer = Batch(workspace_id=challenge['workspace_id'], batch_id=challenge['phone_batch_id'], device_id=uuid4(), kind='ack')
+    file_id = phone.upload_immutable(str(answer.batch_id), seal(answer, decode_key(challenge['test_key'])))
+    response = left.post('/api/sync/probe/verify', json={'probe_id': challenge['probe_id'], 'phone_file_id': file_id, 'phone_batch_id': str(answer.batch_id)})
+    assert response.status_code == 200 and response.json()['verified']
+    assert 'test_key' not in left.get('/api/sync/status').text
+    assert left.post('/api/sync/probe/cleanup', json={'probe_id': challenge['probe_id']}).json()['cleaned']
+    assert set(remote.files) == existing
+    assert run(left)['error'] is None
+
+
+def test_live_probe_rejects_agent_and_wrong_origin_before_creating_files(http_replicas):
+    peers, remote = http_replicas
+    client = peers[0][0]
+    payload = {'phone_client_id': 'phone.apps.googleusercontent.com'}
+    assert client.post('/api/sync/probe/start', json=payload, headers={'Authorization': 'Bearer agent'}).status_code == 403
+    assert client.post('/api/sync/probe/start', json=payload, headers={'Origin': 'https://other.invalid'}).status_code == 403
+    assert not remote.files

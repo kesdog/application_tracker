@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t, messageText, errorText } from './i18n'
+
 import Select from 'primevue/select'
 import Button from 'primevue/button'
 import Textarea from 'primevue/textarea'
@@ -36,7 +38,7 @@ function localDateTime(value: string) {
 async function load() {
   busy.value = true; error.value = ''
   try { interviews.value = await listApplicationInterviews(props.applicationId) }
-  catch (reason) { error.value = reason instanceof Error ? reason.message : 'Unable to load interviews.' }
+  catch (reason) { error.value = reason instanceof Error ? reason.message : t("Unable to load interviews.") }
   finally { busy.value = false }
 }
 
@@ -71,10 +73,10 @@ async function save() {
       : await createInterview(props.applicationId, payload())
     interviews.value = editingId.value ? interviews.value.map(item => item.id === saved.id ? saved : item) : [...interviews.value, saved]
     interviews.value.sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at) || a.id.localeCompare(b.id))
-    notice.value = editingId.value ? 'Interview updated.' : 'Interview added.'
+    notice.value = editingId.value ? t("Interview updated.") : t("Interview added.")
     emit('changed')
     open.value = false; editingId.value = null
-  } catch (reason) { error.value = reason instanceof Error ? reason.message : 'Unable to save interview.' }
+  } catch (reason) { error.value = reason instanceof Error ? reason.message : t("Unable to save interview.") }
   finally { busy.value = false }
 }
 
@@ -83,35 +85,35 @@ async function remove(item: Interview) {
   try {
     await deleteInterview(props.applicationId, item.id)
     interviews.value = interviews.value.filter(row => row.id !== item.id)
-    notice.value = 'Interview deleted.'
+    notice.value = t("Interview deleted.")
     emit('changed')
-  } catch (reason) { error.value = reason instanceof Error ? reason.message : 'Unable to delete interview.' }
+  } catch (reason) { error.value = reason instanceof Error ? reason.message : t("Unable to delete interview.") }
   finally { busy.value = false }
 }
 
 function confirmDelete(item: Interview) {
-  confirm.require({ header: 'Delete interview?', message: `Delete the ${interviewTypeMeta[item.type].label.toLowerCase()} interview on ${dateTimeText(item.scheduled_at)}?`, icon: 'pi pi-exclamation-triangle', rejectProps: { label: 'Keep interview', severity: 'secondary', outlined: true }, acceptProps: { label: 'Delete interview', severity: 'danger' }, defaultFocus: 'reject', accept: () => { void remove(item) } })
+  confirm.require({ get header() { return t("Delete interview?") }, message: t("Delete the {p0} interview on {p1}?", { p0: interviewTypeMeta[item.type].label.toLowerCase(), p1: dateTimeText(item.scheduled_at) }), icon: 'pi pi-exclamation-triangle', rejectProps: { get label() { return t("Keep interview") }, severity: 'secondary', outlined: true }, acceptProps: { get label() { return t("Delete interview") }, severity: 'danger' }, defaultFocus: 'reject', accept: () => { void remove(item) } })
 }
 
 onMounted(load)
 </script>
 
 <template>
-  <section class="panel interview-panel" aria-label="Interviews">
-    <div class="section-heading"><h3 v-if="interviews.length" id="application-interviews-title">Interviews <span>{{ interviews.length }}</span></h3><Button v-if="!open" type="button" :disabled="busy" @click="add">Add interview</Button></div>
-    <p v-if="error" class="at-message error" role="alert">{{ error }}</p><p v-if="notice" class="at-message success" role="status">{{ notice }}</p>
-    <form v-if="open" @submit.prevent="save"><fieldset :disabled="busy"><legend>{{ editingId ? 'Edit interview' : 'New interview' }}</legend>
-      <div class="grid"><label>Type<Select class="at-form-control" aria-label="Type" v-model="form.type" :disabled="busy" :options="interviewTypeOptions" option-label="label" option-value="value" option-disabled="disabled" /></label><DateTimeField v-model="form.scheduled_at" label="Scheduled (local time)" :disabled="busy" required /><NumberField v-model="form.duration" label="Duration (minutes)" :disabled="busy" :min="1" :max="1440" /><label>Interviewer<InputText class="at-form-control" v-model="form.interviewer" maxlength="300" /></label><label>Location<InputText class="at-form-control" v-model="form.location" maxlength="300" /></label><label>Meeting URL<InputText class="at-form-control" v-model="form.meeting_url" type="url" maxlength="2048" /></label><label>Email reference<InputText class="at-form-control" v-model="form.email_reference" maxlength="2048" /></label></div>
-      <label>Preparation notes<Textarea class="at-form-control" v-model="form.notes" rows="3"></Textarea></label><label>Result<Textarea class="at-form-control" v-model="form.result" rows="3"></Textarea></label>
-      <div class="actions"><Button class="primary" type="submit">{{ busy ? 'Saving…' : 'Save interview' }}</Button><Button type="button" @click="open = false">Cancel</Button></div>
+  <section class="panel interview-panel" :aria-label="t('Interviews')">
+    <div class="section-heading"><h3 v-if="interviews.length" id="application-interviews-title">{{ t("Interviews") }} <span>{{ interviews.length }}</span></h3><Button v-if="!open" type="button" :disabled="busy" @click="add">{{ t("Add interview") }}</Button></div>
+    <p v-if="error" class="at-message error" role="alert">{{ errorText(String((error) ?? '')) }}</p><p v-if="notice" class="at-message success" role="status">{{ messageText(String((notice) ?? '')) }}</p>
+    <form v-if="open" @submit.prevent="save"><fieldset :disabled="busy"><legend>{{ editingId ? t("Edit interview") : t("New interview") }}</legend>
+      <div class="grid"><label>{{ t("Type") }}<Select class="at-form-control" :aria-label="t('Type')" v-model="form.type" :disabled="busy" :options="interviewTypeOptions" option-label="label" option-value="value" option-disabled="disabled" /></label><DateTimeField v-model="form.scheduled_at" :label="t('Scheduled (local time)')" :disabled="busy" required /><NumberField v-model="form.duration" :label="t('Duration (minutes)')" :disabled="busy" :min="1" :max="1440" /><label>{{ t("Interviewer") }}<InputText class="at-form-control" v-model="form.interviewer" maxlength="300" /></label><label>{{ t("Location") }}<InputText class="at-form-control" v-model="form.location" maxlength="300" /></label><label>{{ t("Meeting URL") }}<InputText class="at-form-control" v-model="form.meeting_url" type="url" maxlength="2048" /></label><label>{{ t("Email reference") }}<InputText class="at-form-control" v-model="form.email_reference" maxlength="2048" /></label></div>
+      <label>{{ t("Preparation notes") }}<Textarea class="at-form-control" v-model="form.notes" rows="3"></Textarea></label><label>{{ t("Result") }}<Textarea class="at-form-control" v-model="form.result" rows="3"></Textarea></label>
+      <div class="actions"><Button class="primary" type="submit">{{ busy ? t("Saving…") : t("Save interview") }}</Button><Button type="button" @click="open = false">{{ t("Cancel") }}</Button></div>
     </fieldset></form>
-    <p v-if="busy && !interviews.length && !open" role="status">Loading interviews…</p>
+    <p v-if="busy && !interviews.length && !open" role="status">{{ t("Loading interviews…") }}</p>
     <article v-for="item in interviews" :key="item.id" class="interview-item">
-      <div class="section-heading"><div><AppTag v-bind="interviewTypeMeta[item.type]" /><strong> interview — {{ relativeDateText(item.scheduled_at) }}</strong><p class="meta">{{ dateTimeText(item.scheduled_at) }}<template v-if="item.duration"> · {{ item.duration }} minutes</template></p></div><div class="actions"><Button type="button" severity="secondary" outlined :disabled="busy" @click="edit(item)">Edit</Button><Button type="button" severity="danger" outlined :disabled="busy" @click="confirmDelete(item)">Delete</Button></div></div>
-      <p v-if="item.interviewer || item.location" class="meta"><template v-if="item.interviewer">With {{ item.interviewer }}</template><template v-if="item.interviewer && item.location"> · </template>{{ item.location }}</p>
-      <p v-if="item.notes" class="content">{{ item.notes }}</p><p v-if="item.result" class="result"><strong>Result:</strong> {{ item.result }}</p>
-      <p v-if="item.meeting_url || item.email_reference"><a v-if="item.meeting_url" :href="item.meeting_url" target="_blank" rel="noopener noreferrer">Open meeting link ↗</a><span v-if="item.meeting_url && item.email_reference"> · </span><EmailReference v-if="item.email_reference" :reference="item.email_reference" label="Open email ↗" /></p>
-      <p><a :href="`/api/interviews/${encodeURIComponent(item.id)}/calendar.ics`" :download="`interview-${item.id}.ics`">Download calendar event</a></p>
+      <div class="section-heading"><div><AppTag v-bind="interviewTypeMeta[item.type]" /><strong> {{ t("interview —") }} {{ relativeDateText(item.scheduled_at) }}</strong><p class="meta">{{ dateTimeText(item.scheduled_at) }}<template v-if="item.duration"> · {{ item.duration }} {{ t("minutes") }}</template></p></div><div class="actions"><Button type="button" severity="secondary" outlined :disabled="busy" @click="edit(item)">{{ t("Edit") }}</Button><Button type="button" severity="danger" outlined :disabled="busy" @click="confirmDelete(item)">{{ t("Delete") }}</Button></div></div>
+      <p v-if="item.interviewer || item.location" class="meta"><template v-if="item.interviewer">{{ t("With") }} {{ item.interviewer }}</template><template v-if="item.interviewer && item.location"> · </template>{{ item.location }}</p>
+      <p v-if="item.notes" class="content">{{ item.notes }}</p><p v-if="item.result" class="result"><strong>{{ t("Result:") }}</strong> {{ item.result }}</p>
+      <p v-if="item.meeting_url || item.email_reference"><a v-if="item.meeting_url" :href="item.meeting_url" target="_blank" rel="noopener noreferrer">{{ t("Open meeting link ↗") }}</a><span v-if="item.meeting_url && item.email_reference"> · </span><EmailReference v-if="item.email_reference" :reference="item.email_reference" /></p>
+      <p><a :href="`/api/interviews/${encodeURIComponent(item.id)}/calendar.ics`" :download="`interview-${item.id}.ics`">{{ t("Download calendar event") }}</a></p>
     </article>
   </section>
 </template>

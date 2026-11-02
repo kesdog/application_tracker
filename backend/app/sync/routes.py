@@ -1,5 +1,5 @@
 """Thin human-only endpoints; agents keep their existing six permissions."""
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import Field
 
 from app.sync.engine import SyncError
@@ -15,6 +15,24 @@ class Initialize(WireModel):
 class Resolve(WireModel):
     state: dict
     expected_heads: list[str] = Field(min_length=1, max_length=1000)
+
+
+class PairPhone(WireModel):
+    confirm_encrypted_google_storage: bool
+
+
+class ProbeStart(WireModel):
+    phone_client_id: str = Field(pattern=r'^[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$', max_length=256)
+
+
+class ProbeVerify(WireModel):
+    probe_id: str = Field(min_length=20, max_length=100)
+    phone_file_id: str = Field(pattern=r'^[A-Za-z0-9_-]+$', max_length=256)
+    phone_batch_id: str = Field(pattern=r'^[0-9a-f-]{36}$')
+
+
+class ProbeCleanup(WireModel):
+    probe_id: str = Field(min_length=20, max_length=100)
 
 
 def sync_router():
@@ -39,6 +57,37 @@ def sync_router():
         try:
             return engine.initialize(data.label, data.recovery_export)
         except (SyncError, ValueError) as exc:
+            raise HTTPException(409, str(exc)) from None
+
+    @router.post('/pair-phone')
+    def pair_phone(data: PairPhone, response: Response, engine=Depends(human)):
+        if not data.confirm_encrypted_google_storage:
+            raise HTTPException(422, 'Confirm storage of compact encrypted files in your Google account')
+        response.headers['Cache-Control'] = 'no-store'
+        try:
+            return engine.prepare_phone()
+        except (SyncError, ValueError) as exc:
+            raise HTTPException(409, str(exc)) from None
+
+    @router.post('/probe/start')
+    def probe_start(data: ProbeStart, request: Request, _engine=Depends(human)):
+        try:
+            return request.app.state.sync_probe.begin(data.phone_client_id)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
+
+    @router.post('/probe/verify')
+    def probe_verify(data: ProbeVerify, request: Request, _engine=Depends(human)):
+        try:
+            return request.app.state.sync_probe.verify(data.probe_id, data.phone_file_id, data.phone_batch_id)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
+
+    @router.post('/probe/cleanup')
+    def probe_cleanup(data: ProbeCleanup, request: Request, _engine=Depends(human)):
+        try:
+            return request.app.state.sync_probe.cleanup(data.probe_id)
+        except ValueError as exc:
             raise HTTPException(409, str(exc)) from None
 
     @router.post('/run')

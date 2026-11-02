@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import '../support/browser'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
@@ -7,7 +8,7 @@ import FollowUpEditor from '../../src/FollowUpEditor.vue'
 import FollowUps from '../../src/FollowUps.vue'
 import * as api from '../../src/api'
 
-vi.mock('../../src/api', async original => ({ ...await original<typeof import('../../src/api')>(), getRecipientState: vi.fn(), getRecipientQueue: vi.fn(), getOutcomeReviews: vi.fn(), getFollowUpAIResults: vi.fn(), createNote: vi.fn(), getFollowUpAgentStatus: vi.fn(), getRenderedFollowUp: vi.fn(), queueFollowUpDraft: vi.fn(), getTemplateVariables: vi.fn(), updateFollowUp: vi.fn(), getFollowUpAIRequest: vi.fn(), getFollowUps: vi.fn(), getFollowUpNotices: vi.fn(), getWork: vi.fn(), getApplication: vi.fn(), readFollowUpNotice: vi.fn() }))
+vi.mock('../../src/api', async original => ({ ...await original<typeof import('../../src/api')>(), getFollowUpMessageVersions: vi.fn(), getRecipientState: vi.fn(), getRecipientQueue: vi.fn(), getOutcomeReviews: vi.fn(), getFollowUpAIResults: vi.fn(), createNote: vi.fn(), getFollowUpAgentStatus: vi.fn(), getRenderedFollowUp: vi.fn(), queueFollowUpDraft: vi.fn(), getTemplateVariables: vi.fn(), updateFollowUp: vi.fn(), getFollowUpAIRequest: vi.fn(), getFollowUps: vi.fn(), getFollowUpNotices: vi.fn(), getWork: vi.fn(), getApplication: vi.fn(), readFollowUpNotice: vi.fn() }))
 enableAutoUnmount(afterEach)
 const global = { plugins: [[PrimeVue, { unstyled: true }] as [typeof PrimeVue, { unstyled: boolean }]] }
 const variables = [{ key: 'company_name', label: 'Company name', group: 'Application', aliases: [] }, { key: 'position_name', label: 'Position name', group: 'Application', aliases: [] }]
@@ -18,6 +19,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.stubGlobal('matchMedia', vi.fn().mockImplementation(query => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })))
   vi.mocked(api.getTemplateVariables).mockResolvedValue(variables)
+  vi.mocked(api.getFollowUpMessageVersions).mockResolvedValue({ current_language: 'en', versions: [] })
   vi.mocked(api.updateFollowUp).mockResolvedValue(item)
   vi.mocked(api.getFollowUps).mockResolvedValue({ items: [{ ...item, application: app }], total: 1, page: 1, page_size: 20 })
   vi.mocked(api.getFollowUpNotices).mockResolvedValue([])
@@ -102,7 +104,8 @@ it('offers selectable copy fallback without recording a send', async () => {
 it('keeps unsaved job instructions when the saved message reloads', async () => {
   const wrapper = mount(FollowUpEditor, { props: { item, application: app }, global })
   await flushPromises()
-  const reminders = wrapper.findAll('details').find(detail => detail.text().includes('Reminder controls and job instructions'))!
+  await wrapper.findAll('[role=tab]').find(tab => tab.text() === 'Schedule')!.trigger('click')
+  const reminders = wrapper.get('.schedule-controls')
   await reminders.get('textarea').setValue('Mention the recruiter conversation')
   await wrapper.setProps({ item: { ...item, revision: 4, body: 'Saved message update' } })
   expect(reminders.get('textarea').element.value).toBe('Mention the recruiter conversation')
@@ -113,6 +116,10 @@ it('opens exact follow-up deep links and requests server filters', async () => {
   const wrapper = mount(FollowUps, { global })
   await flushPromises()
   expect(wrapper.findComponent(FollowUpEditor).exists()).toBe(true)
+  expect(wrapper.find('.queue').exists()).toBe(false)
+  window.location.hash = '#/followups'
+  window.dispatchEvent(new Event('hashchange'))
+  await flushPromises()
   await wrapper.get('input[type="search"]').setValue('Example')
   await wrapper.get('form.filters').trigger('submit')
   await flushPromises()
@@ -162,7 +169,7 @@ it('disables draft requests without an active permitted agent and hides removed 
   expect(button(wrapper, 'Write to draft').attributes('disabled')).toBeDefined()
   expect(wrapper.text()).not.toContain('Tone')
   expect(wrapper.text()).not.toContain('Sent or completed at')
-  expect(wrapper.find('input[placeholder="Choose or type a language"]').exists()).toBe(true)
+  expect(wrapper.find('section[aria-label="Follow-up email language"] select').exists()).toBe(true)
   expect(api.queueFollowUpDraft).not.toHaveBeenCalled()
 })
 

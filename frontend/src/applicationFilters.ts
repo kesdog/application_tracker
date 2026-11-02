@@ -1,4 +1,5 @@
 import { reactive } from 'vue'
+import { t } from './i18n'
 import type { ApplicationFilters } from './api'
 import { applicationOutcomeMeta, applicationStatusMeta, contractLabel, remotePolicyMeta, sourceLabel } from './presentation/applicationPresentation'
 
@@ -21,6 +22,6 @@ export function activeFilterLabels(filters: ApplicationFilters): { key: keyof Ap
     if (key === 'contract_type') label = contractLabel(value)
     if (key === 'source') label = sourceLabel(value)
     if (key === 'remote_policy') label = remotePolicyMeta[value]?.label ?? value
-    return [{ key, label: `${filterNames[key]}: ${label}` }]
+    return [{ key, label: `${t(filterNames[key])}: ${label}` }]
   })
 }

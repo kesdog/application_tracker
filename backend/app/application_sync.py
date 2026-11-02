@@ -1,28 +1,53 @@
 """One explicit human action: reconcile Gmail, then synchronize compact Drive records."""
 from concurrent.futures import ThreadPoolExecutor
+from calendar import monthrange
 from copy import deepcopy
-import hashlib
+from datetime import datetime, timezone
 from threading import Event, RLock
 import time
 from uuid import uuid4
-from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from app.followup_templates import current_settings
 from app.google_connection import GoogleConnectionError
-from app.mailbox_import import reconcile
-from app.models import MailImportReceipt, utc_now
+from app.mailbox_evidence import account_key, mail_boundary_timestamp, mail_reference
+from app.mailbox_scan import GmailScan
+from app.models import MailImportReceipt, MailSyncBoundary, MailSyncScope, utc_now
+
+
+class ApplicationSyncInput(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    lookback_months: int = Field(default=3, ge=1, le=120, strict=True)
+
+
+def months_before(timestamp, months, timezone_name):
+    """Calendar-month subtraction, clamped at month end, in workspace time."""
+    local = datetime.fromtimestamp(timestamp, ZoneInfo(timezone_name))
+    year, month = divmod(local.year * 12 + local.month - 1 - months, 12)
+    month += 1
+    return int(local.replace(year=year, month=month, day=min(local.day, monthrange(year, month)[1])).timestamp())
+
+
+def _new_progress():
+    return {'id': None, 'state': 'IDLE', 'phase': None, 'checked': 0, 'created': 0, 'updated': 0,
+            'review_count': 0, 'gmail': 'NOT_RUN', 'drive': 'NOT_RUN', 'warnings': [], 'finished_at': None,
+            'mail_limit': None, 'limit_reached': False}
 
 
 class ApplicationSync:
-    def __init__(self, engine, settings, google, mail, drive):
+    """Schedule the three sync stages and expose their thread-safe progress."""
+    def __init__(self, engine, settings, google, mail, drive, *, clock=None):
         self.engine, self.settings, self.google, self.mail, self.drive = engine, settings, google, mail, drive
         self.lock, self.closed = RLock(), Event()
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='application-sync')
         self.account = None
-        self.value = {'id': None, 'state': 'IDLE', 'phase': None, 'checked': 0, 'created': 0, 'updated': 0,
-                      'review_count': 0, 'gmail': 'NOT_RUN', 'drive': 'NOT_RUN', 'warnings': [], 'finished_at': None}
+        self.run_email = None
+        self.clock = clock or time.time
+        self.value = _new_progress()
 
     def change(self, **changes):
         with self.lock:
@@ -30,27 +55,55 @@ class ApplicationSync:
 
     def status(self):
         with self.lock:
-            value, account = deepcopy(self.value), self.account
+            value = deepcopy(self.value)
         value['reviews'] = []
-        email = self.google.status().get('email')
-        account = hashlib.sha256(email.casefold().encode()).hexdigest() if email else None
+        value['gmail_checked_through'] = None
+        value['gmail_scan_from'] = None
+        value['initial_scan_required'] = False
+        value['lookback_months'] = None
+        connection = self.google.status()
+        email = connection.get('email')
+        value['gmail_account'] = email
+        account = account_key(email) if email else None
         if account:
             with Session(self.engine) as session:
+                boundary = session.get(MailSyncBoundary, account)
+                scope = session.get(MailSyncScope, account)
+                value['initial_scan_required'] = not boundary and not scope and bool(connection.get('capabilities', {}).get('gmail_read'))
+                if scope:
+                    value['gmail_scan_from'] = datetime.fromtimestamp(scope.scan_after, timezone.utc).isoformat().replace('+00:00', 'Z')
+                    value['lookback_months'] = scope.lookback_months
+                if boundary:
+                    value['gmail_checked_through'] = datetime.fromtimestamp(boundary.checked_through, timezone.utc).isoformat().replace('+00:00', 'Z')
                 query = select(MailImportReceipt).where(MailImportReceipt.account == account, MailImportReceipt.state == 'REVIEW')
                 value['review_count'] = session.scalar(select(func.count()).select_from(query.subquery())) or 0
                 value['reviews'] = [{'message_id': row.message_id, 'subject': row.subject, 'reason': row.reason,
-                    'url': 'https://mail.google.com/mail/?' + urlencode({'authuser': email}) + '#all/' + row.message_id}
+                    'url': mail_reference(row.message_id, email)}
                     for row in session.scalars(query.order_by(MailImportReceipt.message_at.desc()).limit(20))]
         return value
 
-    def start(self):
+    def start(self, lookback_months=3):
         with self.lock:
             if self.value['state'] == 'RUNNING':
                 return deepcopy(self.value)
             if self.closed.is_set():
                 raise ValueError('The application is shutting down. Restart it before syncing.')
-            self.value = {'id': str(uuid4()), 'state': 'RUNNING', 'phase': 'GMAIL', 'checked': 0, 'created': 0,
-                'updated': 0, 'review_count': 0, 'gmail': 'NOT_RUN', 'drive': 'NOT_RUN', 'warnings': [], 'finished_at': None}
+            lookback_months = ApplicationSyncInput(lookback_months=lookback_months).lookback_months
+            connection = self.google.status()
+            self.run_email = connection.get('email') if connection['capabilities'].get('gmail_read') else None
+            with Session(self.engine) as session:
+                session.execute(text('BEGIN IMMEDIATE'))
+                general = current_settings(session, self.settings)
+                mail_limit = general['mail_sync_max_messages']
+                if self.run_email:
+                    account = account_key(self.run_email)
+                    if session.get(MailSyncBoundary, account) is None and session.get(MailSyncScope, account) is None:
+                        session.add(MailSyncScope(account=account, lookback_months=lookback_months,
+                            scan_after=max(mail_boundary_timestamp(general),
+                                           months_before(self.clock(), lookback_months, general['timezone']))))
+                session.commit()
+            self.value = {**_new_progress(), 'id': str(uuid4()), 'state': 'RUNNING',
+                          'phase': 'GMAIL', 'mail_limit': mail_limit}
             self.executor.submit(self.run)
             return deepcopy(self.value)
 
@@ -62,11 +115,6 @@ class ApplicationSync:
         with self.lock:
             self.value['warnings'].append(message)
 
-    def check_account(self, email):
-        status = self.google.status()
-        if status.get('email') != email or not status['capabilities'].get('gmail_read'):
-            raise GoogleConnectionError('The Google account or Gmail permission changed. Reconnect and sync again.')
-
     def gmail(self):
         connection = self.google.status()
         email = connection.get('email')
@@ -74,55 +122,16 @@ class ApplicationSync:
             self.change(gmail='SETUP_REQUIRED')
             self.warning('Connect Google with Gmail read permission in Settings to import application emails.')
             return
-        self.account = hashlib.sha256(email.casefold().encode()).hexdigest()
-        self.change(gmail='RUNNING')
-        created, updated, revisit = set(), set(), set()
-        token, seen_tokens = None, set()
-
-        def process(message_id):
-            self.check_account(email)
-            message = self.mail.application_message(message_id)
-            self.check_account(email)
-            app_id, new, changed = reconcile(self.engine, self.settings, self.account, message, mailbox_email=email)
-            if new:
-                created.add(app_id)
-            if changed:
-                updated.add(app_id)
-            self.change(created=len(created), updated=len(updated - created))
-
-        while not self.closed.is_set():
-            self.check_account(email)
-            page = self.mail.application_messages(token)
-            self.check_account(email)
-            for message in page.get('messages', []):
-                if self.closed.is_set():
-                    return
-                message_id = message['id']
-                with Session(self.engine) as session:
-                    receipt = session.get(MailImportReceipt, (self.account, message_id))
-                    applied = receipt is not None and receipt.state != 'REVIEW'
-                if not applied:
-                    process(message_id)
-                    revisit.add(message_id)
-                with self.lock:
-                    self.value['checked'] += 1
-            token = page.get('nextPageToken')
-            if not token:
-                break
-            if token in seen_tokens:
-                raise GoogleConnectionError('Gmail pagination did not advance. Saved imports are retained; try again.')
-            seen_tokens.add(token)
-        # Gmail lists newest first: retry unmatched updates after older confirmations establish their thread/record.
-        if created or updated:
-            for message_id in revisit:
-                if self.closed.is_set():
-                    return
-                with Session(self.engine) as session:
-                    receipt = session.get(MailImportReceipt, (self.account, message_id))
-                    review = receipt and receipt.state == 'REVIEW'
-                if review:
-                    process(message_id)
-        self.change(gmail='COMPLETED')
+        if email != self.run_email:
+            raise GoogleConnectionError('The Google account changed after this sync started. Start a new sync for the selected account.')
+        self.account = account_key(email)
+        scan = GmailScan(
+            engine=self.engine, settings=self.settings, mail=self.mail, email=email,
+            mail_limit=self.value['mail_limit'], closed=self.closed, clock=self.clock, progress=self.change,
+            # Resolve live status each time; account changes must invalidate ongoing reads.
+            connection_status=lambda: self.google.status(),
+        )
+        scan.run()
 
     def run_drive(self):
         deadline = time.monotonic() + 120
@@ -133,42 +142,53 @@ class ApplicationSync:
             if self.closed.wait(1) or time.monotonic() > deadline:
                 raise ValueError('Drive is busy')
 
+    def _pull_drive(self):
+        # Load other devices' records first so a confirmation can match them.
+        self.change(phase='DRIVE')
+        try:
+            ready = self.drive.status()
+            if ready['initialized'] and not ready.get('recovery_required'):
+                preflight = self.run_drive()
+                if preflight.get('error'):
+                    self.warning('Drive changes could not be loaded before Gmail import. Local records are preserved; check Settings.')
+        except Exception:
+            self.warning('Drive changes could not be loaded before Gmail import. Local records are preserved; check Settings.')
+
+    def _import_gmail(self):
+        self.change(phase='GMAIL')
+        try:
+            self.gmail()
+        except Exception as exc:
+            self.change(gmail='SETUP_REQUIRED' if isinstance(exc, GoogleConnectionError)
+                        and exc.kind == 'setup_required' else 'FAILED')
+            self.warning(str(exc) if isinstance(exc, GoogleConnectionError) else 'Gmail import stopped. Completed changes are saved; try again.')
+
+    def _push_drive(self):
+        self.change(phase='DRIVE')
+        try:
+            drive = self.drive.status()
+            if not drive['initialized'] or drive.get('recovery_required'):
+                self.change(drive='SETUP_REQUIRED')
+                self.warning('Set up or recover encrypted Drive sync in Settings to synchronize devices.')
+                return
+            drive = self.run_drive()
+            if drive.get('error'):
+                raise GoogleConnectionError(drive['error'])
+            self.change(drive='COMPLETED')
+            if drive.get('conflicts'):
+                self.warning(f"{drive['conflicts']} Drive record conflicts need review in Settings.")
+        except Exception as exc:
+            self.change(drive='FAILED')
+            self.warning(str(exc) if isinstance(exc, GoogleConnectionError) else 'Drive sync could not finish. Local changes are saved; try again or check Settings.')
+
     def run(self):
         try:
-            # Learn existing records from other devices before importing confirmations.
-            self.change(phase='DRIVE')
-            try:
-                ready = self.drive.status()
-                if ready['initialized'] and not ready.get('recovery_required'):
-                    preflight = self.run_drive()
-                    if preflight.get('error'):
-                        self.warning('Drive changes could not be loaded before Gmail import. Local records are preserved; check Settings.')
-            except Exception:
-                self.warning('Drive changes could not be loaded before Gmail import. Local records are preserved; check Settings.')
-            self.change(phase='GMAIL')
-            try:
-                self.gmail()
-            except Exception as exc:
-                self.change(gmail='FAILED')
-                self.warning(str(exc) if isinstance(exc, GoogleConnectionError) else 'Gmail import stopped. Completed changes are saved; try again.')
+            self._pull_drive()
+            self._import_gmail()
             if self.closed.is_set():
                 return
-            self.change(phase='DRIVE')
-            try:
-                drive = self.drive.status()
-                if not drive['initialized'] or drive.get('recovery_required'):
-                    self.change(drive='SETUP_REQUIRED')
-                    self.warning('Set up or recover encrypted Drive sync in Settings to synchronize devices.')
-                else:
-                    drive = self.run_drive()
-                    if drive.get('error'):
-                        raise GoogleConnectionError(drive['error'])
-                    self.change(drive='COMPLETED')
-                    if drive.get('conflicts'):
-                        self.warning(f"{drive['conflicts']} Drive record conflicts need review in Settings.")
-            except Exception as exc:
-                self.change(drive='FAILED')
-                self.warning(str(exc) if isinstance(exc, GoogleConnectionError) else 'Drive sync could not finish. Local changes are saved; try again or check Settings.')
+            # Publish already committed records even if a later Gmail read failed.
+            self._push_drive()
         finally:
             with self.lock:
                 success = self.value['gmail'] == 'COMPLETED' and self.value['drive'] == 'COMPLETED'

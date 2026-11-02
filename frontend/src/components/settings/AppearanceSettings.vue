@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t, messageText } from '../../i18n'
+
 import { computed, reactive } from 'vue'
 import Button from 'primevue/button'
 import ColorPicker from 'primevue/colorpicker'
@@ -20,11 +22,11 @@ const drafts = reactive<Partial<Record<AppearanceColor, string>>>({})
 const invalid = reactive<Partial<Record<AppearanceColor, boolean>>>({})
 const currentPreset = computed(() => appearancePresets.find(preset => appearanceColors.every(key => preset.colors[key] === appearance[key]))?.id ?? null)
 const warnings = computed(() => [
-  ['Text on background', appearance.text, appearance.background],
-  ['Text on surface', appearance.text, appearance.surface],
-  ['Muted text on surface', appearance.textMuted, appearance.surface],
-  ['Text on muted surface', appearance.text, appearance.surfaceMuted],
-  ['Links on surface', appearance.link, appearance.surface],
+  [t("Text on background"), appearance.text, appearance.background],
+  [t("Text on surface"), appearance.text, appearance.surface],
+  [t("Muted text on surface"), appearance.textMuted, appearance.surface],
+  [t("Text on muted surface"), appearance.text, appearance.surfaceMuted],
+  [t("Links on surface"), appearance.link, appearance.surface],
 ].map(([label, foreground, background]) => ({ label, ratio: contrastRatio(foreground!, background!) })).filter(pair => pair.ratio < 4.5))
 
 function setHex(key: AppearanceColor, value: string) {
@@ -51,18 +53,18 @@ function selectPreset(id: string) {
 
 <template>
   <section class="appearance-panel" aria-labelledby="appearance-title">
-    <div class="appearance-heading"><div><h3 id="appearance-title">Appearance</h3><p>Changes preview immediately and are saved in this browser.</p></div><Button label="Reset appearance" severity="secondary" outlined @click="reset" /></div>
-    <div class="preset-field"><label for="appearance-preset">Theme preset</label><Select input-id="appearance-preset" :model-value="currentPreset" :options="appearancePresets" option-label="label" option-value="id" placeholder="Custom colors" @update:model-value="selectPreset" /><p>Start with a preset, then adjust any color below.</p></div>
-    <div class="appearance-preview" aria-label="Appearance preview"><strong>Your workspace</strong><span>Text and surface preview</span><a href="#/applications">View applications</a></div>
-    <div v-if="warnings.length" class="at-message warning" role="status"><strong>Some colors may be difficult to read.</strong><ul><li v-for="pair in warnings" :key="pair.label">{{ pair.label }}: {{ pair.ratio.toFixed(2) }}:1 contrast (4.5:1 recommended).</li></ul></div>
-    <p v-if="appearanceSaveError" class="at-message warning" role="status">{{ appearanceSaveError }}</p>
-    <div class="color-grid">
+    <div class="appearance-heading"><div><h3 id="appearance-title">{{ t("Appearance") }}</h3><p>{{ t("Changes preview immediately and are saved in this browser.") }}</p></div><Button :label="t('Reset appearance')" severity="secondary" outlined @click="reset" /></div>
+    <div class="preset-field"><label for="appearance-preset">{{ t("Theme preset") }}</label><Select input-id="appearance-preset" :model-value="currentPreset" :options="appearancePresets" option-label="label" option-value="id" :placeholder="t('Custom colors')" @update:model-value="selectPreset" /><p>{{ t("Start with a preset, then adjust any color below.") }}</p></div>
+    <div class="appearance-preview" :aria-label="t('Appearance preview')"><strong>{{ t("Your workspace") }}</strong><span>{{ t("Text and surface preview") }}</span><a href="#/applications">{{ t("View applications") }}</a></div>
+    <div v-if="warnings.length" class="at-message warning" role="status"><strong>{{ t("Some colors may be difficult to read.") }}</strong><ul><li v-for="pair in warnings" :key="pair.label">{{ messageText(String((pair.label) ?? '')) }}: {{ pair.ratio.toFixed(2) }}{{ t(":1 contrast (4.5:1 recommended).") }}</li></ul></div>
+    <p v-if="appearanceSaveError" class="at-message warning" role="status">{{ messageText(String((appearanceSaveError) ?? '')) }}</p>
+    <details class="custom-colors"><summary>{{ t("Customize individual colors") }}</summary><div class="color-grid">
       <div v-for="key in appearanceColors" :key="key" class="color-field">
-        <label :for="`appearance-${key}`">{{ labels[key] }}</label>
-        <div class="color-controls"><ColorPicker :model-value="appearance[key].slice(1)" format="hex" :pt="{ preview: { 'aria-label': `${labels[key]} color picker` } }" @update:model-value="setPicker(key, $event)" /><InputText :id="`appearance-${key}`" :model-value="drafts[key] ?? appearance[key]" :invalid="invalid[key]" :aria-describedby="invalid[key] ? `appearance-error-${key}` : undefined" spellcheck="false" maxlength="7" @update:model-value="setHex(key, $event ?? '')" @blur="!invalid[key] && delete drafts[key]" /></div>
-        <small v-if="invalid[key]" :id="`appearance-error-${key}`" class="error">Enter a hex color such as #263e5c.</small>
+        <label :for="`appearance-${key}`">{{ t(labels[key]) }}</label>
+        <div class="color-controls"><ColorPicker :model-value="appearance[key].slice(1)" format="hex" :pt="{ preview: { 'aria-label': t('{p0} color picker', { p0: labels[key] }) } }" @update:model-value="setPicker(key, $event)" /><InputText :id="`appearance-${key}`" :model-value="drafts[key] ?? appearance[key]" :invalid="invalid[key]" :aria-describedby="invalid[key] ? `appearance-error-${key}` : undefined" spellcheck="false" maxlength="7" @update:model-value="setHex(key, $event ?? '')" @blur="!invalid[key] && delete drafts[key]" /></div>
+        <small v-if="invalid[key]" :id="`appearance-error-${key}`" class="error">{{ t("Enter a hex color such as #263e5c.") }}</small>
       </div>
-    </div>
+    </div></details>
   </section>
 </template>
 
@@ -77,4 +79,5 @@ p { color:var(--at-text-muted); font-size:14px; }
 .color-field label { display:block; font-size:13px; font-weight:600; margin-bottom:7px; }
 .color-controls { display:flex; align-items:center; gap:10px; }.color-controls input { width:120px; font-family:monospace; }
 .color-field small { display:block; margin:6px 0 0; }
+summary { cursor:pointer; font-weight:600; font-size:14px; margin-top:18px; }
 </style>

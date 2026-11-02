@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t, messageText } from '../../i18n'
+
 import { computed, useId } from 'vue'
 import DatePicker from 'primevue/datepicker'
 const props = defineProps<{ label: string; required?: boolean; disabled?: boolean }>()
@@ -11,5 +13,5 @@ const date = computed({
   },
 })
 </script>
-<template><div class="datetime-field"><label :for="inputId">{{ label }}</label><DatePicker :input-id="inputId" v-model="date" date-format="yy-mm-dd" show-time hour-format="24" show-icon show-button-bar :required="required" :disabled="disabled" :manual-input="false" class="at-form-control" /></div></template>
+<template><div class="datetime-field"><label :for="inputId">{{ messageText(String((label) ?? '')) }}</label><DatePicker :input-id="inputId" v-model="date" date-format="yy-mm-dd" show-time hour-format="24" show-icon show-button-bar :required="required" :disabled="disabled" :manual-input="false" class="at-form-control" /></div></template>
 <style scoped>.datetime-field { min-width:0; margin:12px 0; }label { display:block; font-size:13px; font-weight:600; }</style>

@@ -1,4 +1,6 @@
+import { t } from './i18n'
 import { browserSession } from './auth'
+import type { ProbeChallenge } from './phone/core/compatibility'
 
 export interface SyncStatus {
   initialized: boolean
@@ -41,11 +43,15 @@ export class SyncClient {
     }))
     if (!response.ok) {
       const body = await response.json().catch(() => null)
-      throw new Error(typeof body?.detail === 'string' ? body.detail : `Sync request failed (${response.status})`)
+      throw new Error(typeof body?.detail === 'string' ? body.detail : t("Sync request failed ({p0})", { p0: response.status }))
     }
     return response.json()
   }
   status() { return this.call<SyncStatus>('/status') }
+  preparePhone() { return this.call<{ recovery_export: string; status: SyncStatus }>('/pair-phone', { confirm_encrypted_google_storage: true }) }
+  startProbe(clientId: string) { return this.call<ProbeChallenge>('/probe/start', { phone_client_id: clientId }) }
+  verifyProbe(probe: string, file: string, batch: string) { return this.call<{ verified: boolean }>('/probe/verify', { probe_id: probe, phone_file_id: file, phone_batch_id: batch }) }
+  cleanupProbe(probe: string) { return this.call('/probe/cleanup', { probe_id: probe }) }
   initialize(label: string, recovery: string | null) {
     return this.call<{ workspace_id: string; recovery_export: string }>('/initialize', {
       label, recovery_export: recovery, confirm_encrypted_google_storage: true,

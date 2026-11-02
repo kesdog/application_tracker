@@ -186,6 +186,8 @@ def undo_last(session: Session, application_id: str, *, actor_type: ActorType = 
     if entity is None or (entry.entity_type != "APPLICATION" and entity.application_id != application_id):
         raise UndoUnavailable("The changed record no longer exists")
     if entry.entity_type == "FOLLOWUP":
+        from app.followup_templates import remember_message
+        remember_message(session, entity)
         from app.models import FollowUpStatus
         if entity.status == FollowUpStatus.SENT and entry.previous_value.get("status", "SENT") != "SENT":
             from app.work import remove_untouched_successor
@@ -195,6 +197,7 @@ def undo_last(session: Session, application_id: str, *, actor_type: ActorType = 
         setattr(entity, field, restore_value(model, field, value))
     if entry.entity_type == "FOLLOWUP":
         entity.revision = old_revision + 1
+        remember_message(session, entity, activated=True)
         entity.approved_revision = entity.revision if entity.status == FollowUpStatus.READY else None
         if entity.status == FollowUpStatus.SENT and "sent_at" in entry.previous_value:
             from app.work import reschedule_untouched_successor

@@ -10,7 +10,7 @@ from app.database import create_database, migrate_database
 from app.google_connection import GoogleConnectionError
 from app.models import Application, FollowUp
 from app.sync.engine import SyncEngine
-from app.sync.models import SyncWorkspace, SyncRecord, SyncMutation
+from app.sync.models import SyncWorkspace, SyncRecord, SyncMutation, SyncInbox
 from app.sync.schemas import Mutation, Batch
 from app.sync.crypto import decode_key, open_envelope, pairing_export, seal
 from app.sync.worker import SyncWorker
@@ -40,7 +40,11 @@ def test_expired_cursor_requires_safe_rediscovery_and_never_turns_missing_files_
         assert session.get(SyncWorkspace, 1).cursor is None
     monkeypatch.setattr(remote, 'changes', original)
     converge(left, right)
-    monkeypatch.setattr(remote, 'changes', lambda cursor: ([], ['removed-object'], 'new-cursor', False))
+    monkeypatch.setattr(remote, 'changes', lambda cursor: ([], ['unrelated-probe-object'], 'probe-cursor', False))
+    assert left.run(manual=True)['error'] is None
+    with Session(left.engine) as session:
+        known_file = session.scalar(select(SyncInbox.file_id).limit(1))
+    monkeypatch.setattr(remote, 'changes', lambda cursor: ([], [known_file], 'new-cursor', False))
     assert 'removed' in left.run(manual=True)['error']
     assert not state(left, entity_id)['deleted']
 

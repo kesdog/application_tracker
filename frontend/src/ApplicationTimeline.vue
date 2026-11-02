@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t, messageText, errorText, intlLocale } from './i18n'
+
 import Button from 'primevue/button'
 import DateTimeField from './components/shared/DateTimeField.vue'
 import InputText from 'primevue/inputtext'
@@ -13,9 +15,9 @@ import { appearanceVariable } from './settings/applyAppearance'
 function emailSummary(event: TimelineEvent) {
   if (event.event_type === 'APPLICATION_SUBMITTED' && event.metadata?.date_only
     && event.summary === `Application submitted on ${event.metadata.date_applied}`) {
-    return { text: 'Application submitted', reference: null }
+    return { text: t('Application submitted'), reference: null }
   }
-  if (event.event_type !== 'MANUAL') return { text: event.summary, reference: null }
+  if (event.event_type !== 'MANUAL') return { text: messageText(event.summary), reference: null }
   const references = event.summary.match(/https?:\/\/[^\s<>]+|\[Gmail:[a-f0-9]+\]/gi) ?? []
   const unique = new Map<string, string>()
   let text = event.summary
@@ -25,7 +27,7 @@ function emailSummary(event: TimelineEvent) {
     unique.set(url, reference)
     text = text.replace(reference, '')
   }
-  return { text: text.replace(/[ \t]{2,}/g, ' ').trim() || 'Email activity', reference: [...unique.values()].join('\n') || null }
+  return { text: text.replace(/[ \t]{2,}/g, ' ').trim() || t("Email activity"), reference: [...unique.values()].join('\n') || null }
 }
 
 const props = defineProps<{ applicationId: string; embedded?: boolean }>()
@@ -39,13 +41,13 @@ const entryForm = reactive({ id: '', summary: '', occurred_at: '' })
 
 function markerStyle(type: string) {
   const tone = timelineEventMeta(type).tone
-  const variable = appearanceVariable(tone === 'neutral' ? 'surfaceMuted' : tone)
+  const variable = appearanceVariable(tone === 'neutral' ? "surfaceMuted" : tone)
   return { background: `var(${variable})`, color: `var(${variable}-contrast)` }
 }
 
 function dateText(event: TimelineEvent) {
   if (event.metadata?.date_only && typeof event.metadata.date_applied === 'string') return event.metadata.date_applied
-  return new Date(event.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+  return new Date(event.created_at).toLocaleString(intlLocale.value, { dateStyle: 'medium', timeStyle: 'short' })
 }
 function localDateTime(value: string) {
   const date = new Date(value)
@@ -59,7 +61,7 @@ function openEntry(event?: TimelineEvent) {
 async function load() {
   busy.value = true; error.value = ''
   try { timeline.value = await getTimeline(props.applicationId) }
-  catch (reason) { error.value = reason instanceof Error ? reason.message : 'Unable to load activity.' }
+  catch (reason) { error.value = reason instanceof Error ? reason.message : t("Unable to load activity.") }
   finally { busy.value = false }
 }
 
@@ -71,9 +73,9 @@ async function saveEntry() {
     if (editing) await updateTimelineEntry(props.applicationId, entryForm.id, data)
     else await createTimelineEntry(props.applicationId, data)
     entryOpen.value = false
-    notice.value = editing ? 'Timeline entry updated.' : 'Email timeline entry added.'
+    notice.value = editing ? t("Timeline entry updated.") : t("Email timeline entry added.")
     await load()
-  } catch (reason) { error.value = reason instanceof Error ? reason.message : 'Unable to save the timeline entry.' }
+  } catch (reason) { error.value = reason instanceof Error ? reason.message : t("Unable to save the timeline entry.") }
   finally { busy.value = false }
 }
 
@@ -82,10 +84,10 @@ async function undo() {
   busy.value = true; error.value = ''; notice.value = ''
   try {
     const result = await undoLastChange(props.applicationId)
-    notice.value = `Restored ${result.fields.join(', ')}.`
+    notice.value = t("Restored {p0}.", { p0: result.fields.join(', ') })
     emit('undone')
     timeline.value = await getTimeline(props.applicationId)
-  } catch (reason) { error.value = reason instanceof Error ? reason.message : 'Unable to undo the change.' }
+  } catch (reason) { error.value = reason instanceof Error ? reason.message : t("Unable to undo the change.") }
   finally { busy.value = false }
 }
 
@@ -93,14 +95,14 @@ onMounted(load)
 </script>
 
 <template>
-  <section class="panel timeline-panel" :class="{ embedded }" aria-label="Application timeline">
-    <div class="timeline-heading"><h3 v-if="!embedded">Timeline</h3><span v-if="timeline" class="event-count">{{ timeline.events.length }} {{ timeline.events.length === 1 ? 'event' : 'events' }}</span><div class="actions"><Button v-if="!entryOpen" type="button" severity="secondary" outlined size="small" :disabled="busy" @click="openEntry()">Add email event</Button><Button v-if="timeline?.undo_available" type="button" severity="secondary" text size="small" :disabled="busy" @click="undo">Undo last change</Button><Button type="button" severity="secondary" text size="small" :disabled="busy" @click="load">{{ busy ? 'Working…' : 'Refresh' }}</Button></div></div>
-    <p v-if="error" class="at-message error" role="alert">{{ error }}</p><p v-if="notice" class="at-message success" role="status">{{ notice }}</p>
-    <form v-if="entryOpen" class="entry-form" @submit.prevent="saveEntry"><fieldset :disabled="busy"><legend>{{ entryForm.id ? 'Edit email event' : 'New email event' }}</legend><label>What happened<InputText class="at-form-control" v-model="entryForm.summary" required maxlength="500" placeholder="e.g. Submitted technical task by email" /></label><DateTimeField v-model="entryForm.occurred_at" label="Email time (local)" :disabled="busy" required /><p class="hint">Use the email's sent or received time. Submission entries keep the application date.</p><div class="actions"><Button class="primary" type="submit">Save entry</Button><Button type="button" @click="entryOpen = false">Cancel</Button></div></fieldset></form>
-    <p v-if="!timeline && busy" role="status">Loading activity…</p><p v-else-if="timeline && !timeline.events.length" class="hint">No activity recorded yet.</p>
-    <PrimeTimeline v-if="timeline?.events.length" :value="timeline.events" class="activity-timeline" aria-label="Application activity">
+  <section class="panel timeline-panel" :class="{ embedded }" :aria-label="t('Application timeline')">
+    <div class="timeline-heading"><h3 v-if="!embedded">{{ t("Timeline") }}</h3><span v-if="timeline" class="event-count">{{ timeline.events.length }} {{ timeline.events.length === 1 ? t('event') : t('events') }}</span><div class="actions"><Button v-if="!entryOpen" type="button" severity="secondary" outlined size="small" :disabled="busy" @click="openEntry()">{{ t("Add email event") }}</Button><Button v-if="timeline?.undo_available" type="button" severity="secondary" text size="small" :disabled="busy" @click="undo">{{ t("Undo last change") }}</Button><Button type="button" severity="secondary" text size="small" :disabled="busy" @click="load">{{ busy ? t("Working…") : t("Refresh") }}</Button></div></div>
+    <p v-if="error" class="at-message error" role="alert">{{ errorText(String((error) ?? '')) }}</p><p v-if="notice" class="at-message success" role="status">{{ messageText(String((notice) ?? '')) }}</p>
+    <form v-if="entryOpen" class="entry-form" @submit.prevent="saveEntry"><fieldset :disabled="busy"><legend>{{ entryForm.id ? t("Edit email event") : t("New email event") }}</legend><label>{{ t("What happened") }}<InputText class="at-form-control" v-model="entryForm.summary" required maxlength="500" :placeholder="t('e.g. Submitted technical task by email')" /></label><DateTimeField v-model="entryForm.occurred_at" :label="t('Email time (local)')" :disabled="busy" required /><p class="hint">{{ t("Use the email's sent or received time. Submission entries keep the application date.") }}</p><div class="actions"><Button class="primary" type="submit">{{ t("Save entry") }}</Button><Button type="button" @click="entryOpen = false">{{ t("Cancel") }}</Button></div></fieldset></form>
+    <p v-if="!timeline && busy" role="status">{{ t("Loading activity…") }}</p><p v-else-if="timeline && !timeline.events.length" class="hint">{{ t("No activity recorded yet.") }}</p>
+    <PrimeTimeline v-if="timeline?.events.length" :value="timeline.events" class="activity-timeline" :aria-label="t('Application activity')">
       <template #marker="{ item }"><span class="event-marker" :style="markerStyle(item.event_type)" aria-hidden="true"><i :class="timelineEventMeta(item.event_type).icon" /></span></template>
-      <template #content="{ item }"><div class="event-content"><div class="event-heading"><strong>{{ emailSummary(item).text }} <EmailReference v-if="emailSummary(item).reference" :reference="emailSummary(item).reference" /></strong><Button v-if="item.event_type === 'MANUAL'" type="button" severity="secondary" text size="small" :disabled="busy" @click="openEntry(item)">Edit</Button></div><p>{{ dateText(item) }} · {{ actorLabels[item.actor_type as keyof typeof actorLabels] }}<template v-if="item.actor_reference && !(item.actor_type === 'AGENT' && item.actor_reference === 'agent-token')"> · {{ item.actor_reference }}</template></p></div></template>
+      <template #content="{ item }"><div class="event-content"><div class="event-heading"><strong>{{ emailSummary(item).text }} <EmailReference v-if="emailSummary(item).reference" :reference="emailSummary(item).reference" /></strong><Button v-if="item.event_type === 'MANUAL'" type="button" severity="secondary" text size="small" :disabled="busy" @click="openEntry(item)">{{ t("Edit") }}</Button></div><p>{{ dateText(item) }} · {{ t(actorLabels[item.actor_type as keyof typeof actorLabels]) }}<template v-if="item.actor_reference && !(item.actor_type === 'AGENT' && item.actor_reference === 'agent-token')"> · {{ item.actor_reference }}</template></p></div></template>
     </PrimeTimeline>
   </section>
 </template>

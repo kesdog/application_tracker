@@ -40,6 +40,7 @@ it('writes the feature routes with exact JSON, explicit nulls and empty DELETE r
   const interview: api.InterviewInput = { type: 'TECHNICAL', scheduled_at: '2026-09-28T12:00:00Z', duration: 60, location: null, meeting_url: null, interviewer: 'Sam', email_reference: null, notes: null, result: null }
   const writes: [string, string, unknown, () => Promise<unknown>][] = [
     ['/api/applications', 'POST', application, () => api.createApplication(application)],
+    ['/api/applications/sync', 'POST', { lookback_months: 6 }, () => api.startApplicationSync({ lookback_months: 6 })],
     ['/api/applications/app', 'PATCH', { status: 'INTERVIEW', outcome: null }, () => api.updateApplication('app', { status: 'INTERVIEW', outcome: null })],
     ['/api/applications/app/notes', 'POST', { content: 'Assessment', type: 'ASSESSMENT' }, () => api.createNote('app', { content: 'Assessment', type: 'ASSESSMENT' })],
     ['/api/applications/app/notes/note', 'PATCH', { content: 'Updated', type: 'GENERAL' }, () => api.updateNote('app', 'note', { content: 'Updated', type: 'GENERAL' })],
@@ -55,6 +56,7 @@ it('writes the feature routes with exact JSON, explicit nulls and empty DELETE r
     ['/api/settings/agent/token', 'POST', undefined, () => api.regenerateAgentToken()],
     ['/api/settings/agent/permissions', 'PUT', permissions, () => api.saveAgentPermissions(permissions)],
     ['/api/connections/google/start', 'POST', { capabilities: ['gmail_read'] }, () => api.startGoogle(['gmail_read'])],
+    ['/api/connections/google/setup', 'PUT', { client_id: 'fixture.apps.googleusercontent.com', client_secret: 'fixture-secret' }, () => api.saveGoogleClientSetup({ client_id: 'fixture.apps.googleusercontent.com', client_secret: 'fixture-secret' })],
     ['/api/connections/google/disconnect', 'POST', undefined, () => api.disconnectGoogle()],
     ['/api/connections/google/drive-test', 'POST', { recovery_key: 'user-owned-key' }, () => api.testGoogleDrive('user-owned-key')],
     ['/api/applications/app/followups/message/draft', 'POST', { content: 'Hello', expected_revision: 3, operation_id: 'explicit-stable-operation' }, () => api.draftEmailFollowup('app', 'message', 'Hello', 3, 'explicit-stable-operation')],

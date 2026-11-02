@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 
 from fastapi import Body, Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, Response, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.exc import SQLAlchemyError
@@ -36,11 +36,17 @@ from app import followup_templates, followup_reminders, human_auth, push
 from app import followup_ai
 from app import recipient_discovery
 from app import google_connection
+from app.google_workspace_auth import GoogleCredential, GoogleWorkspaceLogin
+from app.google_client_setup import GoogleClientRegistration
+from app.ai_connections import AIConnections, AIConnectionError, NativeAISecretStore, router as ai_router
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
 from app.sync.engine import SyncEngine
 from app.sync.drive import DriveTransport
 from app.sync.routes import sync_router
 from app.sync.worker import SyncWorker
-from app.application_sync import ApplicationSync
+from app.sync.probe import LiveSyncProbe
+from app.application_sync import ApplicationSync, ApplicationSyncInput
 from app.workspace_routes import router as workspace_router
 from sqlalchemy.orm.exc import StaleDataError
 from sqlalchemy import select, func, or_
@@ -64,6 +70,9 @@ def create_app(
     sync_transport=None,
     sync_store=None,
     sync_background: bool = True,
+    ai_store=None,
+    ai_transport=None,
+    ai_verifier=None,
 ) -> FastAPI:
     settings = settings or Settings()
     access_logger = logging.getLogger('uvicorn.access')
@@ -94,7 +103,15 @@ def create_app(
             google = google_connection.GoogleConnection(engine, settings, store=google_store,
                 transport=google_transport, verifier=google_verifier)
             application.state.google = google
+            protected_ai_store = ai_store or (NativeAISecretStore(settings.app_data_dir, google.store)
+                if isinstance(google.store, google_connection.NativeSecretStore) else google.store)
+            application.state.ai_connections = AIConnections(settings, protected_ai_store,
+                transport=ai_transport, verifier=ai_verifier)
+            application.state.google_client_setup = google.setup
+            application.state.google_workspace_login = GoogleWorkspaceLogin(settings, application.state.human_sessions,
+                application.state.human_login.limiter, google.verifier)
             application.state.sync = SyncEngine(engine, sync_transport or DriveTransport(google), sync_store or google.store)
+            application.state.sync_probe = LiveSyncProbe(DriveTransport(google), lambda: settings.google_client_id)
             if sync_background:
                 sync_worker = SyncWorker(application.state.sync)
                 sync_task = asyncio.create_task(sync_worker.run())
@@ -146,6 +163,7 @@ def create_app(
     application.state.calendar_provider = calendar_provider
     application.include_router(sync_router())
     application.include_router(workspace_router())
+    application.include_router(ai_router())
 
     def application_sync_service(request: Request):
         if request.headers.get('authorization') or request.app.state.human_access.connection_owner(request) is None:
@@ -157,8 +175,8 @@ def create_app(
         return JSONResponse(service.status(), headers={'Cache-Control': 'no-store'})
 
     @application.post('/api/applications/sync')
-    def start_application_sync(service=Depends(application_sync_service)):
-        return JSONResponse(service.start(), headers={'Cache-Control': 'no-store'})
+    def start_application_sync(data: ApplicationSyncInput = Body(default=ApplicationSyncInput()), service=Depends(application_sync_service)):
+        return JSONResponse(service.start(data.lookback_months), headers={'Cache-Control': 'no-store'})
 
     @application.middleware("http")
     async def protect_human_routes(request: Request, call_next):
@@ -171,10 +189,17 @@ def create_app(
             return response
         response = await call_next(request)
         if hosted:
+            google_identity = application.state.google_workspace_login.configured
+            google_browser = google_identity or application.state.google.configured or path.startswith('/phone/')
             response.headers["X-Content-Type-Options"] = "nosniff"
-            response.headers["Referrer-Policy"] = "same-origin"
+            response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin' if google_browser else 'same-origin')
             response.headers["X-Frame-Options"] = "DENY"
-            response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+            script_sources = " 'self' https://accounts.google.com/gsi/client" if google_browser else " 'self'"
+            google_sources = " https://accounts.google.com/gsi/" if google_browser else ""
+            google_apis = ' https://www.googleapis.com https://openidconnect.googleapis.com' if google_browser else ''
+            response.headers["Content-Security-Policy"] = f"default-src 'self'; script-src{script_sources}; style-src 'self' 'unsafe-inline'{google_sources}; img-src 'self' data:; font-src 'self' data:; connect-src 'self'{google_sources}{google_apis}; frame-src 'self'{google_sources}; worker-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+            if google_browser:
+                response.headers['Cross-Origin-Opener-Policy'] = 'same-origin-allow-popups'
         if path.startswith("/api/") or path == "/":
             response.headers["Cache-Control"] = "no-store"
         return response
@@ -199,6 +224,19 @@ def create_app(
     @application.exception_handler(google_connection.GoogleConnectionError)
     async def google_error(_request, exc):
         return JSONResponse(status_code=409, content={'detail': str(exc)})
+
+    @application.exception_handler(AIConnectionError)
+    async def ai_error(_request, exc):
+        status = 429 if exc.kind in {'usage_limit', 'credits', 'rate_limit'} else 503 if exc.kind == 'unavailable' else 409
+        headers = {'Retry-After': str(exc.retry_after)} if exc.retry_after is not None else {}
+        return JSONResponse(status_code=status, content={'detail': str(exc), 'code': exc.kind,
+            'provider': exc.provider, 'retry_after': exc.retry_after}, headers=headers)
+
+    @application.exception_handler(RequestValidationError)
+    async def validation_error(request, exc):
+        if request.url.path.startswith('/api/connections/ai'):
+            return JSONResponse(status_code=422, content={'detail': 'Check the AI connection fields and try again.'})
+        return await request_validation_exception_handler(request, exc)
 
     @application.exception_handler(followup_templates.RevisionConflict)
     async def revision_conflict(_request, exc):
@@ -240,15 +278,41 @@ def create_app(
             max_age=600, path='/api/connections/google')
         return {'authorization_url': url, 'expires_in': 600}
 
+    @application.get('/api/connections/google/setup')
+    def google_setup(owner=Depends(google_human)):
+        return application.state.google_client_setup.status()
+
+    @application.put('/api/connections/google/setup')
+    def save_google_setup(data: GoogleClientRegistration, request: Request, owner=Depends(google_human)):
+        # Local mode needs the same origin protection as connection start actions.
+        origin = application.state.google_client_setup.status()['origin']
+        if request.headers.get('origin') != origin:
+            raise HTTPException(403, 'Open Google connection setup from this workspace')
+        return application.state.google_client_setup.save(data)
+
     @application.get('/api/connections/google/callback')
     def google_callback(request: Request, state: str = '', code: str = '', error: str = '', owner=Depends(google_human)):
-        from fastapi.responses import RedirectResponse
         application.state.google.finish(state, code, request.cookies.get(google_connection.COOKIE, ''), owner, bool(error),
             owner_validator=application.state.human_sessions.is_authenticated_reference if hosted else None)
-        response = RedirectResponse('/#/settings', status_code=303)
+        # The API callback bypasses the offline worker. Commit an app-origin
+        # document before navigating to the shell, rather than extending Google's
+        # cross-site redirect chain into the worker's navigation fetch handler.
+        response = HTMLResponse('''<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark"><title>Google connected · Application Tracker</title>
+<style>body{font:16px/1.6 system-ui,sans-serif;min-height:90vh;display:grid;place-items:center;margin:0;padding:24px;background:Canvas;color:CanvasText}main{max-width:420px}a{display:inline-flex;align-items:center;min-height:44px}a:focus-visible{outline:3px solid Highlight;outline-offset:4px}</style>
+<script src="/google-return.js" defer></script></head><body><main>
+<h1>Google connected</h1><p>Returning to Application Tracker…</p>
+<a href="/#/settings?tab=connections">Continue to Connections</a>
+</main></body></html>''')
         response.delete_cookie(google_connection.COOKIE, path='/api/connections/google')
         response.headers['Referrer-Policy'] = 'no-referrer'
         return response
+
+    @application.get('/google-return.js', include_in_schema=False)
+    def google_return_script():
+        return Response("window.location.replace('/#/settings?tab=connections');\n",
+                        media_type='application/javascript', headers={'Cache-Control': 'no-store'})
 
     @application.post('/api/connections/google/disconnect')
     def google_disconnect(owner=Depends(google_human)):
@@ -265,6 +329,18 @@ def create_app(
     @application.post("/api/auth/login")
     def human_login(data: human_auth.LoginInput, request: Request, response: Response):
         return application.state.human_login.sign_in(data.password, request, response)
+
+    @application.get('/api/auth/providers')
+    def auth_providers():
+        return application.state.google_workspace_login.providers()
+
+    @application.post('/api/auth/google/start')
+    def google_workspace_start(request: Request, response: Response):
+        return application.state.google_workspace_login.start(request, response)
+
+    @application.post('/api/auth/google/credential')
+    def google_workspace_credential(data: GoogleCredential, request: Request, response: Response):
+        return application.state.google_workspace_login.finish(data, request, response)
 
     @application.post("/api/auth/logout")
     def human_logout(request: Request, response: Response):
@@ -289,6 +365,10 @@ def create_app(
     def template_variables():
         return followup_templates.variables()
 
+    @application.post("/api/settings/general/language")
+    def change_followup_language(data: followup_templates.FollowUpLanguageInput, session: Session = Depends(get_session)):
+        return work.change_followup_language(session, data, settings)
+
     @application.get("/api/followups/agent-status")
     def followup_agent_status(session: Session = Depends(get_session)):
         return agent_auth.draft_availability(session)
@@ -305,6 +385,23 @@ def create_app(
     def fetch_missing_recipients(session: Session = Depends(get_session)):
         require_recipient_toolbox()
         return recipient_discovery.enqueue_missing(session)
+
+    @application.post('/api/recipients/pause')
+    def pause_recipient_searches(session: Session = Depends(get_session)):
+        return recipient_discovery.set_paused(session, True)
+
+    @application.post('/api/recipients/resume')
+    def resume_recipient_searches(session: Session = Depends(get_session)):
+        return recipient_discovery.set_paused(session, False)
+
+    @application.post('/api/applications/{application_id}/recipients/pause')
+    def pause_recipient_search(application_id: str, session: Session = Depends(get_session)):
+        return recipient_discovery.pause_application(session, application_id)
+
+    @application.post('/api/applications/{application_id}/recipients/prioritize')
+    def prioritize_recipient_search(application_id: str, session: Session = Depends(get_session)):
+        require_recipient_toolbox()
+        return recipient_discovery.prioritize(session, application_id)
 
     @application.get('/api/applications/{application_id}/recipients')
     def application_recipients(application_id: str,session: Session = Depends(get_session)):
@@ -368,7 +465,9 @@ def create_app(
             present=func.length(func.trim(func.coalesce(FollowUp.recipient_email,''))) > 0
             query=query.where(FollowUp.channel != 'PHONE',present if recipient == 'assigned' else ~present)
         total = session.scalar(select(func.count()).select_from(query.subquery()))
-        rows = session.execute(query.order_by(FollowUp.due_at, FollowUp.id).offset((page - 1) * page_size).limit(page_size)).all()
+        rows = session.execute(query.order_by(Application.date_applied.desc(), FollowUp.prepared_at.desc(),
+                                             FollowUp.id.desc())
+                               .offset((page - 1) * page_size).limit(page_size)).all()
         return {"total": total, "page": page, "page_size": page_size, "items": [
             {**FollowUpRead.model_validate(item).model_dump(mode="json"), "application": ApplicationRead.model_validate(app).model_dump(mode="json")}
             for item, app in rows]}
@@ -605,6 +704,18 @@ def create_app(
     def message_proposal(application_id: str, item_id: str, latest: bool = True, session: Session = Depends(get_session)):
         return work.proposed_message(session, application_id, item_id, settings, latest=latest)
 
+    @application.get("/api/applications/{application_id}/followups/{item_id}/versions")
+    def message_versions(application_id: str, item_id: str, session: Session = Depends(get_session)):
+        return work.message_versions(session, application_id, item_id)
+
+    @application.post("/api/applications/{application_id}/followups/{item_id}/language", response_model=FollowUpRead)
+    def switch_message_language(application_id: str, item_id: str, data: followup_templates.MessageLanguageInput, session: Session = Depends(get_session)):
+        return work.switch_message_language(session, application_id, item_id, data, settings)
+
+    @application.post("/api/applications/{application_id}/followups/{item_id}/versions/{version_id}/restore", response_model=FollowUpRead)
+    def restore_message_version(application_id: str, item_id: str, version_id: str, data: followup_templates.RestoreMessageInput, session: Session = Depends(get_session)):
+        return work.restore_message_version(session, application_id, item_id, version_id, data, settings)
+
     class ApplyTemplate(BaseModel):
         expected_revision: int
         latest: bool = True
@@ -742,6 +853,20 @@ def create_app(
         @application.get("/offline.html", include_in_schema=False)
         def offline_page():
             return FileResponse(settings.app_static_dir / "offline.html")
+
+        if (settings.app_static_dir / 'phone' / 'index.html').is_file():
+            @application.get('/phone/sw.js', include_in_schema=False)
+            def independent_phone_worker():
+                return FileResponse(settings.app_static_dir / 'phone' / 'sw.js', media_type='application/javascript',
+                    headers={'Cache-Control': 'no-cache', 'Service-Worker-Allowed': '/phone/'})
+
+            @application.get('/phone/manifest.webmanifest', include_in_schema=False)
+            def independent_phone_manifest():
+                return FileResponse(settings.app_static_dir / 'phone' / 'manifest.webmanifest', media_type='application/manifest+json')
+
+            @application.get('/phone/', include_in_schema=False)
+            def independent_phone_index():
+                return FileResponse(settings.app_static_dir / 'phone' / 'index.html')
 
         @application.get("/", include_in_schema=False)
         def frontend_index():

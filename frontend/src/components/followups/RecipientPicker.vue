@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import { t, messageText, errorText } from '../../i18n'
+
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import Button from 'primevue/button'
 import BusyIndicator from '../shared/BusyIndicator.vue'
 import RecipientPageReports from './RecipientPageReports.vue'
-import { chooseRecipient, fetchRecipients, getRecipientState, updateApplication, updateFollowUp, type FollowUp, type RecipientCandidate, type RecipientState } from '../../api'
+import { chooseRecipient, fetchRecipients, pauseRecipientSearch, prioritizeRecipientSearch, getRecipientState, updateApplication, updateFollowUp, type FollowUp, type RecipientCandidate, type RecipientState } from '../../api'
 const props = defineProps<{ applicationId: string; followup?: FollowUp; disabled?: boolean; closed?: boolean; embedded?: boolean }>()
 const emit = defineEmits<{ changed: [] }>()
 const state = ref<RecipientState | null>(null)
@@ -27,7 +29,7 @@ const dirty = computed(() => email.value !== (item.value?.recipient_email ?? '')
 const blocked = computed(() => busy.value || props.disabled || props.closed)
 const labels = { recruiter_hr: 'Recruiter / HR', technical_lead: 'Technical lead', general_contact: 'General company contact' }
 const categories: Record<string, string> = { vacancy_specific_contact: 'Published vacancy contact', named_recruiter: 'Named recruiter', recruitment_mailbox: 'Recruitment mailbox', general_company_mailbox: 'General mailbox · verify recruitment purpose', named_other_contact: 'Named contact · hiring role unconfirmed' }
-function category(candidate: RecipientCandidate) { return categories[candidate.contact_priority?.category ?? ''] || labels[candidate.kind] }
+function category(candidate: RecipientCandidate) { return t(categories[candidate.contact_priority?.category ?? ''] || labels[candidate.kind]) }
 function needsReview(candidate: RecipientCandidate) { return candidate.requires_review || candidate.stale || candidate.fit?.region?.state === 'mismatch' || candidate.fit?.sector?.state === 'mismatch' }
 function sourceContext(candidate: RecipientCandidate) { return [candidate.fit?.region?.observed || candidate.source_region, candidate.fit?.sector?.observed || candidate.source_sector].filter(Boolean).join(' · ') }
 function resetForm() { email.value = item.value?.recipient_email ?? ''; name.value = item.value?.recipient_name ?? '' }
@@ -41,25 +43,27 @@ async function load() {
     if (!limitDirty.value) { pageLimit.value = result.page_limit ?? result.page_limit_override ?? result.default_page_limit ?? 6; limitRevision.value = result.application_revision }
     if (!result.followups.some(f => f.id === selected.value)) selected.value = result.followups.find(f => !f.recipient_email)?.id ?? result.followups[0]?.id ?? ''
     if (!keepEdits) resetForm()
-  } catch (reason) { if (current === version) error.value = reason instanceof Error ? reason.message : 'Unable to load recipients.' }
+  } catch (reason) { if (current === version) error.value = reason instanceof Error ? reason.message : t("Unable to load recipients.") }
   finally { if (current === version) loading.value = false }
 }
 async function perform(action: () => Promise<unknown>, message: string, changed = false) {
   busy.value = true; error.value = ''; notice.value = ''
   try { await action(); notice.value = message; await load(); if (changed) { resetForm(); emit('changed') } }
-  catch (reason) { error.value = reason instanceof Error ? reason.message : 'Unable to save. Your entries are retained.' }
+  catch (reason) { error.value = reason instanceof Error ? reason.message : t("Unable to save. Your entries are retained.") }
   finally { busy.value = false }
 }
-function queue() { return perform(() => fetchRecipients(props.applicationId), 'Recipient search queued. You can continue working.') }
-function refresh() { return perform(() => fetchRecipients(props.applicationId, true), 'Source refresh queued. Saved pages may be fetched again within the page limit.') }
-function saveLimit() { if (!limitValid.value) return; return perform(async () => { await updateApplication(props.applicationId, { recipient_page_limit: Number(pageLimit.value), expected_revision: limitRevision.value }); limitDirty.value = false }, 'Page limit saved. It applies when the next research run starts.') }
+function queue() { return perform(() => fetchRecipients(props.applicationId), t("Recipient search queued. You can continue working.")) }
+function pauseSearch() { return perform(() => pauseRecipientSearch(props.applicationId), t('Recipient search paused. Saved reports are kept.')) }
+function prioritizeSearch() { return perform(() => prioritizeRecipientSearch(props.applicationId), t('Recipient search prioritized. It will run next when the queue is active.')) }
+function refresh() { return perform(() => fetchRecipients(props.applicationId, true), t("Source refresh queued. Saved pages may be fetched again within the page limit.")) }
+function saveLimit() { if (!limitValid.value) return; return perform(async () => { await updateApplication(props.applicationId, { recipient_page_limit: Number(pageLimit.value), expected_revision: limitRevision.value }); limitDirty.value = false }, t("Page limit saved. It applies when the next research run starts.")) }
 function useCandidate(candidate: RecipientCandidate) {
   if (!item.value) return
-  return perform(() => chooseRecipient(props.applicationId, item.value!.id, candidate.id, item.value!.revision), 'Recipient selected. Review the message before sending.', true)
+  return perform(() => chooseRecipient(props.applicationId, item.value!.id, candidate.id, item.value!.revision), t("Recipient selected. Review the message before sending."), true)
 }
 function saveManual() {
   if (!item.value) return
-  return perform(async () => { await updateFollowUp(props.applicationId, item.value!.id, { recipient_email: email.value.trim() || null, recipient_name: name.value.trim() || null, expected_revision: item.value!.revision }); }, 'Recipient saved. Nothing was sent.', true)
+  return perform(async () => { await updateFollowUp(props.applicationId, item.value!.id, { recipient_email: email.value.trim() || null, recipient_name: name.value.trim() || null, expected_revision: item.value!.revision }); }, t("Recipient saved. Nothing was sent."), true)
 }
 function sourceLink(value: string) { try { const url = new URL(value); return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password ? value : '' } catch { return '' } }
 watch(() => [props.applicationId, props.followup?.revision], (value, old) => { if (value[0] !== old?.[0]) { limitDirty.value = false; state.value = null; email.value = ''; name.value = ''; selected.value = '' }; void load() }, { immediate: true })
@@ -70,22 +74,23 @@ onUnmounted(() => { disposed = true; version++; clearInterval(timer); window.rem
 </script>
 
 <template>
-  <section class="recipients" :class="{ embedded }" aria-label="Follow-up recipients">
-    <div class="heading"><h3 v-if="!embedded">Follow-up recipients</h3><Button type="button" severity="secondary" :disabled="blocked || active || limitDirty" @click="queue">{{ state?.job ? 'Fetch recipients again' : 'Fetch recipients' }}</Button></div>
-    <details class="research-options"><summary>Search settings</summary><div class="limit-controls"><label>New pages per research run<input v-model.number="pageLimit" type="number" min="1" max="100" :disabled="blocked || loading" @input="limitDirty = true" /></label><Button type="button" severity="secondary" :disabled="blocked || loading || !limitDirty || !limitValid" @click="saveLimit">Save page limit</Button><p class="hint">Saved limit: {{ state?.page_limit ?? 6 }} pages. Running searches keep their starting limit.</p><Button type="button" severity="secondary" :disabled="blocked || active || limitDirty" @click="refresh">Refresh saved pages</Button></div></details>
-    <BusyIndicator v-if="loading" label="Loading recipients…" />
-    <BusyIndicator v-else-if="active" :label="state?.job?.state === 'QUEUED' ? 'Recipient search queued · up to five jobs run at once' : 'Finding recipients…'" />
-    <p v-if="error" class="at-message error" role="alert">{{ error }}</p><p v-if="notice" class="at-message success" role="status">{{ notice }}</p>
-    <p v-if="state?.missing_followups" class="at-message warning">{{ state.missing_followups }} email follow-up{{ state.missing_followups === 1 ? '' : 's' }} still need a recipient.</p>
-    <p v-if="state?.job?.state === 'NO_RESULTS'">No suitable public recipient was found. Enter a known address or try again.</p>
-    <p v-if="state?.job?.error" class="at-message warning">{{ state.job.error }}</p>
-    <p v-if="state?.job?.page_counts?.fetched_pages !== undefined && !active" class="hint">Last run: {{ state.job.page_counts.fetched_pages ?? 0 }} pages fetched · {{ state.job.page_counts.reused_pages ?? 0 }} saved reports reused.</p>
-    <details v-if="state?.job?.warnings.length"><summary>Search limitations</summary><ul><li v-for="warning in state.job.warnings" :key="warning">{{ warning }}</li></ul></details>
-    <label v-if="!followup && (state?.followups.length ?? 0) > 1">Choose follow-up<select v-model="selected" :disabled="blocked"><option v-for="f in state?.followups ?? []" :key="f.id" :value="f.id">#{{ f.sequence_number }} · {{ f.recipient_email || 'Recipient needed' }}</option></select></label>
-    <p v-if="item?.recipient_email">Selected recipient: <strong>{{ item.recipient_name || item.recipient_email }}</strong><span v-if="item.recipient_name"> · {{ item.recipient_email }}</span></p>
-    <div class="candidates"><article v-for="candidate in state?.candidates ?? []" :key="candidate.id"><strong>{{ candidate.name || candidate.email }}</strong><p>{{ category(candidate) }}<span v-if="candidate.role"> · {{ candidate.role }}</span></p><p v-if="candidate.name || !candidate.email">{{ candidate.email || 'No public email found. Enter a confirmed address manually.' }}</p><details class="candidate-evidence"><summary>Contact evidence</summary><p class="hint">{{ candidate.evidence }}</p><p><a v-if="sourceLink(candidate.source_url)" :href="sourceLink(candidate.source_url)" target="_blank" rel="noopener noreferrer">View source</a> · {{ candidate.vacancy_match === 'published_for_vacancy' ? 'Source names this contact for the vacancy' : 'Vacancy responsibility unconfirmed' }}<span v-if="candidate.company_match !== 'confirmed'"> · Employer identity needs verification</span><span v-if="candidate.stale"> · Older cached evidence</span><span v-if="!candidate.context_current"> · Job changed since this search</span></p><p v-if="sourceContext(candidate)" class="hint">Source context: {{ sourceContext(candidate) }}. Confirm its relevance to this job.</p><p v-if="needsReview(candidate)" class="at-message warning">Refresh older evidence or verify the region and team, then enter a confirmed address manually.</p><p v-if="candidate.email" class="hint">Email published on the source; deliverability has not been checked.</p><p v-for="profile in candidate.profile_urls ?? []" :key="profile.url"><a v-if="sourceLink(profile.url)" :href="sourceLink(profile.url)" target="_blank" rel="noopener noreferrer">{{ profile.label || 'Public profile' }}</a></p></details><Button type="button" :disabled="blocked || dirty || !item || !candidate.email || candidate.excluded || needsReview(candidate) || !candidate.context_current" @click="useCandidate(candidate)">Use this recipient</Button></article></div>
-    <form v-if="item" @submit.prevent="saveManual"><fieldset :disabled="blocked"><legend>Enter a recipient manually</legend><div class="grid"><label>Recipient email<input v-model="email" type="email" maxlength="320" placeholder="recruiter@company.com" /></label><label>Recipient name (optional)<input v-model="name" maxlength="300" /></label></div><Button type="submit" :disabled="blocked || !dirty">Save recipient</Button></fieldset></form>
-    <p v-else-if="!loading">Create or reopen an email follow-up to assign a recipient.</p>
+  <section class="recipients" :class="{ embedded }" :aria-label="t('Follow-up recipients')">
+    <div class="heading"><h3 v-if="!embedded">{{ t("Follow-up recipients") }}</h3><Button type="button" severity="secondary" :disabled="blocked || active || limitDirty" @click="queue">{{ state?.job ? t("Fetch recipients again") : t("Fetch recipients") }}</Button><Button v-if="active" type="button" severity="secondary" :disabled="blocked" @click="pauseSearch">{{ t('Pause search') }}</Button><Button v-if="state?.job?.state === 'QUEUED' || state?.job?.state === 'PAUSED'" type="button" :disabled="blocked" @click="prioritizeSearch">{{ t('Run next') }}</Button></div>
+    <p v-if="state?.queue_paused" role="status">{{ t('Recipient searches are paused. Resume them in Follow-ups → Recipients.') }}</p>
+    <details class="research-options"><summary>{{ t("Search settings") }}</summary><div class="limit-controls"><label>{{ t("New pages per research run") }}<input v-model.number="pageLimit" type="number" min="1" max="100" :disabled="blocked || loading" @input="limitDirty = true" /></label><Button type="button" severity="secondary" :disabled="blocked || loading || !limitDirty || !limitValid" @click="saveLimit">{{ t("Save page limit") }}</Button><p class="hint">{{ t("Saved limit:") }} {{ state?.page_limit ?? 6 }} {{ t("pages. Running searches keep their starting limit.") }}</p><Button type="button" severity="secondary" :disabled="blocked || active || limitDirty" @click="refresh">{{ t("Refresh saved pages") }}</Button></div></details>
+    <BusyIndicator v-if="loading" :label="t('Loading recipients…')" />
+    <BusyIndicator v-else-if="active" :label="state?.job?.state === 'QUEUED' ? t('Recipient search queued · up to five jobs run at once') : t('Finding recipients…')" />
+    <p v-if="error" class="at-message error" role="alert">{{ errorText(String((error) ?? '')) }}</p><p v-if="notice" class="at-message success" role="status">{{ messageText(String((notice) ?? '')) }}</p>
+    <p v-if="state?.missing_followups" class="at-message warning">{{ state.missing_followups }} {{ t("email follow-up") }}{{ state.missing_followups === 1 ? '' : 's' }} {{ t("still need a recipient.") }}</p>
+    <p v-if="state?.job?.state === 'NO_RESULTS'">{{ t("No suitable public recipient was found. Enter a known address or try again.") }}</p>
+    <p v-if="state?.job?.error" class="at-message warning">{{ errorText(String((state.job.error) ?? '')) }}</p>
+    <p v-if="state?.job?.page_counts?.fetched_pages !== undefined && !active" class="hint">{{ t("Last run:") }} {{ state.job.page_counts.fetched_pages ?? 0 }} {{ t("pages fetched ·") }} {{ state.job.page_counts.reused_pages ?? 0 }} {{ t("saved reports reused.") }}</p>
+    <details v-if="state?.job?.warnings.length"><summary>{{ t("Search limitations") }}</summary><ul><li v-for="warning in state.job.warnings" :key="warning">{{ warning }}</li></ul></details>
+    <label v-if="!followup && (state?.followups.length ?? 0) > 1">{{ t("Choose follow-up") }}<select v-model="selected" :disabled="blocked"><option v-for="f in state?.followups ?? []" :key="f.id" :value="f.id">#{{ f.sequence_number }} · {{ f.recipient_email || t("Recipient needed") }}</option></select></label>
+    <p v-if="item?.recipient_email">{{ t("Selected recipient:") }} <strong>{{ item.recipient_name || item.recipient_email }}</strong><span v-if="item.recipient_name"> · {{ item.recipient_email }}</span></p>
+    <div class="candidates"><article v-for="candidate in state?.candidates ?? []" :key="candidate.id"><strong>{{ candidate.name || candidate.email }}</strong><p>{{ category(candidate) }}<span v-if="candidate.role"> · {{ candidate.role }}</span></p><p v-if="candidate.name || !candidate.email">{{ candidate.email || t("No public email found. Enter a confirmed address manually.") }}</p><details class="candidate-evidence"><summary>{{ t("Contact evidence") }}</summary><p class="hint">{{ candidate.evidence }}</p><p><a v-if="sourceLink(candidate.source_url)" :href="sourceLink(candidate.source_url)" target="_blank" rel="noopener noreferrer">{{ t("View source") }}</a> · {{ candidate.vacancy_match === 'published_for_vacancy' ? t("Source names this contact for the vacancy") : t("Vacancy responsibility unconfirmed") }}<span v-if="candidate.company_match !== 'confirmed'"> {{ t("· Employer identity needs verification") }}</span><span v-if="candidate.stale"> {{ t("· Older cached evidence") }}</span><span v-if="!candidate.context_current"> {{ t("· Job changed since this search") }}</span></p><p v-if="sourceContext(candidate)" class="hint">{{ t("Source context:") }} {{ sourceContext(candidate) }}{{ t(". Confirm its relevance to this job.") }}</p><p v-if="needsReview(candidate)" class="at-message warning">{{ t("Refresh older evidence or verify the region and team, then enter a confirmed address manually.") }}</p><p v-if="candidate.email" class="hint">{{ t("Email published on the source; deliverability has not been checked.") }}</p><p v-for="profile in candidate.profile_urls ?? []" :key="profile.url"><a v-if="sourceLink(profile.url)" :href="sourceLink(profile.url)" target="_blank" rel="noopener noreferrer">{{ messageText(String((profile.label || t("Public profile")) ?? '')) }}</a></p></details><Button type="button" :disabled="blocked || dirty || !item || !candidate.email || candidate.excluded || needsReview(candidate) || !candidate.context_current" @click="useCandidate(candidate)">{{ t("Use this recipient") }}</Button></article></div>
+    <form v-if="item" @submit.prevent="saveManual"><fieldset :disabled="blocked"><legend>{{ t("Enter a recipient manually") }}</legend><div class="grid"><label>{{ t("Recipient email") }}<input v-model="email" type="email" maxlength="320" :placeholder="t('recruiter@company.com')" /></label><label>{{ t("Recipient name (optional)") }}<input v-model="name" maxlength="300" /></label></div><Button type="submit" :disabled="blocked || !dirty">{{ t("Save recipient") }}</Button></fieldset></form>
+    <p v-else-if="!loading">{{ t("Create or reopen an email follow-up to assign a recipient.") }}</p>
     <RecipientPageReports :application-id="applicationId" :revision="state?.job?.state + ':' + state?.job?.attempts" />
   </section>
 </template>

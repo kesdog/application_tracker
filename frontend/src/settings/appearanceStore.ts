@@ -1,3 +1,4 @@
+import { t } from '../i18n'
 import { computed, reactive, readonly, ref } from 'vue'
 import { appearanceColors, appearanceStorageKey, defaultAppearance, legacyDefaultAppearance, normalizeHex, parseAppearance, type AppearanceColor, type AppearanceSettings } from './appearanceDefaults'
 import { applyAppearance } from './applyAppearance'
@@ -34,7 +35,7 @@ export function saveAppearance(): void {
   palettes[themeMode.value] = { ...state }
   const currentSaved = writePreference(appearanceStorageKey, state)
   const palettesSaved = writePreference(themePalettesStorageKey, { version: 1, ...palettes })
-  appearanceSaveError.value = currentSaved && palettesSaved ? '' : 'Appearance is applied for this session. Your browser could not save it for the next visit.'
+  appearanceSaveError.value = currentSaved && palettesSaved ? '' : t("Appearance is applied for this session. Your browser could not save it for the next visit.")
 }
 export function setThemeMode(mode: ThemeMode): void {
   if (mode === themeMode.value) return

@@ -207,6 +207,7 @@ class FollowUp(Base):
     template_reference: Mapped[str | None] = mapped_column(String(2048))
     subject: Mapped[str] = mapped_column(Text, default="", server_default="")
     body: Mapped[str] = mapped_column(Text, default="", server_default="")
+    message_language: Mapped[str] = mapped_column(String(80), default="en", server_default="en")
     template_snapshot: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
     variable_snapshot: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
     customization: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
@@ -221,6 +222,24 @@ class FollowUp(Base):
     recipient_email: Mapped[str | None] = mapped_column(String(320))
     recipient_name: Mapped[str | None] = mapped_column(String(300))
     recipient_source_url: Mapped[str | None] = mapped_column(String(2048))
+
+
+class FollowUpMessageVersion(Base):
+    __tablename__ = "followup_message_versions"
+    __table_args__ = (UniqueConstraint("followup_id", "fingerprint", name="followup_message_version_unique"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    followup_id: Mapped[str] = mapped_column(ForeignKey("followups.id", ondelete="CASCADE"), index=True)
+    language: Mapped[str] = mapped_column(String(80))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    subject: Mapped[str] = mapped_column(Text)
+    body: Mapped[str] = mapped_column(Text)
+    instructions: Mapped[str] = mapped_column(Text)
+    customization: Mapped[dict] = mapped_column(JSON)
+    template_snapshot: Mapped[dict] = mapped_column(JSON)
+    variable_snapshot: Mapped[dict] = mapped_column(JSON)
+    source_revision: Mapped[int]
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)
+    last_used_at: Mapped[datetime] = mapped_column(default=utc_now)
 
 
 class RecipientDiscovery(Base):
@@ -240,6 +259,14 @@ class RecipientDiscovery(Base):
     page_limit: Mapped[int] = mapped_column(default=6)
     refresh_pages: Mapped[bool] = mapped_column(Boolean, default=False)
     page_counts: Mapped[dict] = mapped_column(JSON, default=dict)
+    priority: Mapped[int] = mapped_column(default=0, server_default='0')
+
+
+class RecipientQueueControl(Base):
+    __tablename__ = 'recipient_queue_control'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    paused: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(default=utc_now)
 
 
 class RecipientPageReport(Base):
@@ -472,6 +499,21 @@ class MailImportReceipt(Base):
     reason: Mapped[str] = mapped_column(String(500))
     message_at: Mapped[datetime | None]
     lifecycle_applied: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class MailSyncBoundary(Base):
+    __tablename__ = 'mail_sync_boundaries'
+    account: Mapped[str] = mapped_column(String(64), primary_key=True)
+    checked_through: Mapped[int]
+    updated_at: Mapped[datetime] = mapped_column(default=utc_now)
+
+
+class MailSyncScope(Base):
+    __tablename__ = 'mail_sync_scopes'
+    account: Mapped[str] = mapped_column(String(64), primary_key=True)
+    scan_after: Mapped[int]
+    lookback_months: Mapped[int]
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)
 
 
 class ImportBatch(Base):

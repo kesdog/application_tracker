@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t, messageText, errorText } from './i18n'
+
 import Select from 'primevue/select'
 import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
@@ -35,7 +37,7 @@ function useReference() {
 async function load() {
   loading.value = true; error.value = ''
   try { documents.value = await listDocuments(props.applicationId) }
-  catch (reason) { error.value = reason instanceof Error ? reason.message : 'Unable to load documents.' }
+  catch (reason) { error.value = reason instanceof Error ? reason.message : t("Unable to load documents.") }
   finally { loading.value = false }
 }
 
@@ -43,11 +45,11 @@ async function submit() {
   error.value = ''; success.value = ''
   const reference = form.external_reference.trim()
   if (Boolean(selectedFile.value) === Boolean(reference)) {
-    error.value = 'Choose one uploaded file or enter one reference.'
+    error.value = t("Choose one uploaded file or enter one reference.")
     return
   }
   if (reference && !form.filename.trim()) {
-    error.value = 'Add a filename for this reference.'
+    error.value = t("Add a filename for this reference.")
     return
   }
   saving.value = true
@@ -62,10 +64,10 @@ async function submit() {
     selectedFile.value = null
     form.filename = ''; form.external_reference = ''
     if (fileInput.value) fileInput.value.value = ''
-    success.value = `Attached ${saved.filename}.`
+    success.value = t("Attached {p0}.", { p0: saved.filename })
     emit('changed')
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : 'Unable to attach document.'
+    error.value = reason instanceof Error ? reason.message : t("Unable to attach document.")
   } finally { saving.value = false }
 }
 
@@ -73,28 +75,28 @@ onMounted(load)
 </script>
 
 <template>
-  <section class="panel" aria-label="Documents">
-    <div v-if="documents.length" class="section-heading"><h3 id="documents-title">Documents</h3><span>{{ documents.length }}</span></div>
-    <details><summary>Attach CV or cover letter</summary>
+  <section class="panel" :aria-label="t('Documents')">
+    <div v-if="documents.length" class="section-heading"><h3 id="documents-title">{{ t("Documents") }}</h3><span>{{ documents.length }}</span></div>
+    <details><summary>{{ t("Attach CV or cover letter") }}</summary>
     <form class="document-form" @submit.prevent="submit">
       <fieldset :disabled="saving">
         <div class="grid">
-          <label>Document type<Select class="at-form-control" aria-label="Document type" v-model="form.document_type" :disabled="saving" :options="[{ value: 'CV', label: 'CV' }, { value: 'COVER_LETTER', label: 'Cover letter' }]" option-label="label" option-value="value" option-disabled="disabled" /></label>
-          <label>Upload file<input ref="fileInput" type="file" @change="chooseFile" /></label>
-          <label>Reference filename<InputText class="at-form-control" v-model="form.filename" maxlength="500" placeholder="cv-product-engineer.pdf" /></label>
-          <label>External or local reference<InputText class="at-form-control" v-model="form.external_reference" maxlength="2048" placeholder="https://… or C:\Documents\…" @input="useReference" /></label>
+          <label>{{ t("Document type") }}<Select class="at-form-control" :aria-label="t('Document type')" v-model="form.document_type" :disabled="saving" :options="[{ value: 'CV', label: 'CV' }, { value: 'COVER_LETTER', get label() { return t('Cover letter') } }]" option-label="label" option-value="value" option-disabled="disabled" /></label>
+          <label>{{ t("Upload file") }}<input ref="fileInput" type="file" @change="chooseFile" /></label>
+          <label>{{ t("Reference filename") }}<InputText class="at-form-control" v-model="form.filename" maxlength="500" :placeholder="t('cv-product-engineer.pdf')" /></label>
+          <label>{{ t("External or local reference") }}<InputText class="at-form-control" v-model="form.external_reference" maxlength="2048" :placeholder="t('https://… or C:\\Documents\\…')" @input="useReference" /></label>
         </div>
-        <p class="hint">Choose a file, or enter a reference and its filename. Files are copied into this tracker's data directory.</p>
+        <p class="hint">{{ t("Choose a file, or enter a reference and its filename. Files are copied into this tracker's data directory.") }}</p>
       </fieldset>
-      <Button class="primary" type="submit" :disabled="saving">{{ saving ? 'Attaching…' : 'Attach document' }}</Button>
+      <Button class="primary" type="submit" :disabled="saving">{{ saving ? t("Attaching…") : t("Attach document") }}</Button>
     </form>
     </details>
-    <p v-if="error" class="at-message error" role="alert">{{ error }}</p><p v-if="success" class="at-message success" role="status">{{ success }}</p>
-    <p v-if="loading && !documents.length" class="empty" role="status">Loading documents…</p>
+    <p v-if="error" class="at-message error" role="alert">{{ errorText(String((error) ?? '')) }}</p><p v-if="success" class="at-message success" role="status">{{ success }}</p>
+    <p v-if="loading && !documents.length" class="empty" role="status">{{ t("Loading documents…") }}</p>
     <ul v-if="documents.length" class="document-list">
       <li v-for="document in documents" :key="document.id">
-        <span class="document-type">{{ document.type === 'CV' ? 'CV' : 'Cover letter' }}</span>
-        <div><strong>{{ document.filename }}</strong><p v-if="document.storage_path"><a :href="documentContentUrl(applicationId, document.id)">Download uploaded file</a></p><p v-else-if="isWebReference(document.external_reference)"><a :href="document.external_reference!" target="_blank" rel="noopener noreferrer">Open reference ↗</a></p><p v-else>{{ document.external_reference }}</p></div>
+        <span class="document-type">{{ document.type === 'CV' ? 'CV' : t("Cover letter") }}</span>
+        <div><strong>{{ document.filename }}</strong><p v-if="document.storage_path"><a :href="documentContentUrl(applicationId, document.id)">{{ t("Download uploaded file") }}</a></p><p v-else-if="isWebReference(document.external_reference)"><a :href="document.external_reference!" target="_blank" rel="noopener noreferrer">{{ t("Open reference ↗") }}</a></p><p v-else>{{ document.external_reference }}</p></div>
       </li>
     </ul>
   </section>

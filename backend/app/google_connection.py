@@ -31,10 +31,15 @@ ISSUER = 'https://accounts.google.com'
 class CallbackLogFilter(logging.Filter):
     """Uvicorn access logs must not retain authorization codes or state."""
     def filter(self, record):
-        message = record.getMessage()
-        if '/api/connections/google/callback?' in message:
-            record.msg = re.sub(r'(/api/connections/google/callback)\?[^\s"\']+', r'\1?[redacted]', message)
-            record.args = ()
+        def redact(value):
+            return re.sub(r'(/api/connections/(?:google|ai/chatgpt)/callback)\?[^\s"\']+', r'\1?[redacted]', value) if isinstance(value, str) else value
+        record.msg = redact(record.msg)
+        # Uvicorn's access formatter unpacks these five structured arguments.
+        # Redact their values without flattening or deleting the argument tuple.
+        if isinstance(record.args, tuple):
+            record.args = tuple(redact(value) for value in record.args)
+        elif isinstance(record.args, dict):
+            record.args = {key: redact(value) for key, value in record.args.items()}
         return True
 
 
@@ -47,7 +52,7 @@ class GoogleConnectionError(ValueError):
 
 class GoogleStart(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    capabilities: list[str] = Field(min_length=1, max_length=3)
+    capabilities: list[str] = Field(default_factory=list, max_length=3)
 
 
 class DriveTest(BaseModel):
@@ -143,6 +148,9 @@ class GoogleConnection:
         self.verifier = verifier or verify_identity
         from app.google_login import GoogleLoginManager
         self.login = GoogleLoginManager(self)
+        from app.google_client_setup import GoogleClientSetup
+        self.setup = GoogleClientSetup(self)
+        self.setup.restore()
 
     @property
     def configured(self):
@@ -251,6 +259,11 @@ class GoogleConnection:
         try:
             response = client.call(capability, method, path, **kwargs)
         except AuthorizedRequestError as exc:
+            if exc.kind == 'setup_required':
+                api_name = 'Gmail' if capability.startswith('gmail_') else 'Google Drive'
+                raise GoogleConnectionError(
+                    f'Enable the {api_name} API in your Google Cloud project, then retry. Your Google connection is still authorized.',
+                    kind=exc.kind) from None
             raise GoogleConnectionError(str(exc), kind=exc.kind, retry_after=exc.retry_after) from None
         with Session(self.engine) as session:
             item = session.get(ExternalConnection, 1)
@@ -282,13 +295,28 @@ class GoogleMailProvider:
         account = urlencode({'authuser': self.connection.status()['email'] or ''})
         return 'https://mail.google.com/mail/?' + account + '#all/' + value.message_id
 
-    def application_messages(self, page_token=None):
+    def application_messages(self, page_token=None, *, after=None, before=None):
         # Fixed query: read application evidence, never mutate mailbox labels or messages.
-        params = {'q': '-in:spam -in:trash -in:drafts {candidature application postulé "CV a été envoyé" interview entretien}',
-                  'maxResults': 100, 'fields': 'messages(id,threadId),nextPageToken'}
+        from app.mail_scanners.languages import search_terms
+        params = {'q': '-in:spam -in:trash -in:drafts {' + ' '.join(search_terms()) + '}',
+                  'maxResults': 500, 'fields': 'messages(id,threadId),nextPageToken,resultSizeEstimate'}
+        if after is not None:
+            params['q'] += f' after:{int(after)}'
+        if before is not None:
+            params['q'] += f' before:{int(before)}'
         if page_token:
             params['pageToken'] = page_token
-        return self.connection.api('gmail_read', 'GET', 'gmail/v1/users/me/messages', params=params).json()
+        response = self.connection.api('gmail_read', 'GET', 'gmail/v1/users/me/messages', params=params)
+        # Gmail can return 204 for an empty partial-response projection.
+        if response.status_code == 204:
+            return {}
+        try:
+            value = response.json()
+            if not isinstance(value, dict):
+                raise ValueError
+        except ValueError:
+            raise GoogleConnectionError('Gmail returned an unreadable search result. Try again; completed imports are saved.', kind='unavailable') from None
+        return value
 
     def application_message(self, message_id):
         data = MailLookup(message_id=message_id)

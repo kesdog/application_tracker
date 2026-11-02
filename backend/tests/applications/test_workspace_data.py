@@ -70,6 +70,11 @@ def test_exported_phone_round_trips_and_preview_keeps_original_row_numbers(clien
 
 def test_duplicate_merge_preserves_original_history_documents_and_sent_state(client):
     source, target = seed(client), seed(client)
+    source_message = client.get('/api/applications/' + source['id'] + '/work').json()['followups'][0]
+    source_message_path = f"/api/applications/{source['id']}/followups/{source_message['id']}"
+    french = client.post(source_message_path + '/language', json={'language': 'fr', 'expected_revision': source_message['revision']})
+    assert french.status_code == 200, french.text
+    source_versions = client.get(source_message_path + '/versions').json()['versions']
     client.patch('/api/applications/' + source['id'], json={'description': 'Original role requirements'})
     client.post('/api/applications/' + source['id'] + '/notes', json={'content': 'Keep this note'})
     client.post('/api/applications/' + source['id'] + '/documents', data={'document_type': 'CV'}, files={'file': ('cv.txt', b'CV')})
@@ -85,6 +90,9 @@ def test_duplicate_merge_preserves_original_history_documents_and_sent_state(cli
     work = client.get('/api/applications/' + target['id'] + '/work').json()
     assert work['notes'][0]['content'] == 'Keep this note'
     assert any(item['archived_at'] for item in work['followups'])
+    copied_message = next(item for item in work['followups'] if item['archived_at'])
+    copied_versions = client.get(f"/api/applications/{target['id']}/followups/{copied_message['id']}/versions").json()['versions']
+    assert {(v['language'], v['body']) for v in copied_versions} == {(v['language'], v['body']) for v in source_versions}
     document = client.get('/api/applications/' + target['id'] + '/documents').json()[0]
     assert client.get('/api/applications/' + target['id'] + '/documents/' + document['id'] + '/content').content == b'CV'
     assert client.get('/api/workspace/trash').json()['total'] == 1

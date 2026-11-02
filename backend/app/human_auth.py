@@ -208,7 +208,8 @@ class HumanAccessPolicy:
         if path == '/api/health':
             return
         check_transport(request, self.settings)
-        public = path in {'/api/auth/session', '/api/auth/login', '/api/connections/google/callback'}
+        public = path in {'/api/auth/session', '/api/auth/login', '/api/auth/providers',
+                          '/api/auth/google/start', '/api/auth/google/credential', '/api/connections/google/callback'}
         if not path.startswith('/api/') or path.startswith('/api/agent/') or public:
             return
         token = request.cookies.get(COOKIE)

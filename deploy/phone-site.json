@@ -1,0 +1,7 @@
+{
+  "project_id": "appgprj_6ae36777992481919d3d377b1cc1d906",
+  "url": "https://application-tracker-phone-sync-20261029.heartygleam1024.chatgpt.site/phone/",
+  "source_checkout": ".run/phone-https-site",
+  "static_directory": "dist",
+  "audience": "owner-private"
+}

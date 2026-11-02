@@ -1,3 +1,4 @@
+import { t } from '../i18n'
 import { computed, readonly, ref } from 'vue'
 import { listApplications, type Application } from '../api'
 
@@ -34,7 +35,7 @@ export async function loadAddressBook(): Promise<void> {
   addressBookLoading.value = true
   addressBookError.value = ''
   try { records.value = await listApplications() }
-  catch { addressBookError.value = 'Saved suggestions are unavailable. You can still enter a new application.' }
+  catch { addressBookError.value = t("Saved suggestions are unavailable. You can still enter a new application.") }
   finally { addressBookLoading.value = false }
 }
 export function rememberApplication(application: Application): void {

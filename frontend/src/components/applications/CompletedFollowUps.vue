@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import { t, messageText } from '../../i18n'
+
 import { computed } from 'vue'
 const props = defineProps<{ count?: number }>()
-const label = computed(() => `${props.count} completed follow-up${props.count === 1 ? '' : 's'}`)
+const label = computed(() => t("{p0} completed follow-up{p1}", { p0: props.count, p1: props.count === 1 ? '' : 's' }))
 </script>
 <template>
-  <span v-if="count && count > 0" class="completed-followups" :aria-label="label" :title="label">
+  <span v-if="count && count > 0" class="completed-followups" :aria-label="messageText(String((label) ?? ''))" :title="messageText(String((label) ?? ''))">
     <i class="pi pi-check" aria-hidden="true" /><span aria-hidden="true">{{ count }}</span>
   </span>
 </template>

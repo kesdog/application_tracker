@@ -1,3 +1,4 @@
+import { t } from './i18n'
 import type { ApplicationCreate } from './api'
 import { detectJobSource, type ContactType, type JobSource, type RemotePolicy } from './applicationOptions'
 
@@ -22,28 +23,28 @@ export function validCalendarDate(value: string): boolean {
 export function wizardErrors(step: number, draft: ApplicationDraft, options: WizardOptions): Record<string, string> {
   const errors: Record<string, string> = {}
   if (step === 1) {
-    if (!draft.job_title.trim()) errors.job_title = 'Enter the job title.'
-    if (!draft.company.trim()) errors.company = 'Enter the employer or “Employer not disclosed”.'
-    if (!validCalendarDate(draft.date_applied)) errors.date_applied = 'Choose a valid application date.'
+    if (!draft.job_title.trim()) errors.job_title = t("Enter the job title.")
+    if (!draft.company.trim()) errors.company = t("Enter the employer or “Employer not disclosed”.")
+    if (!validCalendarDate(draft.date_applied)) errors.date_applied = t("Choose a valid application date.")
   }
   if (step === 2) {
-    if (!draft.job_url.trim() && !draft.email_reference.trim()) errors.job_url = 'Provide a posting URL or an email reference.'
+    if (!draft.job_url.trim() && !draft.email_reference.trim()) errors.job_url = t("Provide a posting URL or an email reference.")
     if (draft.job_url.trim()) {
       try { if (!['http:', 'https:'].includes(new URL(draft.job_url.trim()).protocol)) throw new Error() }
-      catch { errors.job_url = 'Enter a complete http or https posting URL.' }
-      if (['LINKEDIN', 'INDEED'].includes(draft.source) && detectJobSource(draft.job_url) !== draft.source) errors.job_url = 'Use a direct posting URL on the selected LinkedIn or Indeed board.'
+      catch { errors.job_url = t("Enter a complete http or https posting URL.") }
+      if (['LINKEDIN', 'INDEED'].includes(draft.source) && detectJobSource(draft.job_url) !== draft.source) errors.job_url = t("Use a direct posting URL on the selected LinkedIn or Indeed board.")
     }
-    if (options.deadline && !validCalendarDate(draft.deadline)) errors.deadline = 'Choose a valid deadline date.'
+    if (options.deadline && !validCalendarDate(draft.deadline)) errors.deadline = t("Choose a valid deadline date.")
   }
   if (step === 3) {
     if (options.contact) {
-      if (draft.contact_type === 'EMAIL' && !draft.contact_email.trim()) errors.contact_email = 'Enter the contact email address.'
-      if (draft.contact_type === 'PHONE' && !draft.phone_number.trim()) errors.phone_number = 'Enter the contact phone number.'
+      if (draft.contact_type === 'EMAIL' && !draft.contact_email.trim()) errors.contact_email = t("Enter the contact email address.")
+      if (draft.contact_type === 'PHONE' && !draft.phone_number.trim()) errors.phone_number = t("Enter the contact phone number.")
     }
     if (options.followups) {
       for (const [field, max] of [['followup_delay_days', 3650], ['max_followup_suggestions', 100]] as const) {
         const value = draft[field]
-        if (value !== null && value !== '' && (!Number.isInteger(value) || value < 0 || value > max)) errors[field] = `Enter a whole number from 0 to ${max}.`
+        if (value !== null && value !== '' && (!Number.isInteger(value) || value < 0 || value > max)) errors[field] = t("Enter a whole number from 0 to {p0}.", { p0: max })
       }
     }
   }

@@ -53,6 +53,14 @@ Default validation is offline. Live Google probes require explicit operator
 opt-in and independently authorized test accounts; they are not part of routine
 local or CI runs. Do not give CI a personal mailbox or workspace database.
 
+Use `--segment sync auth system tooling` when changing the independent phone
+entry, shared protocol or protected compatibility endpoints. `frontend/tests/sync/`
+owns browser replica tests and Python interoperability fixtures. The optional
+visible-browser fixture uses `vite build --mode phone-e2e` and
+`backend/tests/sync/browser_server.py`; this mode writes only under `.run/` and
+must never be deployed. A normal production build followed by
+`python scripts/package_phone.py` creates the public-only static phone package.
+
 The detailed coverage inventory and review notes are maintained locally in
 ignored `test.md`. It is intentionally separate from this public contributor
 guide and must not be force-added to Git or included in application bundles.

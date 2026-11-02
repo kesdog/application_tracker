@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t, messageText, errorText } from '../../i18n'
+
 import { computed, ref, useId } from 'vue'
 import AutoComplete from 'primevue/autocomplete'
 import Textarea from 'primevue/textarea'
@@ -15,14 +17,14 @@ const priorNotes = computed(() => props.suggestions.map(text => ({ value: text, 
 </script>
 <template>
   <div class="suggestion-field">
-    <label :for="inputId">{{ label }} <span v-if="required" class="required-note">(required)</span></label>
+    <label :for="inputId">{{ messageText(String((label) ?? '')) }} <span v-if="required" class="required-note">{{ t("(required)") }}</span></label>
     <template v-if="multiline">
       <Textarea :id="inputId" v-model="value" class="at-form-control" rows="4" :maxlength="maxlength" :disabled="disabled" :invalid="Boolean(error)" :aria-describedby="error ? inputId + '-error' : undefined" @blur="emit('blur')" />
-      <Select v-if="priorNotes.length" :model-value="null" :options="priorNotes" option-label="label" option-value="value" :aria-label="`Reuse previous ${label.toLowerCase()}`" placeholder="Reuse previous text…" :disabled="disabled" class="at-form-control" @update:model-value="value = $event" />
+      <Select v-if="priorNotes.length" :model-value="null" :options="priorNotes" option-label="label" option-value="value" :aria-label="t('Reuse previous {p0}', { p0: label.toLowerCase() })" :placeholder="t('Reuse previous text…')" :disabled="disabled" class="at-form-control" @update:model-value="value = $event" />
     </template>
-    <AutoComplete v-else :input-id="inputId" v-model="value" :suggestions="matches" :dropdown="suggestions.length > 0" :min-length="1" :delay="100" :disabled="disabled" :invalid="Boolean(error)" :placeholder="placeholder" class="at-form-control" :input-props="{ type, maxlength, required, 'aria-describedby': error ? inputId + '-error' : hint ? inputId + '-hint' : undefined }" @complete="search" @blur="emit('blur')" />
-    <small v-if="hint" :id="inputId + '-hint'">{{ hint }}</small>
-    <small v-if="error" :id="inputId + '-error'" class="field-error" role="alert">{{ error }}</small>
+    <AutoComplete v-else :input-id="inputId" v-model="value" :suggestions="matches" :dropdown="suggestions.length > 0" :min-length="1" :delay="100" :disabled="disabled" :invalid="Boolean(error)" :placeholder="messageText(String((placeholder) ?? ''))" class="at-form-control" :input-props="{ type, maxlength, required, 'aria-describedby': error ? inputId + '-error' : hint ? inputId + '-hint' : undefined }" @complete="search" @blur="emit('blur')" />
+    <small v-if="hint" :id="inputId + '-hint'">{{ messageText(String((hint) ?? '')) }}</small>
+    <small v-if="error" :id="inputId + '-error'" class="field-error" role="alert">{{ errorText(String((error) ?? '')) }}</small>
   </div>
 </template>
 <style scoped>

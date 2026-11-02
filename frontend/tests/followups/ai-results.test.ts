@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import '../support/browser'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
@@ -67,7 +68,7 @@ it('shows outcome review even when there are no unsent follow-ups', async () => 
 })
 
 it('saves the adjustable review threshold in general settings', async () => {
-  const settings: api.GeneralSettings = { subject_template: 'Hello', body_template: 'Message', signature: 'Alex', language: 'English', tone: 'Friendly', instructions: '', followup_delay_days: 7, max_followup_suggestions: 2, unsuccessful_review_after: 3, recipient_page_limit: 6, timezone: 'Europe/Paris', reminder_time: '09:00', notifications_enabled: true, quiet_start: '20:00', quiet_end: '08:00', daily_digest: true, revision: 1 }
+  const settings: api.GeneralSettings = { subject_template: 'Hello', body_template: 'Message', signature: 'Alex', language: 'English', tone: 'Friendly', instructions: '', followup_delay_days: 7, max_followup_suggestions: 2, unsuccessful_review_after: 3, recipient_page_limit: 6, mail_sync_max_messages: 100, timezone: 'Europe/Paris', reminder_time: '09:00', notifications_enabled: true, quiet_start: '20:00', quiet_end: '08:00', daily_digest: true, revision: 1 }
   vi.mocked(api.getGeneralSettings).mockResolvedValue(settings)
   vi.mocked(api.getTemplateVariables).mockResolvedValue([])
   vi.mocked(api.listApplications).mockResolvedValue([])

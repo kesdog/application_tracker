@@ -27,8 +27,9 @@ class SyncError(ValueError):
 
 class SyncEngine:
     """Storage and transport adapters stay outside protocol/authorization logic."""
-    def __init__(self, engine, transport, secrets_store):
+    def __init__(self, engine, transport, secrets_store, *, compact_cloud=True):
         self.engine, self.transport, self.secrets = engine, transport, secrets_store
+        self.compact_cloud = compact_cloud
         self.lock = threading.Lock()
 
     def status(self):
@@ -48,6 +49,7 @@ class SyncEngine:
                 'devices': [{'device_id': item.device_id, 'last_seen': json_value(item.last_seen),
                              'acknowledgments': item.acknowledgments} for item in session.scalars(select(SyncDevice))],
                 'garbage_collection': 'disabled', 'overall_google_quota': None,
+                'storage_policy': 'compressed_changes' if self.compact_cloud else 'periodic_checkpoints',
                 'warnings': (['Compact sync exceeds 50 MB'] if workspace.remote_bytes > 50_000_000 else [])
                     + (['Drive object count exceeds 2,000'] if workspace.remote_objects > 2000 else [])}
 
@@ -146,6 +148,29 @@ class SyncEngine:
         if not value:
             raise SyncError('Sync key is unavailable. Unlock the native credential store')
         return decode_key(value['key'])
+
+    def prepare_phone(self, label='Desktop'):
+        """One human action enrolls, publishes bootstrap, and exports to the phone.
+
+        Keep recovery material out of status/background sync and cloud objects.
+        The HTTP adapter restricts this capability to the human workspace owner.
+        """
+        if not self.status()['initialized']:
+            try:
+                self.initialize(label)
+            except SyncError:
+                # Another explicit setup request may have won enrollment.
+                if not self.status()['initialized']:
+                    raise
+        result = self.run(manual=True, wait=True)
+        if result.get('error') or result.get('recovery_required'):
+            raise SyncError(result.get('error') or 'Restore this device before pairing a phone')
+        with self.lock, Session(self.engine) as session:
+            workspace = session.get(SyncWorkspace, 1)
+            if self.transport.identity() != workspace.subject:
+                raise SyncError('The connected Google account does not match this sync workspace')
+            recovery = pairing_export(workspace.workspace_id, self._key(workspace), workspace.subject)
+        return {'recovery_export': recovery, 'status': self.status()}
 
     def _vectors(self, session):
         vectors = {}
@@ -374,8 +399,8 @@ class SyncEngine:
                 session.add(SyncCheckpoint(batch_id=batch_id, event_count=total))
             session.commit()
 
-    def run(self, *, manual=False, checkpoint=False):
-        if not self.lock.acquire(blocking=False):
+    def run(self, *, manual=False, checkpoint=False, wait=False):
+        if not self.lock.acquire(blocking=wait):
             return self.status()
         try:
             with Session(self.engine) as session:
@@ -405,7 +430,15 @@ class SyncEngine:
                     raise
                 # Missing remote files never become local record deletions.
                 if removed:
-                    raise SyncError('Remote sync files were removed. Preserve local data and review recovery before continuing')
+                    # Drive omits names/workspace headers on removals. Other
+                    # workspaces and disposable compatibility probes share the
+                    # app-data feed; only loss of our authenticated inbox files
+                    # is evidence of damage to this replica's history.
+                    with Session(self.engine) as session:
+                        known_removed = any(session.scalar(select(SyncInbox.file_id).where(SyncInbox.file_id.in_(group)).limit(1))
+                            for group in chunks(removed))
+                    if known_removed:
+                        raise SyncError('Remote sync files were removed. Preserve local data and review recovery before continuing')
                 if next_cursor is None:
                     raise SyncError('Drive did not return a durable change cursor')
                 changed |= self._receive(files, key, workspace_id, next_cursor)
@@ -415,8 +448,18 @@ class SyncEngine:
             with Session(self.engine) as session:
                 last_checkpoint = session.scalar(select(SyncCheckpoint).order_by(SyncCheckpoint.created_at.desc()).limit(1))
                 event_count = session.scalar(select(func.count()).select_from(SyncMutation)) or 0
-                checkpoint = checkpoint or not last_checkpoint or (event_count - last_checkpoint.event_count >= 1000) or (last_checkpoint.created_at < utc_now() - timedelta(days=30))
-            self._prepare(key, acknowledgment=changed, checkpoint=checkpoint)
+                # An empty new workspace needs one authenticated bootstrap object.
+                # Existing/paired replicas must not repeat it on every idle run.
+                if not event_count and not session.scalar(select(SyncBatch.batch_id).limit(1)) and not session.scalar(select(SyncInbox.file_id).limit(1)):
+                    checkpoint = True
+                # Complete immutable event history already supports bootstrap.
+                # Until safe retention exists, automatic full snapshots duplicate
+                # cloud data. Explicit checkpoints remain available for recovery.
+                if not self.compact_cloud:
+                    checkpoint = checkpoint or not last_checkpoint or (event_count - last_checkpoint.event_count >= 1000) or (last_checkpoint.created_at < utc_now() - timedelta(days=30))
+            # GC is disabled, so standalone receipts provide no retention benefit.
+            # Real outgoing events continue to carry causal acknowledgment vectors.
+            self._prepare(key, acknowledgment=changed and not self.compact_cloud, checkpoint=checkpoint)
             with Session(self.engine) as session:
                 batches = [(item.batch_id, item.ciphertext) for item in session.scalars(select(SyncBatch).where(SyncBatch.uploaded.is_(False)))]
             for batch_id, ciphertext in batches:

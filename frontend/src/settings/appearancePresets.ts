@@ -1,8 +1,9 @@
+import { t } from '../i18n'
 import { defaultAppearance, type AppearanceSettings } from './appearanceDefaults'
 
 export const appearancePresets = [
-  { id: 'default', label: 'Default', colors: { ...defaultAppearance } },
-  { id: 'dark', label: 'Dark', colors: {
+  { id: 'default', get label() { return t("Default") }, colors: { ...defaultAppearance } },
+  { id: 'dark', get label() { return t("Dark") }, colors: {
     ...defaultAppearance,
     primary: '#c3b2ff', primaryHover: '#dbceff', link: '#8fe3dd', focus: '#b4caff',
     background: '#0c1222', surface: '#17213a', surfaceMuted: '#25324d', border: '#647698',
@@ -11,7 +12,7 @@ export const appearancePresets = [
     withdrawn: '#bac5d2', cancelled: '#f0c28b', ghosted: '#b9c2cf',
     overdue: '#ffacb0', dueSoon: '#f0c28b', live: '#8fd4ad', postingClosed: '#bac5d2',
   } },
-  { id: 'high-contrast', label: 'High Contrast', colors: {
+  { id: 'high-contrast', get label() { return t("High Contrast") }, colors: {
     ...defaultAppearance,
     primary: '#000000', primaryHover: '#202020', link: '#003399', focus: '#003399',
     background: '#ffffff', surface: '#ffffff', surfaceMuted: '#eeeeee', border: '#000000',
@@ -20,13 +21,13 @@ export const appearancePresets = [
     withdrawn: '#333333', cancelled: '#663300', ghosted: '#444444',
     overdue: '#990000', dueSoon: '#663300', live: '#005522', postingClosed: '#333333',
   } },
-  { id: 'soft', label: 'Soft', colors: {
+  { id: 'soft', get label() { return t("Soft") }, colors: {
     ...defaultAppearance,
     primary: '#514770', primaryHover: '#403658', link: '#59467e', focus: '#745e9c',
     background: '#f7f5f9', surface: '#ffffff', surfaceMuted: '#eeebf3', border: '#c9c2d5',
     text: '#302b3c', textMuted: '#635b70',
   } },
-  { id: 'minimal', label: 'Minimal', colors: {
+  { id: 'minimal', get label() { return t("Minimal") }, colors: {
     ...defaultAppearance,
     primary: '#333333', primaryHover: '#171717', link: '#333333', focus: '#555555',
     background: '#fafafa', surface: '#ffffff', surfaceMuted: '#f0f0f0', border: '#cccccc',

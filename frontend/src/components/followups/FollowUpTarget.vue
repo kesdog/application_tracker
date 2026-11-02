@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t, messageText } from '../../i18n'
+
 import { computed } from 'vue'
 import type { FollowUpTargetStatus } from '../../api'
 import { followupTargetLabels } from '../../presentation/followupTargets'
@@ -6,7 +8,7 @@ const props = defineProps<{ status: FollowUpTargetStatus | null }>()
 const label = computed(() => props.status ? followupTargetLabels[props.status] : '')
 </script>
 <template>
-  <span v-if="status" class="followup-target" :class="`target-${status.toLowerCase()}`" role="img" :aria-label="label" :title="label">
+  <span v-if="status" class="followup-target" :class="`target-${status.toLowerCase()}`" role="img" :aria-label="messageText(String((label) ?? ''))" :title="messageText(String((label) ?? ''))">
     <i class="pi pi-envelope" aria-hidden="true" />
   </span>
 </template>

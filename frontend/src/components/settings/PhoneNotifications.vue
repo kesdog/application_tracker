@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t, messageText, errorText } from '../../i18n'
+
 import { computed, onMounted, ref } from 'vue'
 import { getPhoneNotificationStatus, registerPhoneDevice, removePhoneDevice, testPhoneDevice, type PhoneNotificationStatus } from '../../api'
 const status = ref<PhoneNotificationStatus | null>(null)
@@ -18,7 +20,7 @@ function remember(id: string) {
 }
 async function refresh() {
   try { status.value = await getPhoneNotificationStatus(); if (supported) permission.value = Notification.permission }
-  catch (reason) { error.value = reason instanceof Error ? reason.message : 'Unable to check phone notifications.' }
+  catch (reason) { error.value = reason instanceof Error ? reason.message : t("Unable to check phone notifications.") }
 }
 function bytes(value: string) {
   return Uint8Array.from(atob(value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - value.length % 4) % 4)), character => character.charCodeAt(0))
@@ -30,9 +32,9 @@ async function enable() {
   try {
     const choice = Notification.permission === 'granted' ? Promise.resolve('granted') : Notification.requestPermission()
     permission.value = await choice
-    if (permission.value !== 'granted') { message.value = 'Notifications were not enabled. You can keep using the follow-up queue.'; return }
+    if (permission.value !== 'granted') { message.value = t("Notifications were not enabled. You can keep using the follow-up queue."); return }
     const registration = await navigator.serviceWorker.getRegistration('/')
-    if (!registration?.active) throw new Error('Reload the tracker to finish phone setup, then try again.')
+    if (!registration?.active) throw new Error(t("Reload the tracker to finish phone setup, then try again."))
     const key = bytes(status.value.public_key)
     let subscription = await registration.pushManager.getSubscription()
     const previousKey = subscription?.options.applicationServerKey
@@ -40,9 +42,9 @@ async function enable() {
     subscription ??= await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key })
     const device = await registerPhoneDevice(subscription.toJSON(), label.value)
     remember(device.id)
-    message.value = 'Phone reminders enabled. Use Test notification to check background delivery.'
+    message.value = t("Phone reminders enabled. Use Test notification to check background delivery.")
     await refresh()
-  } catch (reason) { error.value = reason instanceof Error ? reason.message : 'Unable to enable this device.' }
+  } catch (reason) { error.value = reason instanceof Error ? reason.message : t("Unable to enable this device.") }
   finally { busy.value = false }
 }
 async function remove(id: string) {
@@ -54,15 +56,15 @@ async function remove(id: string) {
       const registration = supported ? await navigator.serviceWorker.getRegistration('/') : null
       await (await registration?.pushManager.getSubscription())?.unsubscribe()
     }
-    message.value = 'Device removed from phone reminders. Browser notification permission is managed in browser settings.'
+    message.value = t("Device removed from phone reminders. Browser notification permission is managed in browser settings.")
     await refresh()
-  } catch (reason) { error.value = reason instanceof Error ? reason.message : 'Unable to finish removing this device. Check its status and try again.'; await refresh() }
+  } catch (reason) { error.value = reason instanceof Error ? reason.message : t("Unable to finish removing this device. Check its status and try again."); await refresh() }
   finally { busy.value = false }
 }
 async function test() {
   busy.value = true; error.value = ''; message.value = ''
   try { message.value = (await testPhoneDevice(currentId.value)).message; await refresh() }
-  catch (reason) { error.value = reason instanceof Error ? reason.message : 'Unable to queue a test.' }
+  catch (reason) { error.value = reason instanceof Error ? reason.message : t("Unable to queue a test.") }
   finally { busy.value = false }
 }
 onMounted(refresh)
@@ -70,21 +72,21 @@ onMounted(refresh)
 
 <template>
   <section class="phone-panel" aria-labelledby="phone-notifications-heading">
-    <h3 id="phone-notifications-heading">Phone notifications</h3>
-    <p v-if="!status && !error" role="status">Checking notification setup…</p>
-    <p v-if="status && !status.configured">Phone notifications need an HTTPS hosted workspace and server push-key setup. Your in-app reminders remain available.</p>
-    <p v-if="!supported">This browser cannot receive Web Push here. On iPhone, open the app from its Home Screen icon; use a supported browser on Android.</p>
+    <h3 id="phone-notifications-heading">{{ t("Phone notifications") }}</h3>
+    <p v-if="!status && !error" role="status">{{ t("Checking notification setup…") }}</p>
+    <p v-if="status && !status.configured">{{ t("Phone notifications need an HTTPS hosted workspace and server push-key setup. Your in-app reminders remain available.") }}</p>
+    <p v-if="!supported">{{ t("This browser cannot receive Web Push here. On iPhone, open the app from its Home Screen icon; use a supported browser on Android.") }}</p>
     <template v-if="supported && status?.configured">
-      <p>Browser permission: {{ permission }}. This device: {{ current?.active ? 'enabled' : 'not registered' }}.</p>
-      <p v-if="permission === 'denied'">Notifications are blocked. Change the permission in browser or phone settings, then check again.</p>
-      <label>Device name<input v-model="label" maxlength="80" :disabled="busy" /></label>
-      <div class="actions"><button type="button" :disabled="busy || permission === 'denied' || !label.trim()" @click="enable">{{ current?.active ? 'Update this device' : 'Enable notifications' }}</button><button type="button" :disabled="busy || !current?.active" @click="test">Test notification</button></div>
-      <p>Permission is requested only when you enable this device. Notifications show a generic reminder; details open after sign-in. Signing out does not remove an opted-in device.</p>
+      <p>{{ t("Browser permission:") }} {{ messageText(permission) }}{{ t(". This device:") }} {{ current?.active ? t('Enabled') : t("not registered") }}.</p>
+      <p v-if="permission === 'denied'">{{ t("Notifications are blocked. Change the permission in browser or phone settings, then check again.") }}</p>
+      <label>{{ t("Device name") }}<input v-model="label" maxlength="80" :disabled="busy" /></label>
+      <div class="actions"><button type="button" :disabled="busy || permission === 'denied' || !label.trim()" @click="enable">{{ current?.active ? t("Update this device") : t("Enable notifications") }}</button><button type="button" :disabled="busy || !current?.active" @click="test">{{ t("Test notification") }}</button></div>
+      <p>{{ t("Permission is requested only when you enable this device. Notifications show a generic reminder; details open after sign-in. Signing out does not remove an opted-in device.") }}</p>
     </template>
-    <p v-if="status?.configured">Reminder timing, quiet hours and daily digest are in General · Follow-ups → Reminder preferences. Tests bypass quiet hours.</p>
-    <ul v-if="status?.devices.length"><li v-for="device in status.devices" :key="device.id"><strong>{{ device.label }}</strong> · {{ device.active ? 'Enabled' : 'Inactive' }}<span v-if="device.id === currentId"> · This device</span><p v-if="device.reason">{{ device.reason }}</p><p v-if="device.latest">Latest delivery: {{ device.latest.state.toLowerCase() }}<span v-if="device.latest.error"> — {{ device.latest.error }}</span>. Accepted means the push service accepted it; it does not prove the phone displayed it.</p><button type="button" :disabled="busy" @click="remove(device.id)">Remove {{ device.label }}</button></li></ul>
-    <button type="button" :disabled="busy" @click="refresh">Check notification status</button>
-    <p v-if="message" role="status">{{ message }}</p><p v-if="error" class="at-message error" role="alert">{{ error }}</p>
+    <p v-if="status?.configured">{{ t("Reminder timing, quiet hours and daily digest are in Settings → Follow-ups → Schedule & reminder rules. Tests bypass quiet hours.") }}</p>
+    <ul v-if="status?.devices.length"><li v-for="device in status.devices" :key="device.id"><strong>{{ device.label }}</strong> · {{ device.active ? t("Enabled") : t("Inactive") }}<span v-if="device.id === currentId"> {{ t("· This device") }}</span><p v-if="device.reason">{{ messageText(String((device.reason) ?? '')) }}</p><p v-if="device.latest">{{ t("Latest delivery:") }} {{ messageText(String((device.latest.state.toLowerCase()) ?? '')) }}<span v-if="device.latest.error"> — {{ errorText(String((device.latest.error) ?? '')) }}</span>{{ t(". Accepted means the push service accepted it; it does not prove the phone displayed it.") }}</p><button type="button" :disabled="busy" @click="remove(device.id)">{{ t("Remove") }} {{ device.label }}</button></li></ul>
+    <button type="button" :disabled="busy" @click="refresh">{{ t("Check notification status") }}</button>
+    <p v-if="message" role="status">{{ messageText(String((message) ?? '')) }}</p><p v-if="error" class="at-message error" role="alert">{{ errorText(String((error) ?? '')) }}</p>
   </section>
 </template>
 

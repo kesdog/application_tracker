@@ -1,3 +1,4 @@
+import { t } from './i18n'
 import { request, type Application } from './api'
 import { browserSession } from './auth'
 
@@ -34,7 +35,7 @@ export function validateRecovery(file: File) {
 }
 export async function downloadBackup() {
   const response = await fetch('/api/workspace/backup', browserSession.withHeaders({ method: 'POST', cache: 'no-store' }))
-  if (!response.ok) throw new Error('The backup could not be created. Check workspace storage and try again.')
+  if (!response.ok) throw new Error(t("The backup could not be created. Check workspace storage and try again."))
   const url = URL.createObjectURL(await response.blob())
   const link = document.createElement('a'); link.href = url; link.download = 'application-tracker-backup.zip'; link.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)

@@ -22,6 +22,7 @@ class AuthorizedRequestError(ValueError):
         self.kind, self.status, self.retry_after = kind, status, retry_after
         super().__init__({
             'authorization': 'Authorization expired or access was denied. Reconnect the provider.',
+            'setup_required': 'Provider API is disabled for this project. Enable it in the provider console, then retry.',
             'rate_limit': 'Provider rate limit reached. Pending changes are saved locally.',
             'storage_full': 'Provider storage is full. Free space before retrying sync.',
             'unavailable': 'Provider unavailable. Pending changes are saved locally.',
@@ -36,7 +37,11 @@ def classify_response(response: httpx.Response) -> AuthorizedRequestError:
     try:
         error = response.json().get('error', {})
         if isinstance(error, dict):
-            reasons = {item.get('reason') for item in error.get('errors', []) if isinstance(item, dict)}
+            for field in ('errors', 'details'):
+                entries = error.get(field, [])
+                if isinstance(entries, list):
+                    reasons.update(item['reason'] for item in entries if isinstance(item, dict)
+                                   and isinstance(item.get('reason'), str))
     except (ValueError, AttributeError, TypeError):
         pass
     status = response.status_code
@@ -44,6 +49,8 @@ def classify_response(response: httpx.Response) -> AuthorizedRequestError:
         kind = 'rate_limit'
     elif reasons & {'storageQuotaExceeded', 'teamDriveFileLimitExceeded'}:
         kind = 'storage_full'
+    elif status == 403 and reasons & {'accessNotConfigured', 'SERVICE_DISABLED'}:
+        kind = 'setup_required'
     elif status in {401, 403}:
         kind = 'authorization'
     elif status == 410:

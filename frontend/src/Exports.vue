@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { t, messageText } from './i18n'
+
+import PageTabs from './components/shared/PageTabs.vue'
 import Select from 'primevue/select'
 import { computed, reactive, ref } from 'vue'
 import { applicationExportUrl, type ApplicationFilters } from './api'
@@ -17,14 +20,13 @@ function clearFilters() { Object.assign(filters, blankFilters()); applyFilters()
 
 <template>
   <section aria-labelledby="export-title">
-    <h2 id="export-title">Export applications</h2>
-    <p class="intro">Download CSV or Excel files. Filters from the applications list are carried over here.</p>
-    <ApplicationFilterForm :filters="filters" @apply="applyFilters" @clear="clearFilters" />
-    <div class="export-panel">
-      <label>Format<Select class="at-form-control" aria-label="Format" v-model="format" :options="[{ value: 'csv', label: 'CSV' }, { value: 'xlsx', label: 'Excel (XLSX)' }]" option-label="label" option-value="value" option-disabled="disabled" /></label>
-      <a :href="allUrl" :download="`applications.${format}`">Export all applications</a>
-      <a v-if="hasFilters" class="primary" :href="filteredUrl" :download="`applications.${format}`">Export filtered applications</a>
-    </div>
+    <h2 id="export-title">{{ t("Export applications") }}</h2>
+    <p class="intro">{{ t("Download CSV or Excel files. Filters from the applications list are carried over here.") }}</p>
+
+    <PageTabs :label="t('Export scope')" :tabs="[{ value: 'all', get label() { return t('All applications') } }, { value: 'filtered', get label() { return t('Filtered selection') } }]">
+      <template #all><div class="export-panel"><label>{{ t("Format") }}<Select class="at-form-control" :aria-label="t('All applications export format')" v-model="format" :options="[{ value: 'csv', label: 'CSV' }, { value: 'xlsx', get label() { return t('Excel (XLSX)') } }]" option-label="label" option-value="value" /></label><a :href="allUrl" :download="`applications.${format}`">{{ t("Export all applications") }}</a></div></template>
+      <template #filtered><ApplicationFilterForm :filters="filters" @apply="applyFilters" @clear="clearFilters" /><div class="export-panel"><label>{{ t("Format") }}<Select class="at-form-control" :aria-label="t('Filtered export format')" v-model="format" :options="[{ value: 'csv', label: 'CSV' }, { value: 'xlsx', get label() { return t('Excel (XLSX)') } }]" option-label="label" option-value="value" /></label><a v-if="hasFilters" class="primary" :href="filteredUrl" :download="`applications.${format}`">{{ t("Export filtered applications") }}</a><p v-else>{{ t("Apply filters to choose the applications to export.") }}</p></div></template>
+    </PageTabs>
   </section>
 </template>
 

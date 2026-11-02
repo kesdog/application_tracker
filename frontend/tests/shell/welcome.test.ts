@@ -10,7 +10,7 @@ import { loadAppearance, themeMode } from '../../src/settings/appearanceStore'
 enableAutoUnmount(afterEach)
 const guideKey = 'application-tracker:welcome:v1'
 const noticeKey = 'application-tracker:storage-notice:v1'
-const global = { plugins: [[PrimeVue, { unstyled: true }] as [typeof PrimeVue, { unstyled: boolean }]], stubs: { teleport: true } }
+const global = { plugins: [[PrimeVue, { unstyled: true }] as [typeof PrimeVue, { unstyled: boolean }]], stubs: { teleport: true, GoogleSettings: { template: '<div>Optional Google connection</div>' }, AIConnections: { name: 'AIConnections', emits: ['connector'], template: '<div>Optional ChatGPT and Claude connections</div>' } } }
 const button = (wrapper: VueWrapper, text: string) => {
   const match = wrapper.findAll('button').find(item => item.text() === text)
   if (!match) throw new Error(`Missing button: ${text}`)
@@ -23,7 +23,7 @@ beforeEach(() => {
 })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
-it('finishes all three steps without sign-in, preserves a deep link and remembers completion separately from the notice', async () => {
+it('finishes all four steps without sign-in, preserves a deep link and remembers completion separately from the notice', async () => {
   const wrapper = mount(WelcomeExperience, { props: { ready: true }, global })
   await flushPromises()
   expect(wrapper.get('[role="dialog"]').text()).toContain('Start without an account connection')
@@ -33,6 +33,9 @@ it('finishes all three steps without sign-in, preserves a deep link and remember
   await button(wrapper, 'Back').trigger('click')
   expect(wrapper.text()).toContain('A calmer place')
   await button(wrapper, 'Next').trigger('click')
+  await button(wrapper, 'Next').trigger('click')
+  expect(wrapper.text()).toContain('Optional Google connection')
+  expect(wrapper.text()).toContain('Optional ChatGPT and Claude connections')
   await button(wrapper, 'Next').trigger('click')
   await wrapper.get('input[value="dark"]').setValue()
   expect(themeMode.value).toBe('dark')
@@ -98,10 +101,36 @@ it('opens connection settings only on explicit request and never starts Google a
   await flushPromises()
   await button(wrapper, 'Next').trigger('click')
   await button(wrapper, 'Next').trigger('click')
+  await button(wrapper, 'Next').trigger('click')
   await button(wrapper, 'Explore optional connections').trigger('click')
   expect(window.location.hash).toBe('#/settings')
   expect(fetch).not.toHaveBeenCalled()
   expect(localStorage.getItem(guideKey)).toBe('true')
+})
+
+it('resumes the account step after returning from provider authorization and still permits skipping', async () => {
+  const wrapper = mount(WelcomeExperience, { props: { ready: true }, global })
+  await flushPromises()
+  await button(wrapper, 'Next').trigger('click')
+  await button(wrapper, 'Next').trigger('click')
+  wrapper.unmount()
+  const returning = mount(WelcomeExperience, { props: { ready: true }, global })
+  await flushPromises()
+  expect(returning.get('[aria-current="step"]').text()).toContain('Connect accounts')
+  await button(returning, 'Skip for now').trigger('click')
+  expect(localStorage.getItem(guideKey)).toBe('true')
+  expect(fetch).not.toHaveBeenCalled()
+})
+
+it('closes the guide when opening a provider connector so its instructions are visible', async () => {
+  const wrapper = mount(WelcomeExperience, { props: { ready: true }, global })
+  await flushPromises()
+  await button(wrapper, 'Next').trigger('click')
+  await button(wrapper, 'Next').trigger('click')
+  wrapper.findComponent({ name: 'AIConnections' }).vm.$emit('connector', 'claude')
+  await flushPromises()
+  expect(wrapper.find('[role=dialog]').exists()).toBe(false)
+  expect(window.location.hash).toBe('#/settings?tab=agent&provider=claude')
 })
 
 it('handles malformed or blocked storage without preventing use', async () => {

@@ -20,16 +20,18 @@ def test_feature_selection_includes_backend_consumers():
     vendor = runner.VENDOR['toolbox']
     assert runner.select([vendor + '/test_contacts.py'], graph={}) == ({'toolbox'}, set(), False)
     assert runner.select([vendor.replace('/tests', '/src/webtoolbox/contacts.py')], graph={})[0] == {'toolbox', 'followups', 'agent', 'system'}
-    assert runner.select(['backend/app/application_sync.py'], graph={})[0] == {'applications', 'sync', 'auth', 'system'}
-    assert runner.select(['backend/app/mailbox_import.py'], graph={})[0] == {'applications', 'sync', 'activity', 'migrations'}
+    assert runner.select(['backend/app/application_sync.py'], graph={})[0] == runner.MAILBOX_CONSUMERS
+    assert runner.select(['backend/app/mailbox_import.py'], graph={})[0] == runner.MAILBOX_CONSUMERS
     back, front, tooling = runner.select(['backend/app/push.py', 'backend/app/exports.py'], graph={})
     assert back == {'notifications', 'documents', 'applications', 'dashboard'}
     assert front == set() and not tooling
-    assert runner.select(['backend/app/recipient_discovery.py'], graph={})[0] == {'followups', 'agent', 'activity', 'auth', 'migrations', 'system'}
+    assert runner.select(['backend/app/recipient_discovery.py'], graph={})[0] == {'followups', 'applications', 'agent', 'activity', 'auth', 'migrations', 'system', 'sync'}
     assert runner.select(['backend/app/recipient_research.py'], graph={})[0] == {'followups', 'system'}
     assert runner.select(['backend/app/recipient_reports.py'], graph={})[0] == {'followups', 'agent', 'auth', 'migrations', 'system'}
     assert runner.select(['backend/app/followup_ai.py'], graph={})[0] == {'followups', 'agent', 'activity', 'auth'}
     assert runner.select(['backend/app/google_connection.py'], graph={})[0] == {'agent', 'followups', 'auth', 'migrations', 'system', 'sync', 'applications'}
+    assert runner.select(['backend/app/google_workspace_auth.py'], graph={})[0] == {'auth'}
+    assert runner.select(['backend/app/google_client_setup.py'], graph={})[0] == {'agent', 'followups', 'auth', 'migrations', 'system', 'sync', 'applications'}
     assert runner.select(['backend/app/confirmation_details.py'], graph={})[0] == {'posting', 'agent', 'applications'}
     assert runner.select(['backend/app/authorized_api.py'], graph={})[0] == {'auth', 'agent', 'sync'}
     assert runner.select(['backend/app/sync/merge.py'], graph={})[0] == {'sync'}
@@ -41,12 +43,28 @@ def test_feature_selection_includes_backend_consumers():
     assert runner.select(['backend/app/agent_call_context.py'], graph={})[0] == runner.BACKEND
 
 
+def test_mail_scanner_package_selects_all_runtime_consumers():
+    expected = {'applications', 'posting', 'agent', 'sync', 'activity', 'migrations', 'auth', 'system', 'followups'}
+    for module in ('__init__', 'models', 'languages', 'providers', 'another_provider'):
+        assert runner.select([f'backend/app/mail_scanners/{module}.py'], graph={})[0] == expected
+
+
+def test_mailbox_pipeline_modules_select_their_runtime_consumers():
+    expected = {'applications', 'sync', 'activity', 'migrations', 'followups', 'auth', 'system'}
+    for module in ('application_sync', 'mailbox_scan', 'mailbox_import', 'mailbox_evidence', 'mailbox_matching'):
+        assert runner.select([f'backend/app/{module}.py'], graph={})[0] == expected
+
+
 def test_frontend_import_graph_tracks_transitive_components_and_raw_assets():
     graph = runner.frontend_dependencies()
     _, front, _ = runner.select(['frontend/src/components/shared/TemplateField.vue'], graph)
     assert front == {'auth', 'followups', 'shell'}
     _, front, _ = runner.select(['frontend/public/sw.js'], graph)
     assert front == {'notifications'}
+
+
+def test_ai_connections_select_auth_checks():
+    assert runner.select(['backend/app/ai_connections.py'], graph={})[0] == {'auth'}
 
 
 def test_shared_and_unknown_files_fall_back_to_full_affected_layer():
@@ -62,6 +80,8 @@ def test_test_changes_select_own_segment_and_docs_select_none():
     assert {p.parent.name for p in (runner.ROOT / 'frontend/tests').glob('*/*.test.ts')} == runner.FRONTEND
     assert runner.select(['backend/tests/posting/test_posting_checker.py'], graph={})[0] == {'posting'}
     assert runner.select(['frontend/tests/auth/auth.test.ts'], graph={})[1] == {'auth'}
+    assert runner.select(['frontend/tests/sync/replica.test.ts'], graph={})[1] == {'sync'}
+    assert runner.select(['backend/app/sync/probe.py'], graph={})[0] >= {'sync', 'auth'}
     assert runner.select(['README.md', 'design.md'], graph={}) == (set(), set(), False)
     with pytest.raises(ValueError):
         runner.select(['../outside-workspace.py'], graph={})

@@ -1,6 +1,7 @@
 """One deterministic template and instruction contract for humans and agents."""
 from datetime import date, datetime, time, timedelta, timezone
 from enum import Enum
+import hashlib
 import json
 import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -11,13 +12,80 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.config import Settings
-from app.models import Application, ApplicationDocument, FollowUp, GeneralSettings, Interview, Note, Task
+from app.models import Application, ApplicationDocument, FollowUp, FollowUpMessageVersion, GeneralSettings, Interview, Note, Task, utc_now
 
 TAG = re.compile(r"\{([^{}\n]+)\}")
 ALIASES = {"company": "company_name", "company name": "company_name", "job_title": "position_name", "position name": "position_name"}
 FIELD_NAMES = {"company": "company_name", "job_title": "position_name"}
 DEFAULT_SUBJECT = "Following up on my application — {position_name}"
 DEFAULT_BODY = "Hello,\n\nI'm following up on my application for {position_name} at {company_name}, submitted on {date_applied}. I'm still interested in the opportunity and would appreciate any update on the next steps.\n\nBest regards,\n{signature}"
+LOCALIZED_TEMPLATES = {
+    "en": (DEFAULT_SUBJECT, DEFAULT_BODY),
+    "fr": ("Suivi de ma candidature — {position_name}",
+           "Bonjour,\n\nJe me permets de revenir vers vous concernant ma candidature au poste de {position_name} chez {company_name}, envoyée le {date_applied}. Ce poste m'intéresse toujours et je vous serais reconnaissant de bien vouloir m'informer des prochaines étapes du recrutement.\n\nCordialement,\n{signature}"),
+}
+
+
+class FollowUpLanguageInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    language: str = Field(pattern="^(en|fr)$")
+    rewrite_existing: bool = False
+    expected_revision: int = Field(ge=1)
+
+
+class MessageLanguageInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    language: str = Field(pattern="^(en|fr)$")
+    expected_revision: int = Field(ge=1)
+
+
+class RestoreMessageInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1)
+
+
+def language_code(value: str) -> str:
+    value = value.strip().lower()
+    return {"english": "en", "anglais": "en", "french": "fr", "français": "fr"}.get(value, value) or "en"
+
+
+def message_payload(item: FollowUp) -> dict:
+    return {"language": item.message_language, **{field: getattr(item, field) for field in (
+        "subject", "body", "instructions", "customization", "template_snapshot", "variable_snapshot")}}
+
+
+def message_fingerprint(item: FollowUp) -> str:
+    return hashlib.sha256(json.dumps(message_payload(item), sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def remember_message(session: Session, item: FollowUp, *, activated=False):
+    """Preserve exact local content, including manual/agent edits, without pruning languages."""
+    from app.sync.domain import imported_record
+    if item.channel.value == "PHONE" or not (item.subject or item.body) or imported_record(session, "followup", item.id):
+        return None
+    fingerprint = message_fingerprint(item)
+    version = session.scalar(select(FollowUpMessageVersion).where(
+        FollowUpMessageVersion.followup_id == item.id, FollowUpMessageVersion.fingerprint == fingerprint))
+    if version is None:
+        version = FollowUpMessageVersion(followup_id=item.id, fingerprint=fingerprint,
+            source_revision=item.revision, **message_payload(item))
+        session.add(version)
+        session.flush()
+    if activated:
+        version.last_used_at = utc_now()
+    return version
+
+
+def localized_defaults(general: dict, language: str) -> dict:
+    """Localize built-in templates; custom templates remain explicitly authored text."""
+    code = language_code(language)
+    if code not in LOCALIZED_TEMPLATES:
+        return general
+    result = dict(general)
+    for index, field in enumerate(("subject_template", "body_template")):
+        if general[field] in {pair[index] for pair in LOCALIZED_TEMPLATES.values()}:
+            result[field] = LOCALIZED_TEMPLATES[code][index]
+    return result
 
 
 class Customization(BaseModel):
@@ -39,6 +107,8 @@ class GeneralSettingsInput(BaseModel):
     max_followup_suggestions: int = Field(default=2, ge=0, le=100)
     unsuccessful_review_after: int = Field(default=3, ge=0, le=100)
     recipient_page_limit: int = Field(default=6, ge=1, le=100)
+    mail_sync_max_messages: int = Field(default=100, ge=1, le=1000, strict=True)
+    mail_sync_not_before: str = '2026-01-01'
     timezone: str = "Europe/Paris"
     reminder_time: str = "09:00"
     notifications_enabled: bool = True
@@ -46,6 +116,13 @@ class GeneralSettingsInput(BaseModel):
     quiet_end: str = "08:00"
     daily_digest: bool = True
     expected_revision: int | None = Field(default=None, ge=1)
+
+    @field_validator('mail_sync_not_before')
+    @classmethod
+    def valid_mail_boundary(cls, value):
+        if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', value) or date.fromisoformat(value) < date(2026, 1, 1):
+            raise ValueError('Choose an application date on or after 2026-01-01')
+        return value
 
     @field_validator("timezone")
     @classmethod
@@ -201,11 +278,13 @@ def prepare(session: Session, application: Application, item: FollowUp, settings
         item.recipient_source_url = previous.recipient_source_url if previous and not application.contact_email else None
     general = current_settings(session, settings)
     values = context_values(session, application, item, general)
-    snapshot = item.template_snapshot if refresh and item.template_snapshot else general
+    snapshot = item.template_snapshot if refresh and item.template_snapshot else localized_defaults(general, effective_preferences(application, item, general)["language"])
     item.template_snapshot = {name: snapshot[name] for name in ("subject_template", "body_template", "revision", "language", "tone", "signature", "instructions")}
     item.variable_snapshot = values
     item.subject = render(snapshot["subject_template"], values)["text"]
     item.body = render(snapshot["body_template"], values)["text"]
+    item.message_language = language_code(values["language"])
+    item.template_snapshot = {**item.template_snapshot, "language": values["language"]}
     from app.models import FollowUpStatus, utc_now
     item.prepared_at = utc_now()
     item.status = FollowUpStatus.PREPARED

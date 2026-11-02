@@ -1,0 +1,1029 @@
+{
+  "cases": [
+    {
+      "name": "root",
+      "events": [
+        {
+          "version": 1,
+          "event_id": "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+          "device_seq": 1,
+          "entity": "application",
+          "entity_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+          "op": "create",
+          "parents": [],
+          "changes": {
+            "company": "Équipe 東京 😀",
+            "job_title": "Engineer",
+            "date_applied": "2026-10-28",
+            "job_url": "https://example.invalid/phone",
+            "email_reference": null,
+            "status": "SUBMITTED",
+            "outcome": null,
+            "deleted": false
+          },
+          "actor": "HUMAN"
+        }
+      ],
+      "expected": {
+        "state": {
+          "company": "Équipe 東京 😀",
+          "job_title": "Engineer",
+          "date_applied": "2026-10-28",
+          "job_url": "https://example.invalid/phone",
+          "email_reference": null,
+          "status": "SUBMITTED",
+          "outcome": null,
+          "deleted": false
+        },
+        "heads": [
+          "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e"
+        ],
+        "reason": null,
+        "variants": [
+          {
+            "head": "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e",
+            "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+            "actor": "HUMAN",
+            "state": {
+              "company": "Équipe 東京 😀",
+              "date_applied": "2026-10-28",
+              "deleted": false,
+              "email_reference": null,
+              "job_title": "Engineer",
+              "job_url": "https://example.invalid/phone",
+              "outcome": null,
+              "status": "SUBMITTED"
+            }
+          }
+        ],
+        "base": {},
+        "ready": [
+          "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e"
+        ]
+      }
+    },
+    {
+      "name": "disjoint",
+      "events": [
+        {
+          "version": 1,
+          "event_id": "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+          "device_seq": 1,
+          "entity": "application",
+          "entity_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+          "op": "create",
+          "parents": [],
+          "changes": {
+            "company": "Équipe 東京 😀",
+            "job_title": "Engineer",
+            "date_applied": "2026-10-28",
+            "job_url": "https://example.invalid/phone",
+            "email_reference": null,
+            "status": "SUBMITTED",
+            "outcome": null,
+            "deleted": false
+          },
+          "actor": "HUMAN"
+        },
+        {
+          "version": 1,
+          "event_id": "0b080e56-3dec-569b-9573-fd9ad243e52b",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+          "device_seq": 2,
+          "entity": "application",
+          "entity_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+          "op": "patch",
+          "parents": [
+            "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e"
+          ],
+          "changes": {
+            "company": "Desktop employer"
+          },
+          "actor": "HUMAN"
+        },
+        {
+          "version": 1,
+          "event_id": "340a6c70-e584-5e23-b62a-dc8af91663b7",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "2d0b7c5e-df14-5736-bf3b-a0e7d7d44629",
+          "device_seq": 3,
+          "entity": "application",
+          "entity_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+          "op": "patch",
+          "parents": [
+            "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e"
+          ],
+          "changes": {
+            "job_title": "Phone title"
+          },
+          "actor": "HUMAN"
+        }
+      ],
+      "expected": {
+        "state": {
+          "company": "Desktop employer",
+          "job_title": "Phone title",
+          "date_applied": "2026-10-28",
+          "job_url": "https://example.invalid/phone",
+          "email_reference": null,
+          "status": "SUBMITTED",
+          "outcome": null,
+          "deleted": false
+        },
+        "heads": [
+          "0b080e56-3dec-569b-9573-fd9ad243e52b",
+          "340a6c70-e584-5e23-b62a-dc8af91663b7"
+        ],
+        "reason": null,
+        "variants": [
+          {
+            "head": "0b080e56-3dec-569b-9573-fd9ad243e52b",
+            "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+            "actor": "HUMAN",
+            "state": {
+              "company": "Desktop employer",
+              "date_applied": "2026-10-28",
+              "deleted": false,
+              "email_reference": null,
+              "job_title": "Engineer",
+              "job_url": "https://example.invalid/phone",
+              "outcome": null,
+              "status": "SUBMITTED"
+            }
+          },
+          {
+            "head": "340a6c70-e584-5e23-b62a-dc8af91663b7",
+            "device_id": "2d0b7c5e-df14-5736-bf3b-a0e7d7d44629",
+            "actor": "HUMAN",
+            "state": {
+              "company": "Équipe 東京 😀",
+              "date_applied": "2026-10-28",
+              "deleted": false,
+              "email_reference": null,
+              "job_title": "Phone title",
+              "job_url": "https://example.invalid/phone",
+              "outcome": null,
+              "status": "SUBMITTED"
+            }
+          }
+        ],
+        "base": {
+          "company": "Équipe 東京 😀",
+          "date_applied": "2026-10-28",
+          "deleted": false,
+          "email_reference": null,
+          "job_title": "Engineer",
+          "job_url": "https://example.invalid/phone",
+          "outcome": null,
+          "status": "SUBMITTED"
+        },
+        "ready": [
+          "0b080e56-3dec-569b-9573-fd9ad243e52b",
+          "340a6c70-e584-5e23-b62a-dc8af91663b7",
+          "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e"
+        ]
+      }
+    },
+    {
+      "name": "competing",
+      "events": [
+        {
+          "version": 1,
+          "event_id": "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+          "device_seq": 1,
+          "entity": "application",
+          "entity_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+          "op": "create",
+          "parents": [],
+          "changes": {
+            "company": "Équipe 東京 😀",
+            "job_title": "Engineer",
+            "date_applied": "2026-10-28",
+            "job_url": "https://example.invalid/phone",
+            "email_reference": null,
+            "status": "SUBMITTED",
+            "outcome": null,
+            "deleted": false
+          },
+          "actor": "HUMAN"
+        },
+        {
+          "version": 1,
+          "event_id": "0b080e56-3dec-569b-9573-fd9ad243e52b",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+          "device_seq": 2,
+          "entity": "application",
+          "entity_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+          "op": "patch",
+          "parents": [
+            "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e"
+          ],
+          "changes": {
+            "company": "Desktop employer"
+          },
+          "actor": "HUMAN"
+        },
+        {
+          "version": 1,
+          "event_id": "56cff64b-059d-5321-bcee-cefc86acf898",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "2d0b7c5e-df14-5736-bf3b-a0e7d7d44629",
+          "device_seq": 4,
+          "entity": "application",
+          "entity_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+          "op": "patch",
+          "parents": [
+            "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e"
+          ],
+          "changes": {
+            "company": "Competing employer"
+          },
+          "actor": "HUMAN"
+        }
+      ],
+      "expected": {
+        "state": {
+          "company": "Desktop employer",
+          "date_applied": "2026-10-28",
+          "deleted": false,
+          "email_reference": null,
+          "job_title": "Engineer",
+          "job_url": "https://example.invalid/phone",
+          "outcome": null,
+          "status": "SUBMITTED"
+        },
+        "heads": [
+          "0b080e56-3dec-569b-9573-fd9ad243e52b",
+          "56cff64b-059d-5321-bcee-cefc86acf898"
+        ],
+        "reason": "competing_values",
+        "variants": [
+          {
+            "head": "0b080e56-3dec-569b-9573-fd9ad243e52b",
+            "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+            "actor": "HUMAN",
+            "state": {
+              "company": "Desktop employer",
+              "date_applied": "2026-10-28",
+              "deleted": false,
+              "email_reference": null,
+              "job_title": "Engineer",
+              "job_url": "https://example.invalid/phone",
+              "outcome": null,
+              "status": "SUBMITTED"
+            }
+          },
+          {
+            "head": "56cff64b-059d-5321-bcee-cefc86acf898",
+            "device_id": "2d0b7c5e-df14-5736-bf3b-a0e7d7d44629",
+            "actor": "HUMAN",
+            "state": {
+              "company": "Competing employer",
+              "date_applied": "2026-10-28",
+              "deleted": false,
+              "email_reference": null,
+              "job_title": "Engineer",
+              "job_url": "https://example.invalid/phone",
+              "outcome": null,
+              "status": "SUBMITTED"
+            }
+          }
+        ],
+        "base": {
+          "company": "Équipe 東京 😀",
+          "date_applied": "2026-10-28",
+          "deleted": false,
+          "email_reference": null,
+          "job_title": "Engineer",
+          "job_url": "https://example.invalid/phone",
+          "outcome": null,
+          "status": "SUBMITTED"
+        },
+        "ready": [
+          "0b080e56-3dec-569b-9573-fd9ad243e52b",
+          "56cff64b-059d-5321-bcee-cefc86acf898",
+          "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e"
+        ]
+      }
+    },
+    {
+      "name": "close_edit",
+      "events": [
+        {
+          "version": 1,
+          "event_id": "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+          "device_seq": 1,
+          "entity": "application",
+          "entity_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+          "op": "create",
+          "parents": [],
+          "changes": {
+            "company": "Équipe 東京 😀",
+            "job_title": "Engineer",
+            "date_applied": "2026-10-28",
+            "job_url": "https://example.invalid/phone",
+            "email_reference": null,
+            "status": "SUBMITTED",
+            "outcome": null,
+            "deleted": false
+          },
+          "actor": "HUMAN"
+        },
+        {
+          "version": 1,
+          "event_id": "916f3f60-cbd2-596d-be51-5eefdbdc47ff",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+          "device_seq": 5,
+          "entity": "application",
+          "entity_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+          "op": "patch",
+          "parents": [
+            "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e"
+          ],
+          "changes": {
+            "status": "CLOSED",
+            "outcome": "WITHDRAWN"
+          },
+          "actor": "HUMAN"
+        },
+        {
+          "version": 1,
+          "event_id": "340a6c70-e584-5e23-b62a-dc8af91663b7",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "2d0b7c5e-df14-5736-bf3b-a0e7d7d44629",
+          "device_seq": 3,
+          "entity": "application",
+          "entity_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+          "op": "patch",
+          "parents": [
+            "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e"
+          ],
+          "changes": {
+            "job_title": "Phone title"
+          },
+          "actor": "HUMAN"
+        }
+      ],
+      "expected": {
+        "state": {
+          "company": "Équipe 東京 😀",
+          "date_applied": "2026-10-28",
+          "deleted": false,
+          "email_reference": null,
+          "job_title": "Phone title",
+          "job_url": "https://example.invalid/phone",
+          "outcome": "WITHDRAWN",
+          "status": "CLOSED"
+        },
+        "heads": [
+          "340a6c70-e584-5e23-b62a-dc8af91663b7",
+          "916f3f60-cbd2-596d-be51-5eefdbdc47ff"
+        ],
+        "reason": "concurrent_transition",
+        "variants": [
+          {
+            "head": "340a6c70-e584-5e23-b62a-dc8af91663b7",
+            "device_id": "2d0b7c5e-df14-5736-bf3b-a0e7d7d44629",
+            "actor": "HUMAN",
+            "state": {
+              "company": "Équipe 東京 😀",
+              "date_applied": "2026-10-28",
+              "deleted": false,
+              "email_reference": null,
+              "job_title": "Phone title",
+              "job_url": "https://example.invalid/phone",
+              "outcome": null,
+              "status": "SUBMITTED"
+            }
+          },
+          {
+            "head": "916f3f60-cbd2-596d-be51-5eefdbdc47ff",
+            "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+            "actor": "HUMAN",
+            "state": {
+              "company": "Équipe 東京 😀",
+              "date_applied": "2026-10-28",
+              "deleted": false,
+              "email_reference": null,
+              "job_title": "Engineer",
+              "job_url": "https://example.invalid/phone",
+              "outcome": "WITHDRAWN",
+              "status": "CLOSED"
+            }
+          }
+        ],
+        "base": {
+          "company": "Équipe 東京 😀",
+          "date_applied": "2026-10-28",
+          "deleted": false,
+          "email_reference": null,
+          "job_title": "Engineer",
+          "job_url": "https://example.invalid/phone",
+          "outcome": null,
+          "status": "SUBMITTED"
+        },
+        "ready": [
+          "340a6c70-e584-5e23-b62a-dc8af91663b7",
+          "916f3f60-cbd2-596d-be51-5eefdbdc47ff",
+          "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e"
+        ]
+      }
+    },
+    {
+      "name": "delete_edit",
+      "events": [
+        {
+          "version": 1,
+          "event_id": "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+          "device_seq": 1,
+          "entity": "application",
+          "entity_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+          "op": "create",
+          "parents": [],
+          "changes": {
+            "company": "Équipe 東京 😀",
+            "job_title": "Engineer",
+            "date_applied": "2026-10-28",
+            "job_url": "https://example.invalid/phone",
+            "email_reference": null,
+            "status": "SUBMITTED",
+            "outcome": null,
+            "deleted": false
+          },
+          "actor": "HUMAN"
+        },
+        {
+          "version": 1,
+          "event_id": "bdf2e9b5-d1ad-57c1-a49f-a6196b6258b5",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+          "device_seq": 6,
+          "entity": "application",
+          "entity_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+          "op": "delete",
+          "parents": [
+            "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e"
+          ],
+          "changes": {
+            "deleted": true
+          },
+          "actor": "HUMAN"
+        },
+        {
+          "version": 1,
+          "event_id": "340a6c70-e584-5e23-b62a-dc8af91663b7",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "2d0b7c5e-df14-5736-bf3b-a0e7d7d44629",
+          "device_seq": 3,
+          "entity": "application",
+          "entity_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+          "op": "patch",
+          "parents": [
+            "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e"
+          ],
+          "changes": {
+            "job_title": "Phone title"
+          },
+          "actor": "HUMAN"
+        }
+      ],
+      "expected": {
+        "state": {
+          "company": "Équipe 東京 😀",
+          "date_applied": "2026-10-28",
+          "deleted": true,
+          "email_reference": null,
+          "job_title": "Phone title",
+          "job_url": "https://example.invalid/phone",
+          "outcome": null,
+          "status": "SUBMITTED"
+        },
+        "heads": [
+          "340a6c70-e584-5e23-b62a-dc8af91663b7",
+          "bdf2e9b5-d1ad-57c1-a49f-a6196b6258b5"
+        ],
+        "reason": "concurrent_transition",
+        "variants": [
+          {
+            "head": "340a6c70-e584-5e23-b62a-dc8af91663b7",
+            "device_id": "2d0b7c5e-df14-5736-bf3b-a0e7d7d44629",
+            "actor": "HUMAN",
+            "state": {
+              "company": "Équipe 東京 😀",
+              "date_applied": "2026-10-28",
+              "deleted": false,
+              "email_reference": null,
+              "job_title": "Phone title",
+              "job_url": "https://example.invalid/phone",
+              "outcome": null,
+              "status": "SUBMITTED"
+            }
+          },
+          {
+            "head": "bdf2e9b5-d1ad-57c1-a49f-a6196b6258b5",
+            "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+            "actor": "HUMAN",
+            "state": {
+              "company": "Équipe 東京 😀",
+              "date_applied": "2026-10-28",
+              "deleted": true,
+              "email_reference": null,
+              "job_title": "Engineer",
+              "job_url": "https://example.invalid/phone",
+              "outcome": null,
+              "status": "SUBMITTED"
+            }
+          }
+        ],
+        "base": {
+          "company": "Équipe 東京 😀",
+          "date_applied": "2026-10-28",
+          "deleted": false,
+          "email_reference": null,
+          "job_title": "Engineer",
+          "job_url": "https://example.invalid/phone",
+          "outcome": null,
+          "status": "SUBMITTED"
+        },
+        "ready": [
+          "340a6c70-e584-5e23-b62a-dc8af91663b7",
+          "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e",
+          "bdf2e9b5-d1ad-57c1-a49f-a6196b6258b5"
+        ]
+      }
+    },
+    {
+      "name": "missing",
+      "events": [
+        {
+          "version": 1,
+          "event_id": "0b080e56-3dec-569b-9573-fd9ad243e52b",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+          "device_seq": 2,
+          "entity": "application",
+          "entity_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+          "op": "patch",
+          "parents": [
+            "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e"
+          ],
+          "changes": {
+            "company": "Desktop employer"
+          },
+          "actor": "HUMAN"
+        }
+      ],
+      "expected": {
+        "state": {},
+        "heads": [],
+        "reason": "missing_ancestors",
+        "variants": [],
+        "base": {},
+        "ready": []
+      }
+    },
+    {
+      "name": "resolved",
+      "events": [
+        {
+          "version": 1,
+          "event_id": "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+          "device_seq": 1,
+          "entity": "application",
+          "entity_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+          "op": "create",
+          "parents": [],
+          "changes": {
+            "company": "Équipe 東京 😀",
+            "job_title": "Engineer",
+            "date_applied": "2026-10-28",
+            "job_url": "https://example.invalid/phone",
+            "email_reference": null,
+            "status": "SUBMITTED",
+            "outcome": null,
+            "deleted": false
+          },
+          "actor": "HUMAN"
+        },
+        {
+          "version": 1,
+          "event_id": "0b080e56-3dec-569b-9573-fd9ad243e52b",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+          "device_seq": 2,
+          "entity": "application",
+          "entity_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+          "op": "patch",
+          "parents": [
+            "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e"
+          ],
+          "changes": {
+            "company": "Desktop employer"
+          },
+          "actor": "HUMAN"
+        },
+        {
+          "version": 1,
+          "event_id": "56cff64b-059d-5321-bcee-cefc86acf898",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "2d0b7c5e-df14-5736-bf3b-a0e7d7d44629",
+          "device_seq": 4,
+          "entity": "application",
+          "entity_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+          "op": "patch",
+          "parents": [
+            "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e"
+          ],
+          "changes": {
+            "company": "Competing employer"
+          },
+          "actor": "HUMAN"
+        },
+        {
+          "version": 1,
+          "event_id": "f16d526d-6fae-5b6c-b69f-95a8d2f5d755",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+          "device_seq": 7,
+          "entity": "application",
+          "entity_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+          "op": "resolution",
+          "parents": [
+            "0b080e56-3dec-569b-9573-fd9ad243e52b",
+            "56cff64b-059d-5321-bcee-cefc86acf898"
+          ],
+          "changes": {
+            "company": "Reviewed employer",
+            "job_title": "Engineer",
+            "date_applied": "2026-10-28",
+            "job_url": "https://example.invalid/phone",
+            "email_reference": null,
+            "status": "SUBMITTED",
+            "outcome": null,
+            "deleted": false
+          },
+          "actor": "HUMAN"
+        }
+      ],
+      "expected": {
+        "state": {
+          "company": "Reviewed employer",
+          "job_title": "Engineer",
+          "date_applied": "2026-10-28",
+          "job_url": "https://example.invalid/phone",
+          "email_reference": null,
+          "status": "SUBMITTED",
+          "outcome": null,
+          "deleted": false
+        },
+        "heads": [
+          "f16d526d-6fae-5b6c-b69f-95a8d2f5d755"
+        ],
+        "reason": null,
+        "variants": [
+          {
+            "head": "f16d526d-6fae-5b6c-b69f-95a8d2f5d755",
+            "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+            "actor": "HUMAN",
+            "state": {
+              "company": "Reviewed employer",
+              "date_applied": "2026-10-28",
+              "deleted": false,
+              "email_reference": null,
+              "job_title": "Engineer",
+              "job_url": "https://example.invalid/phone",
+              "outcome": null,
+              "status": "SUBMITTED"
+            }
+          }
+        ],
+        "base": {
+          "company": "Desktop employer",
+          "date_applied": "2026-10-28",
+          "deleted": false,
+          "email_reference": null,
+          "job_title": "Engineer",
+          "job_url": "https://example.invalid/phone",
+          "outcome": null,
+          "status": "SUBMITTED"
+        },
+        "ready": [
+          "0b080e56-3dec-569b-9573-fd9ad243e52b",
+          "56cff64b-059d-5321-bcee-cefc86acf898",
+          "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e",
+          "f16d526d-6fae-5b6c-b69f-95a8d2f5d755"
+        ]
+      }
+    },
+    {
+      "name": "task",
+      "events": [
+        {
+          "version": 1,
+          "event_id": "d7ea518b-60b2-53f9-b3f8-5be189f66d45",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+          "device_seq": 8,
+          "entity": "task",
+          "entity_id": "d7ea518b-60b2-53f9-b3f8-5be189f66d45",
+          "op": "create",
+          "parents": [],
+          "changes": {
+            "application_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+            "title": "Call employer",
+            "status": "COMPLETED",
+            "due_at": null,
+            "completed_at": "2026-10-28T12:00:00Z",
+            "deleted": false
+          },
+          "actor": "HUMAN"
+        }
+      ],
+      "expected": {
+        "state": {
+          "application_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+          "title": "Call employer",
+          "status": "COMPLETED",
+          "due_at": null,
+          "completed_at": "2026-10-28T12:00:00Z",
+          "deleted": false
+        },
+        "heads": [
+          "d7ea518b-60b2-53f9-b3f8-5be189f66d45"
+        ],
+        "reason": null,
+        "variants": [
+          {
+            "head": "d7ea518b-60b2-53f9-b3f8-5be189f66d45",
+            "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+            "actor": "HUMAN",
+            "state": {
+              "application_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+              "completed_at": "2026-10-28T12:00:00Z",
+              "deleted": false,
+              "due_at": null,
+              "status": "COMPLETED",
+              "title": "Call employer"
+            }
+          }
+        ],
+        "base": {},
+        "ready": [
+          "d7ea518b-60b2-53f9-b3f8-5be189f66d45"
+        ]
+      }
+    },
+    {
+      "name": "interview",
+      "events": [
+        {
+          "version": 1,
+          "event_id": "265408be-b72a-5156-ae89-a23581c384a6",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+          "device_seq": 9,
+          "entity": "interview",
+          "entity_id": "265408be-b72a-5156-ae89-a23581c384a6",
+          "op": "create",
+          "parents": [],
+          "changes": {
+            "application_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+            "scheduled_at": "2026-11-04T10:00:00Z",
+            "type": "HR",
+            "duration": 45,
+            "deleted": false
+          },
+          "actor": "HUMAN"
+        }
+      ],
+      "expected": {
+        "state": {
+          "application_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+          "scheduled_at": "2026-11-04T10:00:00Z",
+          "type": "HR",
+          "duration": 45,
+          "deleted": false
+        },
+        "heads": [
+          "265408be-b72a-5156-ae89-a23581c384a6"
+        ],
+        "reason": null,
+        "variants": [
+          {
+            "head": "265408be-b72a-5156-ae89-a23581c384a6",
+            "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+            "actor": "HUMAN",
+            "state": {
+              "application_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+              "deleted": false,
+              "duration": 45,
+              "scheduled_at": "2026-11-04T10:00:00Z",
+              "type": "HR"
+            }
+          }
+        ],
+        "base": {},
+        "ready": [
+          "265408be-b72a-5156-ae89-a23581c384a6"
+        ]
+      }
+    },
+    {
+      "name": "followup",
+      "events": [
+        {
+          "version": 1,
+          "event_id": "cf2d8a2d-ef9c-5388-a190-f2bb75d7a8c6",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+          "device_seq": 10,
+          "entity": "followup",
+          "entity_id": "cf2d8a2d-ef9c-5388-a190-f2bb75d7a8c6",
+          "op": "create",
+          "parents": [],
+          "changes": {
+            "application_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+            "sequence_number": 1,
+            "due_at": "2026-11-01T09:00:00Z",
+            "status": "PREPARED",
+            "sent_at": null,
+            "archived_at": null,
+            "snoozed_until": null,
+            "is_automatic": true,
+            "parent_followup_id": null,
+            "deleted": false
+          },
+          "actor": "HUMAN"
+        }
+      ],
+      "expected": {
+        "state": {
+          "application_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+          "sequence_number": 1,
+          "due_at": "2026-11-01T09:00:00Z",
+          "status": "PREPARED",
+          "sent_at": null,
+          "archived_at": null,
+          "snoozed_until": null,
+          "is_automatic": true,
+          "parent_followup_id": null,
+          "deleted": false
+        },
+        "heads": [
+          "cf2d8a2d-ef9c-5388-a190-f2bb75d7a8c6"
+        ],
+        "reason": null,
+        "variants": [
+          {
+            "head": "cf2d8a2d-ef9c-5388-a190-f2bb75d7a8c6",
+            "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+            "actor": "HUMAN",
+            "state": {
+              "application_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+              "archived_at": null,
+              "deleted": false,
+              "due_at": "2026-11-01T09:00:00Z",
+              "is_automatic": true,
+              "parent_followup_id": null,
+              "sent_at": null,
+              "sequence_number": 1,
+              "snoozed_until": null,
+              "status": "PREPARED"
+            }
+          }
+        ],
+        "base": {},
+        "ready": [
+          "cf2d8a2d-ef9c-5388-a190-f2bb75d7a8c6"
+        ]
+      }
+    }
+  ],
+  "crypto": {
+    "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "workspace": "8879d282-30a3-5b89-a8e7-c61715413dee",
+    "subject": "synthetic-verified-subject",
+    "recovery": "ats1.8879d282-30a3-5b89-a8e7-c61715413dee.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8.sGdAAYr_1sjlPrw6_uOwaBXrgO3vyDRQADNpkZX1KSg",
+    "batch": {
+      "version": 1,
+      "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+      "batch_id": "dc6516a5-be83-5fef-a6c4-f411b4a9cd9f",
+      "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+      "kind": "checkpoint",
+      "mutations": [
+        {
+          "version": 1,
+          "event_id": "a6237cdc-c6bf-5e2d-b5ec-20ddee13845e",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+          "device_seq": 1,
+          "entity": "application",
+          "entity_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+          "op": "create",
+          "parents": [],
+          "changes": {
+            "company": "Équipe 東京 😀",
+            "job_title": "Engineer",
+            "date_applied": "2026-10-28",
+            "job_url": "https://example.invalid/phone",
+            "email_reference": null,
+            "status": "SUBMITTED",
+            "outcome": null,
+            "deleted": false
+          },
+          "actor": "HUMAN"
+        },
+        {
+          "version": 1,
+          "event_id": "d7ea518b-60b2-53f9-b3f8-5be189f66d45",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+          "device_seq": 8,
+          "entity": "task",
+          "entity_id": "d7ea518b-60b2-53f9-b3f8-5be189f66d45",
+          "op": "create",
+          "parents": [],
+          "changes": {
+            "application_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+            "title": "Call employer",
+            "status": "COMPLETED",
+            "due_at": null,
+            "completed_at": "2026-10-28T12:00:00Z",
+            "deleted": false
+          },
+          "actor": "HUMAN"
+        },
+        {
+          "version": 1,
+          "event_id": "265408be-b72a-5156-ae89-a23581c384a6",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+          "device_seq": 9,
+          "entity": "interview",
+          "entity_id": "265408be-b72a-5156-ae89-a23581c384a6",
+          "op": "create",
+          "parents": [],
+          "changes": {
+            "application_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+            "scheduled_at": "2026-11-04T10:00:00Z",
+            "type": "HR",
+            "duration": 45,
+            "deleted": false
+          },
+          "actor": "HUMAN"
+        },
+        {
+          "version": 1,
+          "event_id": "cf2d8a2d-ef9c-5388-a190-f2bb75d7a8c6",
+          "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee",
+          "device_id": "c2430dd2-9e02-5ee7-911e-c2c3c910c4cd",
+          "device_seq": 10,
+          "entity": "followup",
+          "entity_id": "cf2d8a2d-ef9c-5388-a190-f2bb75d7a8c6",
+          "op": "create",
+          "parents": [],
+          "changes": {
+            "application_id": "a48d2913-11dc-5d38-8c1c-998ce935bb51",
+            "sequence_number": 1,
+            "due_at": "2026-11-01T09:00:00Z",
+            "status": "PREPARED",
+            "sent_at": null,
+            "archived_at": null,
+            "snoozed_until": null,
+            "is_automatic": true,
+            "parent_followup_id": null,
+            "deleted": false
+          },
+          "actor": "HUMAN"
+        }
+      ],
+      "acknowledgments": {}
+    },
+    "canonical": "{\"acknowledgments\":{},\"batch_id\":\"dc6516a5-be83-5fef-a6c4-f411b4a9cd9f\",\"device_id\":\"c2430dd2-9e02-5ee7-911e-c2c3c910c4cd\",\"kind\":\"checkpoint\",\"mutations\":[{\"actor\":\"HUMAN\",\"changes\":{\"company\":\"Équipe 東京 😀\",\"date_applied\":\"2026-10-28\",\"deleted\":false,\"email_reference\":null,\"job_title\":\"Engineer\",\"job_url\":\"https://example.invalid/phone\",\"outcome\":null,\"status\":\"SUBMITTED\"},\"device_id\":\"c2430dd2-9e02-5ee7-911e-c2c3c910c4cd\",\"device_seq\":1,\"entity\":\"application\",\"entity_id\":\"a48d2913-11dc-5d38-8c1c-998ce935bb51\",\"event_id\":\"a6237cdc-c6bf-5e2d-b5ec-20ddee13845e\",\"op\":\"create\",\"parents\":[],\"version\":1,\"workspace_id\":\"8879d282-30a3-5b89-a8e7-c61715413dee\"},{\"actor\":\"HUMAN\",\"changes\":{\"application_id\":\"a48d2913-11dc-5d38-8c1c-998ce935bb51\",\"completed_at\":\"2026-10-28T12:00:00Z\",\"deleted\":false,\"due_at\":null,\"status\":\"COMPLETED\",\"title\":\"Call employer\"},\"device_id\":\"c2430dd2-9e02-5ee7-911e-c2c3c910c4cd\",\"device_seq\":8,\"entity\":\"task\",\"entity_id\":\"d7ea518b-60b2-53f9-b3f8-5be189f66d45\",\"event_id\":\"d7ea518b-60b2-53f9-b3f8-5be189f66d45\",\"op\":\"create\",\"parents\":[],\"version\":1,\"workspace_id\":\"8879d282-30a3-5b89-a8e7-c61715413dee\"},{\"actor\":\"HUMAN\",\"changes\":{\"application_id\":\"a48d2913-11dc-5d38-8c1c-998ce935bb51\",\"deleted\":false,\"duration\":45,\"scheduled_at\":\"2026-11-04T10:00:00Z\",\"type\":\"HR\"},\"device_id\":\"c2430dd2-9e02-5ee7-911e-c2c3c910c4cd\",\"device_seq\":9,\"entity\":\"interview\",\"entity_id\":\"265408be-b72a-5156-ae89-a23581c384a6\",\"event_id\":\"265408be-b72a-5156-ae89-a23581c384a6\",\"op\":\"create\",\"parents\":[],\"version\":1,\"workspace_id\":\"8879d282-30a3-5b89-a8e7-c61715413dee\"},{\"actor\":\"HUMAN\",\"changes\":{\"application_id\":\"a48d2913-11dc-5d38-8c1c-998ce935bb51\",\"archived_at\":null,\"deleted\":false,\"due_at\":\"2026-11-01T09:00:00Z\",\"is_automatic\":true,\"parent_followup_id\":null,\"sent_at\":null,\"sequence_number\":1,\"snoozed_until\":null,\"status\":\"PREPARED\"},\"device_id\":\"c2430dd2-9e02-5ee7-911e-c2c3c910c4cd\",\"device_seq\":10,\"entity\":\"followup\",\"entity_id\":\"cf2d8a2d-ef9c-5388-a190-f2bb75d7a8c6\",\"event_id\":\"cf2d8a2d-ef9c-5388-a190-f2bb75d7a8c6\",\"op\":\"create\",\"parents\":[],\"version\":1,\"workspace_id\":\"8879d282-30a3-5b89-a8e7-c61715413dee\"}],\"version\":1,\"workspace_id\":\"8879d282-30a3-5b89-a8e7-c61715413dee\"}",
+    "envelope": {
+      "ciphertext": "Jh1JQLRKiM0W4CpYJXv_ZtMELc6kU80HHUz5WdwTjn38CdqpJv2FSa7ipUGdp2E-kdzgkE15WDkglgI-NAYMlSNmHteg-Bdfpa_v4bhSb-I8jiypkGd_qsjjza9S6prtnxs8x1r0ya-JEPbwj_wZNcfx5Waoixy7abmbDxQsvX7XRvwllYbLKZHwS9TAPk4ST_IRbOysjanCz-WDIW5WQEL3Ag4AQAxtPiMtZ6UEfalcnsemO-r2hy0ecllzmhxWMcMsdUVEo_kdWP0WJF2TJlk50cP4lPgs-n9X3eRojudgLoJyyDvleIJL5LkRo19UnMSyHgEam4D3DiITBZjD6ng28IlYMWJjPRCw3S2KmJgaffbQyDRQ79si6kArQFndZXnrxboGZttQeFJtuhnyQpKmHLdTWMv9SkcHpqFqphjVwgRgi6PN6OzTr5Pvd6Lv7xN3cWOHY4u-U_i48aaRJa-Ixw5AQ-cBG40YIlRBfbuOdDxehguaEGhc-aCWDoSn27hX2tCpYbvaNFCyuYJGiLJ459Z5JT7c9vNQAM_V6sA-IICNUlEZvryyfjNxupClu8Ey_NvF677DoWcFUxX8K717fLMwErMEmXV3Jg2dfAa9Cj99FKnyFerlNCOjuHYYjv_A_Q5QSTCRqiAeIgVjwBBUrj7M78Ec7nkzyn5UzfxyBFi7m5lFJ8UWwpeD_OeBb5V6UZ8NQgtINrXuhUQYu_Ceq4ROhe4NAoIG3E53vgzfln20G_c_odeLD91wp0cnaPVeiPJ1Azqc-XuwZ_zeXU3XPYLiGSh786r9FOL4b5JPDBzdgOW8SDUkLLUZn9FXaHQsmdAaOCDad6FMKRjbARjJ8WgQ7lk6-FGODb0THWCHrTEVDTpItBxuIaFLPG_WPh39nfpcQjopWXFO5jLPPflcTPIDxl2fBqTmF1c9WCXbijLlWwmuY5u8TWLfkyQNw-Fkr6NtwPMypfrhY6Qg9_G8nxzkts06Q8lL_beBO9sQyibjW6on94N6wusOw4TwW6hkqoqr7x-5y5GEO2_l_PnyVHRVNzA",
+      "header": {
+        "batch_id": "dc6516a5-be83-5fef-a6c4-f411b4a9cd9f",
+        "sha256": "6ba7cfe3bd49f57fcdd9f5636cf29cd38eae7fa48fcdb3fff78b478df5adfd59",
+        "version": 1,
+        "workspace_id": "8879d282-30a3-5b89-a8e7-c61715413dee"
+      },
+      "nonce": "4ctIjl4ZRgTNkzKH"
+    }
+  }
+}

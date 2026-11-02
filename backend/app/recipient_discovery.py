@@ -11,7 +11,7 @@ from app import invalidation, work
 from app.applications import ApplicationNotFound, InvalidApplication, get_application
 from app.followup_templates import RevisionConflict
 from app.recipient_reports import PageReports, research_settings
-from app.models import Application, ApplicationStatus, FollowUp, FollowUpChannel, FollowUpStatus, RecipientCandidate, RecipientDiscovery, utc_now
+from app.models import Application, ApplicationStatus, FollowUp, FollowUpChannel, FollowUpStatus, RecipientCandidate, RecipientDiscovery, RecipientQueueControl, utc_now
 from app.work_schemas import FollowUpUpdate
 
 LIMIT=5
@@ -35,6 +35,15 @@ def missing_query():
 def queue_locked(session,application,refresh_pages=False):
     job=session.scalar(select(RecipientDiscovery).where(RecipientDiscovery.application_id == application.id))
     if job and job.state in ACTIVE:
+        # Automatic preparation may have queued this job before the user chose
+        # a limit or requested fresh pages. Update waiting work without creating
+        # a duplicate; an in-flight run keeps its original inputs.
+        if job.state == 'QUEUED':
+            job.context = context(application)
+            job.page_limit = application.recipient_page_limit or research_settings(session)['recipient_page_limit']
+            if refresh_pages:
+                job.refresh_pages = True
+                job.requested_at = utc_now()
         return job,False
     if job is None:
         job=RecipientDiscovery(application_id=application.id)
@@ -48,6 +57,80 @@ def queue_locked(session,application,refresh_pages=False):
     job.refresh_pages=refresh_pages
     job.page_counts={}
     return job,True
+
+
+def enqueue_prepared(session, application, item):
+    """Queue once, in the transaction that finishes preparing the local message."""
+    from app.sync.domain import imported_record
+    if (not eligible(application) or item.channel == FollowUpChannel.PHONE or item.archived_at
+            or item.status == FollowUpStatus.SENT or (item.recipient_email or '').strip()
+            or not item.prepared_at or not (item.subject or '').strip() or not (item.body or '').strip()
+            or imported_record(session, 'application', application.id)
+            or imported_record(session, 'followup', item.id)):
+        return
+    # Existing candidates and failed searches remain available for an explicit
+    # retry; preparing another message must not repeatedly crawl the employer.
+    existing = session.scalar(select(RecipientDiscovery.id).where(RecipientDiscovery.application_id == application.id))
+    if existing is None:
+        queue_locked(session, application)
+
+
+def is_paused(session):
+    control = session.get(RecipientQueueControl, 1)
+    return bool(control and control.paused)
+
+
+def release(job, state):
+    # Revoke the lease before interrupting I/O. Late results from that run can
+    # no longer replace candidates or overwrite a newly prioritized run.
+    job.state = state
+    job.lease_id = job.lease_until = None
+    job.completed_at = utc_now() if state == 'PAUSED' else None
+
+
+def set_paused(session, paused):
+    session.execute(text('BEGIN IMMEDIATE'))
+    control = session.get(RecipientQueueControl, 1)
+    if control is None:
+        control = RecipientQueueControl(id=1)
+        session.add(control)
+    control.paused, control.updated_at = paused, utc_now()
+    if paused:
+        for job in session.scalars(select(RecipientDiscovery).where(RecipientDiscovery.state == 'RUNNING')):
+            release(job, 'QUEUED')
+    session.commit()
+    return queue_state(session)
+
+
+def pause_application(session, application_id):
+    session.execute(text('BEGIN IMMEDIATE'))
+    get_application(session, application_id)
+    job = session.scalar(select(RecipientDiscovery).where(RecipientDiscovery.application_id == application_id))
+    if job is None:
+        raise ApplicationNotFound('Recipient search not found')
+    if job.state in ACTIVE:
+        release(job, 'PAUSED')
+    session.commit()
+    invalidation.publish(session, 'recipient.updated', application_id)
+    return job_read(job)
+
+
+def prioritize(session, application_id):
+    session.execute(text('BEGIN IMMEDIATE'))
+    application = get_application(session, application_id)
+    if not eligible(application):
+        raise InvalidApplication('Recipient searches require an open application')
+    job, _ = queue_locked(session, application)
+    job.priority = (session.scalar(select(func.max(RecipientDiscovery.priority))) or 0) + 1
+    running = session.scalar(select(func.count()).select_from(RecipientDiscovery).where(RecipientDiscovery.state == 'RUNNING')) or 0
+    if job.state != 'RUNNING' and not is_paused(session) and running >= LIMIT:
+        victim = session.scalar(select(RecipientDiscovery).where(RecipientDiscovery.state == 'RUNNING',
+            RecipientDiscovery.id != job.id).order_by(RecipientDiscovery.priority, RecipientDiscovery.started_at).limit(1))
+        if victim:
+            release(victim, 'QUEUED')
+    session.commit()
+    invalidation.publish(session, 'recipient.updated', application_id)
+    return job_read(job)
 
 
 def enqueue(session,application_id,refresh_pages=False):
@@ -78,7 +161,7 @@ def job_read(job):
         'started_at':job.started_at.replace(tzinfo=timezone.utc) if job.started_at else None,
         'completed_at':job.completed_at.replace(tzinfo=timezone.utc) if job.completed_at else None,
         'attempts':job.attempts,'error':job.error,'warnings':job.warnings,
-        'page_limit':job.page_limit,'refresh_pages':job.refresh_pages,'page_counts':job.page_counts}
+        'page_limit':job.page_limit,'refresh_pages':job.refresh_pages,'page_counts':job.page_counts,'priority':job.priority}
 
 
 def application_state(session,application_id):
@@ -89,6 +172,7 @@ def application_state(session,application_id):
     followups=session.scalars(select(FollowUp).where(FollowUp.application_id == application_id,FollowUp.channel != FollowUpChannel.PHONE,
         FollowUp.status != FollowUpStatus.SENT,FollowUp.archived_at.is_(None)).order_by(FollowUp.sequence_number))
     return {'job':job_read(session.scalar(select(RecipientDiscovery).where(RecipientDiscovery.application_id == application_id))),
+        'queue_paused':is_paused(session),
         'page_limit': app.recipient_page_limit or research_settings(session)['recipient_page_limit'],
         'page_limit_override': app.recipient_page_limit,
         'application_revision': app.revision,
@@ -99,15 +183,24 @@ def application_state(session,application_id):
 
 
 def queue_state(session):
-    counts=dict(session.execute(select(RecipientDiscovery.state,func.count()).group_by(RecipientDiscovery.state)).all())
+    eligible_rows = (Application.deleted_at.is_(None), Application.status != ApplicationStatus.CLOSED, Application.outcome.is_(None))
+    counts=dict(session.execute(select(RecipientDiscovery.state,func.count()).join(Application)
+                               .where(*eligible_rows).group_by(RecipientDiscovery.state)).all())
+    jobs = session.execute(select(RecipientDiscovery, Application).join(Application).where(
+        *eligible_rows, RecipientDiscovery.state.in_((*ACTIVE, 'PAUSED')))
+        .order_by(RecipientDiscovery.priority.desc(), Application.date_applied.desc(),
+                  RecipientDiscovery.requested_at.desc(), RecipientDiscovery.id).limit(20)).all()
     return {'queued':counts.get('QUEUED',0),'running':counts.get('RUNNING',0),'failed':counts.get('FAILED',0),
+        'paused':is_paused(session),'paused_jobs':counts.get('PAUSED',0),
+        'jobs':[{**job_read(job),'application_id':app.id,'company':app.company,'job_title':app.job_title,
+                 'date_applied':app.date_applied} for job,app in jobs],
         'missing_followups':session.scalar(select(func.count()).select_from(missing_query().subquery())) or 0,'concurrency_limit':LIMIT}
 
 
 def claim(engine,stopping=None):
     with Session(engine) as session:
         session.execute(text('BEGIN IMMEDIATE'))
-        if stopping is not None and stopping.is_set():
+        if (stopping is not None and stopping.is_set()) or is_paused(session):
             session.rollback()
             return None
         now=utc_now()
@@ -119,7 +212,9 @@ def claim(engine,stopping=None):
         if running >= LIMIT:
             session.commit()
             return None
-        for job in session.scalars(select(RecipientDiscovery).where(RecipientDiscovery.state=='QUEUED').order_by(RecipientDiscovery.requested_at,RecipientDiscovery.id)):
+        for job in session.scalars(select(RecipientDiscovery).join(Application).where(RecipientDiscovery.state=='QUEUED')
+                .order_by(RecipientDiscovery.priority.desc(), Application.date_applied.desc(),
+                          RecipientDiscovery.requested_at.desc(), RecipientDiscovery.id)):
             app=session.get(Application,job.application_id)
             if not eligible(app) or context(app) != job.context:
                 job.state='CANCELLED'
@@ -139,6 +234,15 @@ def claim(engine,stopping=None):
             return result
         session.commit()
         return None
+
+
+def owns_lease(engine, claimed):
+    with Session(engine) as session:
+        job = session.get(RecipientDiscovery, claimed['id'])
+        if not job or job.state != 'RUNNING' or job.lease_id != claimed['lease_id']:
+            return False
+        app = session.get(Application, job.application_id)
+        return eligible(app) and context(app) == job.context
 
 
 def complete(engine,claimed,result=None,error=None,requeue=False):
@@ -222,6 +326,13 @@ class RecipientScheduler:
         if self.researcher and hasattr(self.researcher,'close'):
             await self.researcher.close()
 
+    async def watch_lease(self, claimed, research):
+        while not research.done():
+            await asyncio.sleep(.5)
+            if not await asyncio.to_thread(owns_lease, self.engine, claimed):
+                research.cancel()
+                return
+
     async def worker(self):
         while not self.stop.is_set():
             claim_task=asyncio.create_task(asyncio.to_thread(claim,self.engine,self.stop))
@@ -240,13 +351,23 @@ class RecipientScheduler:
                 except TimeoutError:
                     pass
                 continue
+            monitor = None
             try:
                 research_context={**claimed['context'],'application_id':claimed['application_id'],
                     'page_limit':claimed['page_limit'],'refresh_after':claimed['refresh_after']}
-                result=await asyncio.wait_for(self.researcher.discover(research_context),timeout=120)
+                research = asyncio.create_task(self.researcher.discover(research_context))
+                monitor = asyncio.create_task(self.watch_lease(claimed, research))
+                result=await asyncio.wait_for(research,timeout=120)
                 await asyncio.to_thread(complete,self.engine,claimed,result)
             except asyncio.CancelledError:
                 await asyncio.to_thread(complete,self.engine,claimed,requeue=True)
-                raise
+                # A revoked job stops only its research, not its worker. Actual
+                # application shutdown still releases the lease and exits.
+                if self.stop.is_set() or asyncio.current_task().cancelling():
+                    raise
             except Exception as exc:
                 await asyncio.to_thread(complete,self.engine,claimed,error=f'Discovery failed ({type(exc).__name__}). Retry or enter a recipient manually.')
+            finally:
+                if monitor:
+                    monitor.cancel()
+                    await asyncio.gather(monitor, return_exceptions=True)

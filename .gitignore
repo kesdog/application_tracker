@@ -14,6 +14,9 @@ frontend/dist/
 /work/
 /test.md
 output/playwright/
+/output/phone-app.zip
+/output/phone-site*.tar.gz
+/output/phone-pairing-qr.png
 deploy/secrets/
 deploy/hosted.env
 backups/

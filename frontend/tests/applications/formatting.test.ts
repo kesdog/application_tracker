@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 import { detectJobSource } from '../../src/applicationOptions'
 import { positionLabel } from '../../src/presentation/applicationPresentation'
-import { emailReferences, emailReferenceUrl } from '../../src/emailReference'
+import { emailReferences, emailReferenceUrl, primaryEmailReference } from '../../src/emailReference'
 
 it('detects board sources without accepting lookalike hosts', () => {
   for (const [url, expected] of [
@@ -42,4 +42,12 @@ it('keeps references separate, drops duplicate lines and preserves punctuation i
   const references = emailReferences(' [Gmail:1a123]\r\nYour application, Engineer; Example\n[Gmail:1a123]\nhttps://outlook.office.com/mail/id/example?x=1&y=2\n')
   expect(references).toEqual(['[Gmail:1a123]', 'Your application, Engineer; Example', 'https://outlook.office.com/mail/id/example?x=1&y=2'])
   expect(emailReferences(null)).toEqual([])
+})
+
+it('prefers an account-bound message over a subject search or an account-index link', () => {
+  const direct = 'https://mail.google.com/mail/?authuser=owner%40example.com#all/abc123'
+  expect(primaryEmailReference(`Application subject\nhttps://mail.google.com/mail/u/0/#all/abc123\n${direct}`)).toBe(direct)
+  expect(primaryEmailReference('Application subject\n[Gmail:abc123]')).toBe('[Gmail:abc123]')
+  expect(primaryEmailReference('Application subject\nMessage-ID: <abc@example.com>')).toBe('Message-ID: <abc@example.com>')
+  expect(primaryEmailReference(null)).toBeNull()
 })

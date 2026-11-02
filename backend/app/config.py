@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     mcp_host: str = "127.0.0.1"
     mcp_port: int = Field(default=8001, ge=1, le=65535)
     google_client_id: str | None = None
+    # Explicit Google subject allowlist for optional hosted browser sign-in.
+    google_login_subjects: str = ""
     google_client_secret: SecretStr | None = None
     google_redirect_uri: str | None = None
     app_credential_key_file: Path | None = None

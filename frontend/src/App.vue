@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t, messageText } from './i18n'
+
 import { version as appVersion } from '../package.json'
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import Drawer from 'primevue/drawer'
@@ -80,14 +82,14 @@ onUnmounted(() => { companyRequest++; window.removeEventListener('hashchange', r
 <template>
   <div class="shell" :class="{ 'sidebar-collapsed': sidebarCollapsed && !mobile }">
     <ConfirmDialog />
-    <a class="skip-link" href="#main-content" @click.prevent="mainContent?.focus()">Skip to content</a>
-    <Drawer v-if="mobile" v-model:visible="mobileMenuOpen" position="left" header="My workspace" class="mobile-navigation" :pt="{ content: { style: 'padding: 0; display: flex; flex-direction: column;' } }">
+    <a class="skip-link" href="#main-content" @click.prevent="mainContent?.focus()">{{ t("Skip to content") }}</a>
+    <Drawer v-if="mobile" v-model:visible="mobileMenuOpen" position="left" :header="t('My workspace')" class="mobile-navigation" :pt="{ content: { style: 'padding: 0; display: flex; flex-direction: column;' } }">
       <WorkspaceNavigation :page="page" @navigate="mobileMenuOpen = false" />
     </Drawer>
     <WorkspaceNavigation v-else :page="page" />
     <div class="workspace">
-      <header class="topbar"><Button type="button" class="sidebar-toggle" :icon="mobile || sidebarCollapsed ? 'pi pi-bars' : 'pi pi-angle-double-left'" severity="secondary" text :aria-label="mobile ? 'Open navigation' : sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'" :title="mobile ? 'Open navigation' : sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'" :aria-expanded="mobile ? mobileMenuOpen : !sidebarCollapsed" aria-controls="workspace-sidebar" @click="toggleNavigation" /><nav class="page-context breadcrumbs" aria-label="Breadcrumb"><a :href="sectionHref" :title="sectionTitle" :aria-label="sectionTitle" :aria-current="company ? undefined : 'page'"><i :class="`pi ${sectionIcon}`" aria-hidden="true" /><span>{{ sectionTitle }}</span></a><template v-if="company"><i class="pi pi-angle-right separator" aria-hidden="true" /><span class="current-company" :title="company" :aria-label="company" aria-current="page"><i class="pi pi-building" aria-hidden="true" /><span>{{ company }}</span></span></template></nav><div class="theme-control"><label for="workspace-theme"><i :class="darkTheme ? 'pi pi-moon' : 'pi pi-sun'" aria-hidden="true" /><span>{{ darkTheme ? 'Dark · Midnight' : 'Light · Paper' }}</span></label><ToggleSwitch input-id="workspace-theme" v-model="darkTheme" aria-label="Dark theme" /></div><Button v-if="hosted" type="button" severity="secondary" text @click="emit('signout')">Sign out</Button></header>
-      <p v-if="appearanceSaveError || navigationSaveError" class="preference-notice at-message warning" role="status">{{ appearanceSaveError || navigationSaveError }}</p>
+      <header class="topbar"><Button type="button" class="sidebar-toggle" :icon="mobile || sidebarCollapsed ? 'pi pi-bars' : 'pi pi-angle-double-left'" severity="secondary" text :aria-label="messageText(String((mobile ? t('Open navigation') : sidebarCollapsed ? t('Expand sidebar') : t('Collapse sidebar')) ?? ''))" :title="messageText(String((mobile ? t('Open navigation') : sidebarCollapsed ? t('Expand sidebar') : t('Collapse sidebar')) ?? ''))" :aria-expanded="mobile ? mobileMenuOpen : !sidebarCollapsed" aria-controls="workspace-sidebar" @click="toggleNavigation" /><nav class="page-context breadcrumbs" :aria-label="t('Breadcrumb')"><a :href="sectionHref" :title="messageText(String((sectionTitle) ?? ''))" :aria-label="messageText(String((sectionTitle) ?? ''))" :aria-current="company ? undefined : 'page'"><i :class="`pi ${sectionIcon}`" aria-hidden="true" /><span>{{ messageText(String((sectionTitle) ?? '')) }}</span></a><template v-if="company"><i class="pi pi-angle-right separator" aria-hidden="true" /><span class="current-company" :title="company" :aria-label="company" aria-current="page"><i class="pi pi-building" aria-hidden="true" /><span>{{ company }}</span></span></template></nav><div class="theme-control"><label for="workspace-theme"><i :class="darkTheme ? 'pi pi-moon' : 'pi pi-sun'" aria-hidden="true" /><span>{{ darkTheme ? t("Dark · Midnight") : t("Light · Paper") }}</span></label><ToggleSwitch input-id="workspace-theme" v-model="darkTheme" :aria-label="t('Dark theme')" /></div><Button v-if="hosted" type="button" severity="secondary" text @click="emit('signout')">{{ t("Sign out") }}</Button></header>
+      <p v-if="appearanceSaveError || navigationSaveError" class="preference-notice at-message warning" role="status">{{ messageText(String((appearanceSaveError || navigationSaveError) ?? '')) }}</p>
       <main ref="mainContent" id="main-content" tabindex="-1">
         <Dashboard v-if="page === 'dashboard'" />
         <AddApplication v-else-if="page === 'add-application'" />
@@ -98,7 +100,7 @@ onUnmounted(() => { companyRequest++; window.removeEventListener('hashchange', r
         <AgentSettings v-else-if="page === 'settings'" />
         <Applications v-else />
       </main>
-      <footer class="workspace-footer"><div>Application Tracker <span>{{ appVersion }}</span></div><nav aria-label="Help and legal"><Button type="button" text severity="secondary" @click="emit('openGuide')">Welcome guide</Button><Button type="button" text severity="secondary" @click="emit('openLegal', 'terms')">Terms and conditions</Button><Button type="button" text severity="secondary" @click="emit('openLegal', 'privacy')">Privacy &amp; cookies</Button></nav></footer>
+      <footer class="workspace-footer"><div>{{ t("Application Tracker") }} <span>{{ appVersion }}</span></div><nav :aria-label="t('Help and legal')"><Button type="button" text severity="secondary" @click="emit('openGuide')">{{ t("Welcome guide") }}</Button><Button type="button" text severity="secondary" @click="emit('openLegal', 'terms')">{{ t("Terms and conditions") }}</Button><Button type="button" text severity="secondary" @click="emit('openLegal', 'privacy')">{{ t("Privacy & cookies") }}</Button></nav></footer>
     </div>
   </div>
 </template>

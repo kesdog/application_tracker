@@ -1,6 +1,8 @@
 # Application Tracker development checks
 
 Use `TESTING.md` for test ownership and commands.
+The detailed local coverage inventory is `test.md`; keep it ignored and out of
+application bundles.
 
 - During edits, run `python scripts/test.py --changed` with the project virtual
   environment, or select the relevant feature with `--segment`. Inspect selection

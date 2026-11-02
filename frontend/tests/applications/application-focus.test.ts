@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import '../support/browser'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
@@ -27,7 +28,8 @@ it('shows a short posting link with a copy action, separate email references and
   expect(posting.text()).toBe('Job posting')
   expect(posting.attributes('href')).toBe(record.job_url)
   expect(overview.text()).not.toContain(record.job_url)
-  expect(overview.findAll('.email-references a').map(link => link.text())).toEqual(['Email ref 1', 'Email ref 2'])
+  expect(overview.findAll('.email-references a').map(link => link.text())).toEqual(['Open email 1', 'Find email 2'])
+  expect(overview.get('.email-references a').attributes('target')).toBe('_blank')
   expect(overview.get('details').attributes('open')).toBeUndefined()
   expect(wrapper.get('details.panel').attributes('open')).toBeUndefined()
   expect(wrapper.get('.posting-tools').attributes('open')).toBeUndefined()

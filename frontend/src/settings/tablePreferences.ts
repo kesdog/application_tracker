@@ -1,15 +1,16 @@
+import { t } from '../i18n'
 import { reactive, readonly, ref } from 'vue'
 import { readPreference, writePreference } from './localPreferences'
 
 export const optionalColumns = [
-  { value: 'location', label: 'Location' }, { value: 'contract', label: 'Contract' },
-  { value: 'outcome', label: 'Outcome' }, { value: 'nextAction', label: 'Next action' },
-  { value: 'source', label: 'Source' },
+  { value: 'location', get label() { return t("Location") } }, { value: 'contract', get label() { return t("Contract") } },
+  { value: 'outcome', get label() { return t("Outcome") } }, { value: 'nextAction', get label() { return t("Next action") } },
+  { value: 'source', get label() { return t("Source") } },
 ] as const
 export type OptionalColumn = typeof optionalColumns[number]['value']
 export interface TablePreferences { version: 1; columns: OptionalColumn[]; density: 'compact' | 'comfortable'; pageSize: number }
 export const tablePreferencesKey = 'application-tracker:table-preferences'
-export const defaultTablePreferences = (): TablePreferences => ({ version: 1, columns: optionalColumns.map(c => c.value), density: 'compact', pageSize: 20 })
+export const defaultTablePreferences = (): TablePreferences => ({ version: 1, columns: ['outcome', "nextAction"], density: 'compact', pageSize: 20 })
 export function parseTablePreferences(value: unknown): TablePreferences {
   const result = defaultTablePreferences()
   if (!value || typeof value !== 'object' || Array.isArray(value)) return result
@@ -25,6 +26,6 @@ export const tablePreferences = readonly(state)
 export const tableSaveError = ref('')
 export function updateTablePreferences(value: Partial<TablePreferences>): void {
   Object.assign(state, parseTablePreferences({ ...state, ...value }))
-  tableSaveError.value = writePreference(tablePreferencesKey, state) ? '' : 'Table preferences apply for this session. Your browser could not save them.'
+  tableSaveError.value = writePreference(tablePreferencesKey, state) ? '' : t("Table preferences apply for this session. Your browser could not save them.")
 }
 export function resetTablePreferences(): void { updateTablePreferences(defaultTablePreferences()) }

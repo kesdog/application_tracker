@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.13.0 — Phone sync, optional connections and localization
+
+- Add an independent offline phone app with encrypted IndexedDB storage, direct Google Drive sync, compatibility probes and QR pairing from the desktop.
+- Add public-only phone packaging and cross-language protocol, recovery and sync coverage.
+- Keep Google, ChatGPT and Claude connections optional, with guided setup, secure credential storage and explicit account and usage controls.
+- Add optional Google workspace sign-in while preserving local tracking without sign-in.
+- Add persisted English/French interface settings, including hints, errors and accessible labels.
+- Keep follow-up email language independent of interface language, with saved message versions and explicit review before using rewritten content.
+- Improve mailbox scanning, evidence matching, deduplication and date boundaries, with review for ambiguous messages.
+- Add pause and priority controls for recipient research, including rejection of results from revoked leases.
+- Modernize shared PrimeVue controls, settings navigation, appearance and direct Gmail message links.
+
+Offline checks cover synthetic providers and phone replicas. Live provider consent, production hosting, physical Android/iPhone behavior and signed upgrades require separate acceptance.
+
 ## 0.12.0 — Release foundations
 
 - Add reviewed, bounded CSV/XLSX import with column mapping, row validation, duplicate choices and transactional replay receipts.

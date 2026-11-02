@@ -51,8 +51,8 @@ class DriveHttpStore:
                 return httpx.Response(410, json={'error': {'code': 410}})
             offset = int(query['pageToken'])
             entries = self.feed[offset:offset + self.page_size]
-            value = {'changes': [{'fileId': file_id, 'removed': removed,
-                **({} if removed else {'file': self.metadata(file_id)})} for file_id, removed in entries]}
+            value = {'changes': [{'fileId': file_id, 'removed': removed or file_id not in self.files,
+                **({} if removed or file_id not in self.files else {'file': self.metadata(file_id)})} for file_id, removed in entries]}
             value['nextPageToken' if offset + len(entries) < len(self.feed) else 'newStartPageToken'] = str(offset + len(entries))
             return httpx.Response(200, json=value)
         if path == '/upload/drive/v3/files' and request.method == 'POST':
@@ -78,4 +78,10 @@ class DriveHttpStore:
                 value = self.files[file_id][1]
                 self.download_bytes += len(value)
                 return httpx.Response(200, content=value)
+            if request.method == 'GET':
+                return httpx.Response(200, json=self.metadata(file_id))
+            if request.method == 'DELETE':
+                del self.files[file_id]
+                self.feed.append((file_id, True))
+                return httpx.Response(204)
         raise AssertionError('Unexpected synthetic Drive request: ' + request.method + ' ' + path)

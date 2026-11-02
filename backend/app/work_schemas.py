@@ -156,6 +156,7 @@ class FollowUpRead(Read):
     template_reference: str | None
     subject: str
     body: str
+    message_language: str = "en"
     instructions: str
     customization: dict
     template_snapshot: dict

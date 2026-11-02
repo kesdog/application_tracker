@@ -96,3 +96,27 @@ Provide visible keyboard focus in both themes, including inside the sidebar. Lab
 At widths of 760 px and below, use a drawer from the left, reduce outer padding, and allow the header controls to wrap. Stack form fields and detail groups when horizontal space becomes limited. Wide tables may scroll horizontally rather than compressing their text into unreadable columns.
 
 On very narrow screens, the theme's sun or moon can replace its visible name while the switch retains an accessible label. Preserve comfortable control spacing and avoid horizontal overflow in forms and panels.
+
+
+## Focused page views and short paths
+
+Show one working area at a time. Keep the page title, relevant status, errors and primary navigation visible; use labeled tabs for peer activities and closed disclosures for supporting detail. Tabs wrap on narrow screens so all destinations remain available without a separate menu. Selected tabs use a surface change and an accessible selected state, with readable theme colors and keyboard navigation. Switching tabs preserves unfinished entries.
+
+| Page | Initial focus | Other accessible views |
+| --- | --- | --- |
+| Dashboard | Four summary metrics and upcoming work | Follow-ups and recent activity |
+| All applications | Core identity, state, outcome and next action | Inline filters, extra columns and a one-click Simple view for existing detailed layouts |
+| Application | Posting, applied date and essential evidence | Direct Follow-ups, Notes, Tasks, Interviews, Documents and Timeline tabs |
+| Add application | The four existing wizard screens | Optional details open directly, without a second opt-in checkbox for notes or reminder overrides |
+| Follow-ups | Message queue | Recipient discovery and attention items; an open message takes the queue's place |
+| Follow-up message | Subject, body, recipient summary, copy and draft actions | Recipient, Schedule, AI assistance and Notes tabs; customization and template replacement are secondary disclosures |
+| Tasks | To do | Completed and cancelled history |
+| Interviews | Upcoming conversations | Previous conversations; optional conversation details stay collapsed |
+| Export | Format and download for all applications | Filtered selection with the familiar filter controls |
+| Settings | Appearance presets and preview | Follow-ups, Google & sync, Phone, Data & recovery, Agent & system |
+
+Keep normal controls within one or two clicks of their page, and supporting controls within three; allow four for a rare review path. For example: application row → Notes → Add note is three clicks from the application list. Settings → Data & recovery → Deleted applications reaches restore controls in three; Settings → Agent & system → Agent connection help → a client guide is four. Contextual sync links open the appropriate Settings category directly. Tabs themselves must not contain further tab hierarchies.
+
+Prefer concise defaults over removing information. Saved table choices remain respected; Simple view and Reset table expose the calmer default. Appearance shows presets first and individual colors on request. Follow-up defaults show the editable message first, with schedule rules, recipient research, customization and preview separated. Connection setup, device sync, agent permissions and system diagnostics remain available without dominating Settings.
+
+Follow-up queue titles open the message directly; do not repeat the same destination as a second generic Review message link in each row. Manual send/completion actions stay under an explicit disclosure beside the main editing flow.

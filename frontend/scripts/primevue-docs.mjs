@@ -84,7 +84,10 @@ try {
         // Documentation uses canonical component names; wrappers may alias imports.
         const canonical = local === 'PrimeDatePicker' ? 'DatePicker' : local
         const code = componentUsage(source, local, canonical)
-        const reply = await request('tools/call', { name: 'validate_usage', arguments: { component, code } })
+        // Tabs publishes TabList/Tab/TabPanels/TabPanel API metadata together.
+        // Validate these tags against their parent documentation entry.
+        const documentationComponent = ['tablist', 'tab', 'tabpanels', 'tabpanel'].includes(component) ? 'tabs' : component
+        const reply = await request('tools/call', { name: 'validate_usage', arguments: { component: documentationComponent, code } })
         const result = reply.structuredContent
         checked++
         if (reply.isError || !result?.valid) { failed++; console.log(JSON.stringify({ file, component, issues: result?.issues?.map(({ kind, name, message }) => ({ kind, name, message })) ?? reply })) }

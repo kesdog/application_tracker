@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import '../support/browser'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
@@ -6,7 +7,7 @@ import RecipientPicker from '../../src/components/followups/RecipientPicker.vue'
 import RecipientPageReports from '../../src/components/followups/RecipientPageReports.vue'
 import FollowUps from '../../src/FollowUps.vue'
 import * as api from '../../src/api'
-vi.mock('../../src/api',async original => ({...await original<typeof import('../../src/api')>(),getRecipientState:vi.fn(),fetchRecipients:vi.fn(),chooseRecipient:vi.fn(),updateApplication:vi.fn(),getRecipientPages:vi.fn(),getRecipientPage:vi.fn(),updateFollowUp:vi.fn(),getRecipientQueue:vi.fn(),fetchMissingRecipients:vi.fn(),getFollowUps:vi.fn(),getFollowUpNotices:vi.fn(),getOutcomeReviews:vi.fn()}))
+vi.mock('../../src/api',async original => ({...await original<typeof import('../../src/api')>(),getRecipientState:vi.fn(),fetchRecipients:vi.fn(),chooseRecipient:vi.fn(),updateApplication:vi.fn(),getRecipientPages:vi.fn(),getRecipientPage:vi.fn(),updateFollowUp:vi.fn(),getRecipientQueue:vi.fn(),pauseRecipientQueue:vi.fn(),resumeRecipientQueue:vi.fn(),pauseRecipientSearch:vi.fn(),prioritizeRecipientSearch:vi.fn(),fetchMissingRecipients:vi.fn(),getFollowUps:vi.fn(),getFollowUpNotices:vi.fn(),getOutcomeReviews:vi.fn()}))
 enableAutoUnmount(afterEach)
 const global = { plugins: [[PrimeVue, { unstyled: true }] as [typeof PrimeVue, { unstyled: boolean }]] }
 const followup:api.RecipientFollowUp={id:'followup-1',sequence_number:1,revision:2,recipient_email:null,recipient_name:null}
@@ -194,4 +195,33 @@ it('shows source context and blocks choosing stale or region-conflicting leads',
  expect(wrapper.text()).toContain('verify the region and team')
  for (const action of wrapper.findAll('button').filter(b=>b.text()==='Use this recipient')) expect(action.attributes('disabled')).toBeDefined()
  expect(api.chooseRecipient).not.toHaveBeenCalled()
+})
+
+it('interrupts a running recipient search and can put the paused job first',async()=>{
+ const running:api.RecipientJob={id:'job-1',state:'RUNNING',attempts:1,error:null,warnings:[]}
+ vi.mocked(api.getRecipientState).mockResolvedValue({...state,job:running})
+ const wrapper=mount(RecipientPicker,{props:{applicationId:'app-1'},global});await flushPromises()
+ vi.mocked(api.pauseRecipientSearch).mockResolvedValue({...running,state:'PAUSED'})
+ vi.mocked(api.getRecipientState).mockResolvedValue({...state,job:{...running,state:'PAUSED'}})
+ await button(wrapper,'Pause search').trigger('click');await flushPromises()
+ expect(api.pauseRecipientSearch).toHaveBeenCalledWith('app-1')
+ vi.mocked(api.prioritizeRecipientSearch).mockResolvedValue({...running,state:'QUEUED'})
+ await button(wrapper,'Run next').trigger('click');await flushPromises()
+ expect(api.prioritizeRecipientSearch).toHaveBeenCalledWith('app-1')
+})
+
+it('pauses the recipient queue and exposes per-application priority controls',async()=>{
+ const queue:api.RecipientQueue={queued:1,running:0,failed:0,missing_followups:1,concurrency_limit:5,available:true,paused:false,jobs:[{id:'job-1',state:'QUEUED',attempts:0,error:null,warnings:[],application_id:'app-1',company:'Example',job_title:'Engineer',date_applied:'2026-10-27'}]}
+ vi.mocked(api.getRecipientQueue).mockResolvedValue(queue)
+ const wrapper=mount(FollowUps,{global});await flushPromises()
+ expect(wrapper.text()).toContain('Newest applications first')
+ vi.mocked(api.pauseRecipientQueue).mockResolvedValue({...queue,paused:true})
+ vi.mocked(api.getRecipientQueue).mockResolvedValue({...queue,paused:true})
+ await button(wrapper,'Pause all searches').trigger('click');await flushPromises()
+ expect(api.pauseRecipientQueue).toHaveBeenCalledTimes(1)
+ expect(wrapper.text()).toContain('Queue paused')
+ await button(wrapper,'Run next').trigger('click');await flushPromises()
+ expect(api.prioritizeRecipientSearch).toHaveBeenCalledWith('app-1')
+ await button(wrapper,'Resume searches').trigger('click');await flushPromises()
+ expect(api.resumeRecipientQueue).toHaveBeenCalledTimes(1)
 })

@@ -141,11 +141,14 @@ def draft_followup(
         record_audit(session, application_id, "NOTE", note.id, "CREATE", new={"content": data.content, "type": NoteType.EMAIL_DRAFT}, actor_type=actor_type, actor_reference=actor_reference)
         result = DraftResult(location="LOCAL_NOTE", note_id=note.id, message_reference=None, message="Draft saved as a local note. It was not placed in a mailbox or sent.")
     if item.body != data.content or item.status != FollowUpStatus.PREPARED:
+        from app.followup_templates import remember_message
+        remember_message(session, item)
         previous = {"status": item.status, "body": item.body, "revision": item.revision, "approved_revision": item.approved_revision}
         item.body = data.content
         item.status = FollowUpStatus.PREPARED
         item.revision += 1
         item.approved_revision = None
+        remember_message(session, item, activated=True)
         record_event(session, application_id, "FOLLOWUP_DRAFTED", f"Follow-up #{item.sequence_number} drafted", actor_type=actor_type, actor_reference=actor_reference, metadata={"followup_id": item.id})
         record_audit(session, application_id, "FOLLOWUP", item.id, "UPDATE", previous=previous, new={name: getattr(item, name) for name in previous}, actor_type=actor_type, actor_reference=actor_reference, reversible=True)
     receipt.result = result.model_dump(mode='json')

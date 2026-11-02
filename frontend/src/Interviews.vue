@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { t, messageText, errorText } from './i18n'
+
+import PageTabs from './components/shared/PageTabs.vue'
 import Button from 'primevue/button'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { listInterviews, type InterviewListItem } from './api'
@@ -22,7 +25,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try { interviews.value = await listInterviews(); upcomingPage.value = 1; previousPage.value = 1 }
-  catch (reason) { error.value = reason instanceof Error ? reason.message : 'Unable to load interviews.' }
+  catch (reason) { error.value = reason instanceof Error ? reason.message : t("Unable to load interviews.") }
   finally { loading.value = false }
 }
 
@@ -33,23 +36,26 @@ onUnmounted(() => window.removeEventListener('tracker:invalidate', onInvalidatio
 
 <template>
   <section aria-labelledby="interviews-title">
-    <div class="page-heading"><div><p class="eyebrow">Upcoming work</p><h2 id="interviews-title">Interviews</h2></div><Button type="button" :disabled="loading" @click="load">{{ loading ? 'Loading…' : 'Refresh' }}</Button></div>
-    <p class="intro">Prepare for scheduled conversations across all applications.</p>
-    <p v-if="error" class="at-message error" role="alert">{{ error }}</p>
-    <p v-if="loading && !interviews.length" role="status">Loading interviews…</p>
-    <div v-else-if="!interviews.length" class="empty-panel">No interviews scheduled. Add one from an application.</div>
+    <div class="page-heading"><div><h2 id="interviews-title">{{ t("Interviews") }}</h2></div><Button type="button" :disabled="loading" @click="load">{{ loading ? t("Loading…") : t("Refresh") }}</Button></div>
+    <p class="intro">{{ t("Prepare for scheduled conversations across all applications.") }}</p>
+    <p v-if="error" class="at-message error" role="alert">{{ errorText(String((error) ?? '')) }}</p>
+    <p v-if="loading && !interviews.length" role="status">{{ t("Loading interviews…") }}</p>
+    <div v-else-if="!interviews.length" class="empty-panel">{{ t("No interviews scheduled. Add one from an application.") }}</div>
     <template v-else>
-      <h3 class="group-title">Upcoming <span>{{ upcoming.length }}</span></h3>
+      <PageTabs :label="t('Interviews views')" :tabs="[{ value: 'current', get label() { return t('Upcoming') }, count: upcoming.length }, { value: 'history', get label() { return t('Previous') }, count: previous.length }]">
+      <template #current><p v-if="!upcoming.length" class="empty-panel">{{ t("Nothing upcoming right now.") }}</p>
+
       <div class="cards">
         <article v-for="item in visibleUpcoming" :key="item.id" class="work-card upcoming">
-          <p class="due"><AppTag v-bind="interviewTypeMeta[item.type]" /> interview — {{ relativeDateText(item.scheduled_at) }}</p>
+          <p class="due"><AppTag v-bind="interviewTypeMeta[item.type]" /> {{ t("interview —") }} {{ relativeDateText(item.scheduled_at) }}</p>
           <h3><a :href="`#/applications/${item.application.id}`">{{ item.application.job_title }}</a></h3>
           <p class="company">{{ item.application.company }}</p>
-          <dl><div><dt>When</dt><dd>{{ dateTimeText(item.scheduled_at) }}</dd></div><div v-if="item.duration"><dt>Duration</dt><dd>{{ item.duration }} minutes</dd></div><div v-if="item.interviewer"><dt>Interviewer</dt><dd>{{ item.interviewer }}</dd></div><div v-if="item.location"><dt>Location</dt><dd>{{ item.location }}</dd></div></dl>
-          <Button v-if="item.meeting_url" as="a" :href="item.meeting_url" target="_blank" rel="noopener noreferrer" label="Open meeting" icon="pi pi-external-link" severity="secondary" outlined />
+          <dl><div><dt>{{ t("When") }}</dt><dd>{{ dateTimeText(item.scheduled_at) }}</dd></div></dl><details v-if="item.duration || item.interviewer || item.location"><summary>{{ t("Conversation details") }}</summary><dl><div v-if="item.duration"><dt>{{ t("Duration") }}</dt><dd>{{ item.duration }} {{ t("minutes") }}</dd></div><div v-if="item.interviewer"><dt>{{ t("Interviewer") }}</dt><dd>{{ item.interviewer }}</dd></div><div v-if="item.location"><dt>{{ t("Location") }}</dt><dd>{{ item.location }}</dd></div></dl></details>
+          <Button v-if="item.meeting_url" as="a" :href="item.meeting_url" target="_blank" rel="noopener noreferrer" :label="t('Open meeting')" icon="pi pi-external-link" severity="secondary" outlined />
         </article>
-      </div><Pagination v-model:page="upcomingPage" :total="upcoming.length" :page-size="pageSize" label="upcoming interviews" />
-      <template v-if="previous.length"><h3 class="group-title previous-title">Previous <span>{{ previous.length }}</span></h3><div class="cards"><article v-for="item in visiblePrevious" :key="item.id" class="work-card"><p class="due past">{{ interviewTypeText(item.type) }} interview — {{ relativeDateText(item.scheduled_at) }}</p><h3><a :href="`#/applications/${item.application.id}`">{{ item.application.job_title }}</a></h3><p class="company">{{ item.application.company }} · {{ dateTimeText(item.scheduled_at) }}</p><p v-if="item.result">{{ item.result }}</p></article></div><Pagination v-model:page="previousPage" :total="previous.length" :page-size="pageSize" label="previous interviews" /></template>
+      </div><Pagination v-model:page="upcomingPage" :total="upcoming.length" :page-size="pageSize" :label="t('upcoming interviews')" />
+      </template><template #history><p v-if="!previous.length" class="empty-panel">{{ t("No history yet.") }}</p><template v-if="previous.length"><div class="cards"><article v-for="item in visiblePrevious" :key="item.id" class="work-card"><p class="due past">{{ interviewTypeText(item.type) }} {{ t("interview —") }} {{ relativeDateText(item.scheduled_at) }}</p><h3><a :href="`#/applications/${item.application.id}`">{{ item.application.job_title }}</a></h3><p class="company">{{ item.application.company }} · {{ dateTimeText(item.scheduled_at) }}</p><p v-if="item.result">{{ item.result }}</p></article></div><Pagination v-model:page="previousPage" :total="previous.length" :page-size="pageSize" :label="t('previous interviews')" /></template>
+      </template></PageTabs>
     </template>
   </section>
 </template>
@@ -66,4 +72,5 @@ dl { margin: 16px 0; } dl div { border-top: 1px solid var(--at-border); padding-
 a { color: var(--at-link); text-underline-offset: 3px; } .empty-panel { background: var(--at-surface); border: 1px solid var(--at-border); border-radius: 8px; padding: 32px; color: var(--at-text-muted); }
 .previous-title { margin-top: 36px; }
 }
+summary { cursor:pointer; font-size:13px; color:var(--at-text-muted); margin-top:10px; }
 </style>

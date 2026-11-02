@@ -3,6 +3,19 @@ export function emailReferences(reference: string | null): string[] {
   return [...new Set((reference ?? '').split(/\r?\n/).map(value => value.trim()).filter(Boolean))]
 }
 
+/** Compact lists prefer a direct, account-bound message over a subject search. */
+export function primaryEmailReference(reference: string | null): string | null {
+  const references = emailReferences(reference)
+  const direct = references.filter(value => /^https?:\/\//i.test(value) && emailReferenceUrl(value))
+  return direct.find(value => {
+    const url = new URL(value)
+    return url.hostname === 'mail.google.com' && url.searchParams.has('authuser') && !url.hash.startsWith('#search/')
+  }) ?? direct.find(value => !new URL(value).hash.startsWith('#search/'))
+    ?? references.find(value => /^\[?Gmail:/i.test(value) && emailReferenceUrl(value))
+    ?? references.find(value => emailReferenceUrl(value)?.includes('#search/rfc822msgid%3A'))
+    ?? references.find(value => emailReferenceUrl(value)) ?? references[0] ?? null
+}
+
 /** Open direct mailbox links, or find a saved message ID/subject in Gmail. */
 export function emailReferenceUrl(reference: string | null): string | null {
   const value = reference?.trim()

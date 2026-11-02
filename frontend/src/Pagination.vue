@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t, messageText } from './i18n'
+
 import { computed } from 'vue'
 import Paginator from 'primevue/paginator'
 
@@ -12,8 +14,8 @@ const current = computed(() => Math.min(Math.max(1, props.page), pageCount.value
 </script>
 
 <template>
-  <nav v-if="total" class="pagination" :aria-label="`${label} pagination`">
-    <Paginator :first="(current - 1) * pageSize" :rows="pageSize" :total-records="total" template="PrevPageLink CurrentPageReport NextPageLink" current-page-report-template="{first}–{last} of {totalRecords}" @page="emit('update:page', $event.page + 1)" />
+  <nav v-if="total" class="pagination" :aria-label="t('{p0} pagination', { p0: label })">
+    <Paginator :first="(current - 1) * pageSize" :rows="pageSize" :total-records="total" template="PrevPageLink CurrentPageReport NextPageLink" :current-page-report-template="t('{first}–{last} of {totalRecords}')" @page="emit('update:page', $event.page + 1)" />
   </nav>
 </template>
 

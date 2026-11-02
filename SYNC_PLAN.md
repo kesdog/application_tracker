@@ -59,23 +59,32 @@ generation-aware invalidation callback. It has no tracker, ORM or FastAPI import
 Rate limits and full storage do not revoke permission. It never retries uncertain
 writes. `OAuthSessionManager[T]` remains provider independent and single use.
 
-## Required live gate before phone implementation
+## Required live acceptance gate
 
 Use two independently consented OAuth client types in the same Google Cloud
 project/account. Verify each can list/decrypt files written by the other, and can
 observe them through the changes feed. Never transfer refresh tokens between them.
 The mocked store tests do not establish appData visibility across OAuth clients.
-Run `backend/tests/sync/test_live_cross_client.py` only after explicitly setting
-its opt-in and both already-connected workspace data directories.
+The prototype's human-triggered desktop/Web check passed on 29 October 2026:
+both clients listed/decrypted the other's empty encrypted file, observed it in
+their change feeds, and authenticated cleanup completed. The checker is in
+Settings → Connections → Set up or manage device sync. Its default bounded read
+polling accommodates Google's publication delay without replaying uploads.
+`backend/tests/sync/test_live_cross_client.py` remains an additional opt-in
+diagnostic for two already-connected installed workspace data directories.
 
-## Remaining phone and lifecycle work
+## Phone implementation and remaining acceptance
 
-- Independent static HTTPS Vue PWA, IndexedDB transaction/outbox storage, shared
-  Python/TypeScript protocol fixtures and offline app-shell installation.
-- Verified Google identity plus separate Drive-only authorization, user-driven
-  access-token renewal, secure recovery-key wrapping and offline unlock.
-- QR pairing, global status badges, foreground/network-resume triggers, Android
-  Chrome and installed iOS Safari testing.
+- The independent `/phone/` Vue entry now implements encrypted IndexedDB,
+  atomic event/outbox storage, Python/TypeScript protocol fixtures, offline shell,
+  independent Google authorization, recovery-export pairing, passphrase unlock,
+  status/review UI and foreground/resume checks. See [PHONE_SYNC.md](PHONE_SYNC.md).
+- The live desktop/Web gate is verified for the prototype's separate clients and
+  registered localhost origin. New client registrations/deployments must run it
+  again. Human-only endpoints exchange empty encrypted probes, never user records
+  or desktop tokens. Physical phone installation remains a separate acceptance gate.
+- QR pairing, global desktop status badges, real Android installation/airplane-mode
+  acceptance and installed iOS Safari acceptance remain open.
 - Bounded-history checkpoint bootstrap, active-device retirement, safe retention,
   explicit compromise recovery/key rotation and browser storage-loss recovery.
 - Benchmark IndexedDB, actual Google request counts/bytes and anonymized real
@@ -83,7 +92,8 @@ its opt-in and both already-connected workspace data directories.
 
 ## Validation
 
-Detailed results and explicit limits: [SYNC_TEST_COVERAGE.md](SYNC_TEST_COVERAGE.md).
+Detailed current results and explicit limits are in local ignored `test.md`;
+keep that inventory out of application bundles.
 
 Run `.\.venv\Scripts\python.exe scripts/test.py --segment sync auth agent followups`
 during changes and `--full` before delivery/pushing. New tests cover two-replica

@@ -1,3 +1,4 @@
+import { t, errorText } from './i18n'
 import { browserSession } from './auth'
 
 export interface PhoneDevice { id: string; label: string; active: boolean; reason: string | null; created_at: string; latest: null | { state: string; attempts: number; error: string | null; accepted_at: string | null } }
@@ -84,6 +85,7 @@ export type FollowUpChannel = 'EMAIL' | 'PHONE' | 'BOTH'
 export interface FollowUpInput { due_at: string | null; template_reference: string | null; channel: FollowUpChannel }
 export interface Customization { language?: string | null; tone?: string | null; signature?: string | null }
 export interface FollowUp extends FollowUpInput {
+  message_language?: string
   content_available?: boolean
   id: string; application_id: string; sequence_number: number; status: 'PREPARED' | 'READY' | 'SENT'; is_automatic: boolean; sent_at: string | null
   subject: string; body: string; instructions: string; customization: Customization; revision: number; approved_revision: number | null
@@ -99,10 +101,19 @@ export interface GeneralSettings {
   notifications_enabled: boolean; quiet_start: string; quiet_end: string; daily_digest: boolean; revision: number
   unsuccessful_review_after: number
   recipient_page_limit: number
+  mail_sync_max_messages: number
+  mail_sync_not_before?: string
 }
+export const changeFollowUpLanguage = (language: 'en' | 'fr', rewrite_existing: boolean, expected_revision: number) => request<{ settings: GeneralSettings; rewritten: number }>('/api/settings/general/language', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ language, rewrite_existing, expected_revision }) })
 export interface RenderedTemplate { text: string; missing: string[]; unknown: string[] }
 export interface TemplatePreview { subject: RenderedTemplate; body: RenderedTemplate; variables: Record<string, string> }
 export interface MessageProposal { subject: RenderedTemplate; body: RenderedTemplate; expected_revision: number }
+export interface FollowUpMessageVersion { id: string; language: string; subject: string; body: string; source_revision: number; created_at: string; active: boolean }
+export interface FollowUpMessageVersions { current_language: string; versions: FollowUpMessageVersion[] }
+const followUpPath = (appId: string, id: string) => `/api/applications/${encodeURIComponent(appId)}/followups/${encodeURIComponent(id)}`
+export const getFollowUpMessageVersions = (appId: string, id: string) => request<FollowUpMessageVersions>(followUpPath(appId, id) + '/versions')
+export const switchFollowUpLanguage = (appId: string, id: string, language: string, expected_revision: number) => request<FollowUp>(followUpPath(appId, id) + '/language', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ language, expected_revision }) })
+export const restoreFollowUpMessageVersion = (appId: string, id: string, versionId: string, expected_revision: number) => request<FollowUp>(followUpPath(appId, id) + '/versions/' + encodeURIComponent(versionId) + '/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expected_revision }) })
 export interface FollowUpRow extends FollowUp { application: Application }
 export interface FollowUpPage { items: FollowUpRow[]; total: number; page: number; page_size: number }
 export interface OutcomeReview { threshold: number; unanswered_sent_count: number; last_reply_at: string | null; needs_review: boolean }
@@ -174,14 +185,22 @@ export interface IntegrationStatus { mail: { connected: boolean }; calendar: { c
 export type GoogleCapability = 'drive' | 'gmail_read' | 'gmail_drafts'
 export interface GoogleConnection { configured: boolean; status: string; email: string | null; capabilities: Record<GoogleCapability, boolean>; updated_at: string | null; verified_at: string | null; message: string | null }
 export function getConnections(): Promise<{ google: GoogleConnection }> { return request('/api/connections') }
+export interface GoogleClientSetup { configured: boolean; origin: string; redirect_uri: string; hosted: boolean }
+export function getGoogleClientSetup(): Promise<GoogleClientSetup> { return request('/api/connections/google/setup') }
+export function saveGoogleClientSetup(data: { client_id: string; client_secret?: string; login_subjects?: string }): Promise<GoogleClientSetup> { return request('/api/connections/google/setup', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }) }
 export interface ApplicationSyncStatus {
   id: string | null; state: 'IDLE' | 'RUNNING' | 'COMPLETED' | 'PARTIAL'; phase: 'GMAIL' | 'DRIVE' | null
   checked: number; created: number; updated: number; review_count: number
   gmail: string; drive: string; warnings: string[]; finished_at: string | null
+  gmail_checked_through?: string | null
+  mail_limit?: number | null; limit_reached?: boolean
+  initial_scan_required?: boolean; gmail_scan_from?: string | null; lookback_months?: number | null; gmail_account?: string | null
   reviews?: { message_id: string; subject: string; reason: string; url: string }[]
 }
 export const getApplicationSync = (): Promise<ApplicationSyncStatus> => request('/api/applications/sync/status')
-export const startApplicationSync = (): Promise<ApplicationSyncStatus> => request('/api/applications/sync', { method: 'POST' })
+export const startApplicationSync = (data?: { lookback_months: number }): Promise<ApplicationSyncStatus> => request('/api/applications/sync', {
+  method: 'POST', ...(data ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) } : {}),
+})
 export function startGoogle(capabilities: GoogleCapability[]): Promise<{ authorization_url: string; expires_in: number }> {
   return request('/api/connections/google/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ capabilities }) })
 }
@@ -237,7 +256,7 @@ export const proposeFollowUp = (appId: string, id: string, latest: boolean): Pro
 export const applyFollowUpTemplate = (appId: string, id: string, expected_revision: number, latest: boolean): Promise<FollowUp> => request(`/api/applications/${encodeURIComponent(appId)}/followups/${encodeURIComponent(id)}/apply-template`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expected_revision, latest }) })
 export const getFollowUpAIRequest = (appId: string, id: string): Promise<Record<string, unknown>> => request(`/api/applications/${encodeURIComponent(appId)}/followups/${encodeURIComponent(id)}/ai-request`)
 export const getOutcomeReviews = (page = 1): Promise<OutcomeReviewPage> => request(`/api/followups/reviews?page=${page}&page_size=20`)
-export interface RecipientJob { id: string; state: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'NO_RESULTS' | 'FAILED' | 'CANCELLED'; attempts: number; error: string | null; warnings: string[]; page_limit?: number; refresh_pages?: boolean; page_counts?: { fetched_pages?: number; reused_pages?: number } }
+export interface RecipientJob { id: string; state: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'NO_RESULTS' | 'FAILED' | 'CANCELLED' | 'PAUSED'; attempts: number; error: string | null; warnings: string[]; page_limit?: number; refresh_pages?: boolean; page_counts?: { fetched_pages?: number; reused_pages?: number } }
 export interface RecipientCandidate { id: string; name: string | null; email: string | null; kind: 'recruiter_hr' | 'technical_lead' | 'general_contact'; role: string | null; source_url: string; evidence: string; company_match: string; vacancy_match: string; email_status: string; stale: boolean; context_current: boolean; excluded?: boolean;
   contact_priority?: { category: string; score: number; recommended_action: string; outreach_eligible: boolean };
   profile_urls?: { url: string; label: string }[];
@@ -247,8 +266,12 @@ export interface RecipientCandidate { id: string; name: string | null; email: st
   fit?: { region?: { state: string; requested?: string | null; observed?: string | null }; sector?: { state: string; requested?: string | null; observed?: string | null } };
 }
 export interface RecipientFollowUp { id: string; sequence_number: number; revision: number; recipient_email: string | null; recipient_name: string | null }
-export interface RecipientState { application_revision?: number; job: RecipientJob | null; candidates: RecipientCandidate[]; missing_followups: number; followups: RecipientFollowUp[]; page_limit?: number; page_limit_override?: number | null; default_page_limit?: number }
-export interface RecipientQueue { queued: number; running: number; failed: number; missing_followups: number; concurrency_limit: number; available: boolean }
+export interface RecipientState { queue_paused?: boolean; application_revision?: number; job: RecipientJob | null; candidates: RecipientCandidate[]; missing_followups: number; followups: RecipientFollowUp[]; page_limit?: number; page_limit_override?: number | null; default_page_limit?: number }
+export interface RecipientQueue { queued: number; running: number; failed: number; missing_followups: number; concurrency_limit: number; available: boolean; paused?: boolean; paused_jobs?: number; jobs?: Array<RecipientJob & { application_id: string; company: string; job_title: string; date_applied: string }> }
+export const pauseRecipientQueue = (): Promise<RecipientQueue> => request('/api/recipients/pause', { method: 'POST' })
+export const resumeRecipientQueue = (): Promise<RecipientQueue> => request('/api/recipients/resume', { method: 'POST' })
+export const pauseRecipientSearch = (id: string): Promise<RecipientJob> => request(`/api/applications/${encodeURIComponent(id)}/recipients/pause`, { method: 'POST' })
+export const prioritizeRecipientSearch = (id: string): Promise<RecipientJob> => request(`/api/applications/${encodeURIComponent(id)}/recipients/prioritize`, { method: 'POST' })
 export const getRecipientState = (id: string): Promise<RecipientState> => request(`/api/applications/${encodeURIComponent(id)}/recipients`)
 export const fetchRecipients = (id: string, refreshPages = false): Promise<RecipientJob> => request(`/api/applications/${encodeURIComponent(id)}/recipients/fetch`, { method: 'POST', ...(refreshPages ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_pages: true }) } : {}) })
 export interface RecipientPageSummary { id: string; url: string; resolved_url: string | null; title: string; outcome: string; fetched_at: string | null; stale: boolean; candidate_count: number }
@@ -292,9 +315,13 @@ export function listTasks(): Promise<TaskListItem[]> {
 
 export type ApplicationUpdate = Partial<Omit<Application, 'id' | 'revision' | 'completed_followup_count' | 'has_potential_recipients' | 'followup_target_status'>> & { expected_revision?: number }
 
-export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+export class ApiRequestError extends Error {
+  constructor(message: string, readonly code?: string, readonly retryAfter?: number | null) { super(message) }
+}
+
+export async function request<T>(path: string, options: RequestInit = {}, timeoutMs = 8000): Promise<T> {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 8000)
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const response = await fetch(path, { ...browserSession.withHeaders(options), signal: controller.signal, cache: 'no-store' })
     if (!response.ok) {
@@ -302,9 +329,9 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
       const body = await response.json().catch(() => null)
       const detail = body?.detail
       const message = Array.isArray(detail)
-        ? detail.map((error: { msg: string }) => error.msg).join('. ')
-        : typeof detail === 'string' ? detail : `Request failed (${response.status})`
-      throw new Error(message)
+        ? detail.map((error: { msg: string }) => errorText(error.msg)).join('. ')
+        : typeof detail === 'string' ? detail : t("Request failed ({p0})", { p0: response.status })
+      throw new ApiRequestError(message, body?.code, body?.retry_after)
     }
     if (response.status === 204) return undefined as T
     return await response.json() as T
@@ -415,13 +442,13 @@ export async function getHealth(): Promise<Health> {
   const timeout = setTimeout(() => controller.abort(), 5000)
   try {
     const response = await fetch('/api/health', { signal: controller.signal, cache: 'no-store' })
-    if (!response.ok) throw new Error(`Health check failed (${response.status})`)
+    if (!response.ok) throw new Error(t("Health check failed ({p0})", { p0: response.status }))
     const body: unknown = await response.json()
     if (typeof body !== 'object' || body === null ||
         !('status' in body) || body.status !== 'ok' ||
         !('version' in body) || typeof body.version !== 'string' || !body.version ||
         !('database' in body) || body.database !== 'connected') {
-      throw new Error('Unexpected health response')
+      throw new Error(t("Unexpected health response"))
     }
     return body as Health
   } finally {
