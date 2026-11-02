@@ -1,10 +1,12 @@
-"""Windows tray host for the built tracker UI and local API."""
+"""Shared loopback server lifecycle; platform UI loads only after startup."""
+from contextlib import contextmanager
+import logging
+import os
+import socket
+import sys
 import threading
 import time
-import tkinter
-import os
-import logging
-import webbrowser
+import urllib.request
 
 import uvicorn
 
@@ -12,89 +14,99 @@ from app.config import Settings
 from app.main import create_app
 
 
-def _tray_image():
-    from PIL import Image, ImageDraw
+@contextmanager
+def workspace_lock(directory):
+    """A second desktop process must never start another workspace scheduler."""
+    directory.mkdir(parents=True, exist_ok=True)
+    with (directory / '.desktop.lock').open('a+b') as handle:
+        handle.seek(0, 2)
+        if handle.tell() == 0:
+            handle.write(b'0')
+            handle.flush()
+        handle.seek(0)
+        try:
+            if sys.platform == 'win32':
+                import msvcrt
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            raise RuntimeError('Application Tracker is already using this data directory') from exc
+        try:
+            yield
+        finally:
+            handle.seek(0)
+            if sys.platform == 'win32':
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+            # Do not unlink: another process may already hold the same inode.
 
-    picture = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(picture)
-    draw.rounded_rectangle((3, 3, 61, 61), radius=12, fill="#263e5c")
-    draw.text((16, 20), "AT", fill="white")
-    return picture
 
+class LoopbackHost:
+    def __init__(self, settings):
+        self.settings = settings
+        self.address = f'http://127.0.0.1:{settings.app_port}'
+        self.server = None
+        self.thread = None
+        self.listener = None
 
-def _copy_address(address: str) -> None:
-    clipboard = tkinter.Tk()
-    clipboard.withdraw()
-    clipboard.clipboard_clear()
-    clipboard.clipboard_append(address)
-    clipboard.update()
-    clipboard.destroy()
+    def __enter__(self):
+        if self.settings.app_host not in {'127.0.0.1', '::1', 'localhost'} or self.settings.app_mode != 'local':
+            raise RuntimeError('The desktop host requires local mode and a loopback listener')
+        if not (self.settings.app_static_dir / 'index.html').is_file():
+            raise RuntimeError('Built frontend is missing. Run the frontend build first.')
+        self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            if sys.platform != 'win32':
+                # POSIX permits a clean restart while closed connections expire;
+                # this does not permit sharing an active listening socket.
+                self.listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            # Reserve the port before running migrations or starting schedulers.
+            self.listener.bind(('127.0.0.1', self.settings.app_port))
+            self.listener.listen(128)
+            self.server = uvicorn.Server(uvicorn.Config(create_app(self.settings), host='127.0.0.1',
+                port=self.settings.app_port, log_level=self.settings.log_level, log_config=None))
+            self.thread = threading.Thread(target=self.server.run, kwargs={'sockets': [self.listener]}, name='tracker-api', daemon=True)
+            self.thread.start()
+            for _ in range(300):
+                if self.server.started or not self.thread.is_alive():
+                    break
+                time.sleep(0.1)
+            if not self.server.started:
+                raise RuntimeError(f'The local server could not start on {self.address}')
+            return self
+        except BaseException:
+            self.__exit__(None, None, None)
+            raise
+
+    def __exit__(self, *_):
+        if self.server:
+            self.server.should_exit = True
+        if self.thread:
+            self.thread.join(timeout=15)
+        if self.listener:
+            self.listener.close()
+        if self.thread and self.thread.is_alive():
+            raise RuntimeError('Application Tracker failed to shut down')
 
 
 def run() -> None:
-    import pystray
+    from app.desktop_platform import show_ui
 
-    settings = Settings()
-    if not (settings.app_static_dir / "index.html").is_file():
-        raise RuntimeError("Built frontend is missing. Run the frontend build first.")
-    if settings.app_host not in {"127.0.0.1", "::1", "localhost"}:
-        raise RuntimeError("The desktop host must bind to the local computer")
-    settings.app_data_dir.mkdir(parents=True, exist_ok=True)
-    logging.basicConfig(filename=settings.app_data_dir / "desktop.log", level=settings.log_level.upper(), force=True)
-    address = f"http://127.0.0.1:{settings.app_port}"
-    server = uvicorn.Server(uvicorn.Config(create_app(settings), host="127.0.0.1", port=settings.app_port, log_level=settings.log_level, log_config=None))
-    thread = threading.Thread(target=server.run, name="tracker-api", daemon=True)
-    thread.start()
-    for _ in range(100):
-        if server.started or not thread.is_alive():
-            break
-        time.sleep(0.1)
-    if not server.started:
-        raise RuntimeError(f"The local server could not start on {address}")
-
-    if os.environ.get('APP_DESKTOP_SMOKE') == '1':
-        import urllib.request
-        try:
-            with urllib.request.urlopen(address + '/api/health', timeout=10) as response:
-                if response.status != 200:
-                    raise RuntimeError('Packaged API health check failed')
-        finally:
-            server.should_exit = True
-            thread.join(timeout=15)
-        if thread.is_alive():
-            raise RuntimeError('Packaged application failed to shut down')
-        return
-
-    def open_page(_icon, _item):
-        webbrowser.open(address)
-
-    def open_status(_icon, _item):
-        webbrowser.open(address + "/api/health")
-
-    def open_settings(_icon, _item):
-        webbrowser.open(address + "/#/settings")
-
-    def copy_address(_icon, _item):
-        _copy_address(address)
-
-    def exit_app(icon, _item):
-        icon.stop()
-
-    icon = pystray.Icon("Application Tracker", _tray_image(), "Application Tracker", menu=pystray.Menu(
-        pystray.MenuItem("Open", open_page, default=True),
-        pystray.MenuItem("Status", open_status),
-        pystray.MenuItem("Copy API address", copy_address),
-        pystray.MenuItem("Settings", open_settings),
-        pystray.MenuItem("Exit", exit_app),
-    ))
-    try:
-        if os.environ.get("APP_DESKTOP_NO_BROWSER") != "1":
-            webbrowser.open(address)
-        icon.run()
-    finally:
-        server.should_exit = True
-        thread.join(timeout=15)
+    # Frozen builds must not discover a developer's dotenv beside their bundle.
+    settings = Settings(_env_file=None) if getattr(sys, 'frozen', False) else Settings()
+    with workspace_lock(settings.app_data_dir):
+        logging.basicConfig(filename=settings.app_data_dir / 'desktop.log', level=settings.log_level.upper(), force=True)
+        with LoopbackHost(settings) as host:
+            if os.environ.get('APP_DESKTOP_SMOKE') == '1':
+                with urllib.request.urlopen(host.address + '/api/health', timeout=10) as response:
+                    if response.status != 200:
+                        raise RuntimeError('Packaged API health check failed')
+            else:
+                show_ui(host.address, host.thread)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     run()

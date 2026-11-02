@@ -1,0 +1,136 @@
+name: Cross-platform candidates
+on:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  workflow-lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          persist-credentials: false
+      - name: Validate workflows with checksum-pinned actionlint
+        run: |
+          curl --fail --location https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz -o "$RUNNER_TEMP/actionlint.tar.gz"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -color
+  core-test:
+    name: ${{ matrix.os }} / core and frozen desktop
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-15-intel, macos-15]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Version integrity
+        run: python scripts/release_check.py --output .run/version.json
+      - name: Complete offline gate
+        run: |
+          mkdir -p .run
+          set -o pipefail
+          python scripts/test.py --full 2>&1 | tee .run/ci-gate.log
+      - name: Installed distribution smoke
+        run: python scripts/artifact_smoke.py
+      - name: Build and smoke native candidate
+        run: |
+          python scripts/build_desktop.py
+          version=$(python -c 'from scripts.release_check import check; print(check())')
+          case "$RUNNER_OS" in
+            Windows) exe=build/windows/ApplicationTracker/ApplicationTracker.exe ;;
+            macOS) exe=build/macos/ApplicationTracker.app/Contents/MacOS/ApplicationTracker ;;
+            Linux) exe=build/linux/ApplicationTracker/ApplicationTracker ;;
+          esac
+          python scripts/desktop_smoke.py "$exe" --version "$version"
+          python scripts/package_desktop.py
+      - name: Mount and smoke Mac candidate DMG
+        if: runner.os == 'macOS'
+        run: |
+          version=$(python -c 'from scripts.release_check import check; print(check())')
+          bash scripts/dmg_smoke.sh .run/ApplicationTracker-*-unsigned.dmg "$version"
+      - name: Windows fresh install, upgrade and uninstall
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = (Get-Content .run/version.json | ConvertFrom-Json).version
+          $installer = (Get-ChildItem .run/ApplicationTracker-*-windows-x64-unsigned.exe).FullName
+          ./scripts/installer_smoke.ps1 -Installer $installer -Version $version
+      - name: Extract and smoke Linux deb
+        if: runner.os == 'Linux'
+        run: |
+          dpkg-deb -x .run/ApplicationTracker-*-linux-x64.deb .run/deb-installed
+          version=$(python -c 'from scripts.release_check import check; print(check())')
+          python scripts/desktop_smoke.py .run/deb-installed/opt/application-tracker/ApplicationTracker --version "$version"
+      - name: Build and exercise installed Linux image
+        if: runner.os == 'Linux'
+        run: |
+          docker build --tag application-tracker:${GITHUB_SHA} .
+          docker run --rm --entrypoint python application-tracker:${GITHUB_SHA} scripts/artifact_smoke.py
+          docker image inspect application-tracker:${GITHUB_SHA} --format '{{json .Id}}' > .run/image-id.json
+          docker save application-tracker:${GITHUB_SHA} | gzip > .run/ApplicationTracker-linux-image.tar.gz
+      - name: Retain candidate artifacts and verification
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          include-hidden-files: true
+          name: candidate-${{ matrix.os }}-${{ github.sha }}
+          path: |
+            .run/ci-gate.log
+            .run/version.json
+            .run/ApplicationTracker-*
+            .run/image-id.json
+          retention-days: 14
+  phone-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm --dir frontend build
+      - run: python scripts/package_phone.py --output .run/ApplicationTracker-phone.zip
+      - run: python -m playwright install --with-deps chromium webkit
+      - run: python scripts/phone_smoke.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          include-hidden-files: true
+          name: candidate-phone-${{ github.sha }}
+          path: .run/ApplicationTracker-phone.zip
+          retention-days: 14
+  migration-compat:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          frontend: 'false'
+      - run: python -m pytest -q backend/tests/migrations backend/tests/sync backend/tests/auth
+  release-gate:
+    name: release-gate
+    needs: [workflow-lint, core-test, phone-package, migration-compat]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every candidate check
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python -c 'import json,os; assert all(job["result"] == "success" for job in json.loads(os.environ["RESULTS"]).values())'

@@ -29,8 +29,9 @@ def test_phone_package_omits_workspace_credentials_local_coverage_and_desktop_as
     assert packager.package(source, destination) == 6
     with ZipFile(destination) as archive:
         assert set(archive.namelist()) == {'phone/index.html', 'phone/manifest.webmanifest', 'phone/sw.js',
-            'assets/phone.js', 'icons/icon-192.png', 'icons/icon-512.png', 'index.html', 'DEPLOY.txt'}
+            'assets/phone.js', 'icons/icon-192.png', 'icons/icon-512.png', 'index.html', 'DEPLOY.txt', '_headers'}
         assert not any(b'must not ship' in archive.read(name) for name in archive.namelist())
+    assert packager.validate_archive(destination) == 9
 
 
 @pytest.mark.parametrize('problem', ['outside', 'test-build'])
@@ -54,3 +55,19 @@ def test_static_site_preparation_uses_same_public_allowlist_and_preserves_existi
     assert 'same-origin-allow-popups' in (site / 'dist/_headers').read_text()
     with pytest.raises(ValueError, match='empty Site dist'):
         packager.prepare_site(source, site)
+
+
+@pytest.mark.parametrize('asset', ['/data/tracker.sqlite3', '/.env', '/backend/main.js', '/assets/private.json', '/assets/../secret.js'])
+def test_cache_manifest_cannot_expand_the_public_allowlist(tmp_path, asset):
+    source = public_build(tmp_path, __import__('json').dumps([asset]))
+    with pytest.raises(ValueError, match='allowlist'):
+        packager.package(source, tmp_path / 'bad.zip')
+
+
+def test_final_archive_is_rechecked_for_injected_private_members(tmp_path):
+    destination = tmp_path / 'phone.zip'
+    packager.package(public_build(tmp_path), destination)
+    with ZipFile(destination, 'a') as archive:
+        archive.writestr('.env', 'private')
+    with pytest.raises(ValueError, match='non-public'):
+        packager.validate_archive(destination)

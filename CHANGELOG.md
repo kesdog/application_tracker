@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Expand the reusable release gate to Windows, Linux and both macOS architectures,
+  with native frozen-process, installer, migration/recovery and production phone
+  package/offline-shell checks.
+- Separate desktop server/UI adapters, use installed platform data directories,
+  reject competing desktop workspace owners and occupied ports before startup.
+- Add Windows user installers, Linux deb packaging, Mac DMGs, protected signing
+  and notarization, coherent release hashes/provenance and draft-only publication.
+- Add an approved, atomic public phone PWA deployment workflow and operator
+  upgrade/restore guidance. Signing, hosting and real-device acceptance require
+  owner configuration; native store apps and automatic updating remain later work.
+
 ## 0.13.0 — Phone sync, optional connections and localization
 
 - Add an independent offline phone app with encrypted IndexedDB storage, direct Google Drive sync, compatibility probes and QR pairing from the desktop.

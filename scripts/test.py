@@ -17,6 +17,8 @@ MAILBOX_CONSUMERS = {'applications', 'sync', 'activity', 'migrations', 'followup
 # Shared persistence, application services/schemas, startup and configuration
 # affect all backend features. Smaller modules list their consumers explicitly.
 BACKEND_MODULES = {
+    'desktop': {'system'},
+    'desktop_platform': {'system'},
     'application_merge': {'applications', 'sync', 'followups', 'activity', 'documents'},
     'secret_store': {'auth', 'agent', 'sync'},
     'application_import': {'applications', 'documents', 'migrations', 'auth'},

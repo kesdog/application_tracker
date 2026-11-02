@@ -9,7 +9,20 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 PROJECT_ROOT = Path(os.environ.get('APP_PROJECT_ROOT') or getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2])).resolve()
-DEFAULT_DATA_DIR = (Path(os.environ.get("LOCALAPPDATA", Path.home())) / "ApplicationTracker") if getattr(sys, "frozen", False) else PROJECT_ROOT / "data"
+
+
+def desktop_data_dir() -> Path:
+    """Installed applications never write into their read-only bundle."""
+    if sys.platform == "win32":
+        return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / "ApplicationTracker"
+    if sys.platform == "darwin":
+        return Path.home() / "Library/Application Support/ApplicationTracker"
+    base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")).expanduser()
+    # XDG requires an absolute path; ignore invalid relative values.
+    return (base if base.is_absolute() else Path.home() / ".local/share") / "ApplicationTracker"
+
+
+DEFAULT_DATA_DIR = desktop_data_dir() if getattr(sys, "frozen", False) else PROJECT_ROOT / "data"
 
 
 class Settings(BaseSettings):

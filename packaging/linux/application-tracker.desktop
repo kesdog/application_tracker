@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Application Tracker
+Comment=Track applications locally with optional phone sync
+Exec=application-tracker
+Icon=application-tracker
+Terminal=true
+Type=Application
+Categories=Office;
+StartupNotify=false

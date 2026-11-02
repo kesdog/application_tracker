@@ -29,11 +29,15 @@ locks with uv 0.13.5 and `python scripts/lock.py` after a reviewed dependency ch
 `python scripts/artifact_smoke.py` exercises the installed distribution, compiled
 UI, migrations, persistence, document upload and backup/recovery with synthetic
 data. Windows builds also support `APP_DESKTOP_SMOKE=1` for a noninteractive
-start/health/shutdown check. `.github/workflows/release-gate.yml` requires Windows
-and Linux gates and retains candidate ZIP/image artifacts and logs. It does not
+start/health/shutdown check. `.github/workflows/release-gate.yml` requires all four
+desktop runner gates and retains candidate installers/images and logs. It does not
 establish live OAuth, physical-phone acceptance or signing/upgrade readiness.
-CI pins Python 3.13.17 on both platforms, which has official Windows and Linux
-runner builds; local validation also covers the installed Python 3.12.14 runtime.
+CI pins Python 3.13.17 across Windows, Ubuntu and macOS Intel/Apple silicon;
+local validation also covers the installed Python 3.12.14 runtime. The required
+wrapper calls `.github/workflows/ci.yml`. Every native runner builds and smokes
+its frozen candidate; Ubuntu also exercises the installed container and phone
+public ZIP with Chromium/WebKit offline-shell checks. See `docs/RELEASING.md`
+for protected release setup and the separate physical-device acceptance gates.
 
 Tests belong in `backend/tests/<segment>/` and `frontend/tests/<segment>/`.
 `--list` is the current segment registry; runner checks live in `tests/`.

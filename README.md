@@ -1,5 +1,9 @@
 # Application Tracker
 
+Cross-platform candidate builds and protected release setup are documented in
+[docs/RELEASING.md](docs/RELEASING.md). See [docs/UPGRADING.md](docs/UPGRADING.md)
+for opt-in installation upgrades, platform data paths and backup/rollback.
+
 Version **0.13.0** adds an independent offline phone app with encrypted Google Drive sync and desktop QR pairing, optional Google/ChatGPT/Claude connections, and English/French interface settings. Follow-up messages have their own language and saved versions for review. Mailbox scanning and recipient research include matching, date-boundary, pause and priority controls. See [PHONE_SYNC.md](PHONE_SYNC.md), [AI_CONNECTIONS.md](AI_CONNECTIONS.md), [docs/MAIL_SYNC.md](docs/MAIL_SYNC.md) and [CHANGELOG.md](CHANGELOG.md) for setup and details. Local tracking remains available without sign-in; live providers and physical devices have separate acceptance checks.
 
 Version **0.12.0** adds **Settings → Data & recovery**: reviewed CSV/XLSX import, a persistent email-review inbox, duplicate consolidation, Trash restoration, complete backup downloads and isolated recovery verification. Imports preview column mappings and errors before saving; exact retries are replay-safe. Consolidation retains original history in Trash, archives copied unsent follow-ups and pauses reminders for review. Restoring a deleted application also pauses reminders.

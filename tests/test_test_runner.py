@@ -11,6 +11,8 @@ spec.loader.exec_module(runner)
 
 
 def test_feature_selection_includes_backend_consumers():
+    for name in ('desktop', 'desktop_platform'):
+        assert runner.select([f'backend/app/{name}.py'], graph={})[0] == {'system'}
     assert runner.select(['backend/app/backup.py'], graph={})[0] == {'auth', 'notifications', 'sync', 'applications', 'documents'}
     assert runner.select(['backend/app/application_merge.py'], graph={})[0] == {'applications', 'sync', 'followups', 'activity', 'documents'}
     assert runner.select(['backend/app/secret_store.py'], graph={})[0] == {'auth', 'agent', 'sync'}

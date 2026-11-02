@@ -15,6 +15,7 @@ def main():
         with TestClient(create_app(settings), base_url='http://127.0.0.1:8000', headers={'Origin': 'http://127.0.0.1:8000'}) as client:
             assert client.get('/').status_code == 200
             assert client.get('/api/health').json()['version'] == __version__
+            assert client.post('/api/recipients/pause').status_code == 200
             record = client.post('/api/applications', json={'company': 'Artifact smoke', 'job_title': 'Engineer',
                 'date_applied': '2026-10-01', 'email_reference': 'Synthetic smoke only'})
             assert record.status_code == 201, record.text

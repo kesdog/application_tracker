@@ -1,0 +1,215 @@
+name: Protected release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    if: github.ref_type == 'tag' && github.repository == 'kesdog/application_tracker'
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: '3.13.17'
+      - name: Require an annotated tag on main
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          test "$(git cat-file -t "refs/tags/$TAG")" = tag
+          git merge-base --is-ancestor HEAD origin/main
+          python scripts/release_check.py --tag "$TAG"
+      - id: version
+        run: python -c 'from scripts.release_check import check; import os; print("version=" + check(), file=open(os.environ["GITHUB_OUTPUT"], "a"))'
+  gate:
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+  windows:
+    needs: [validate, gate]
+    environment: release-signing
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm --dir frontend build
+      - run: python scripts/build_desktop.py
+      - name: Sign native executables
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_PFX: ${{ secrets.WINDOWS_CERTIFICATE_PFX }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
+        run: ./scripts/sign-windows.ps1 -Target build/windows/ApplicationTracker
+      - run: python scripts/package_desktop.py --release
+      - name: Sign installer and exercise install/upgrade/uninstall
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_PFX: ${{ secrets.WINDOWS_CERTIFICATE_PFX }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          $installer = (Get-ChildItem .run/ApplicationTracker-*-windows-x64.exe).FullName
+          ./scripts/sign-windows.ps1 -Target $installer
+          ./scripts/installer_smoke.ps1 -Installer $installer -Version $env:VERSION
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          include-hidden-files: true
+          name: release-windows
+          path: .run/ApplicationTracker-*
+  macos:
+    needs: [validate, gate]
+    environment: release-signing
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15-intel, macos-15]
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm --dir frontend build
+      - name: Sign, notarize and staple native app and DMG
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: bash scripts/sign-macos.sh
+      - name: Smoke signed app
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: bash scripts/dmg_smoke.sh .run/ApplicationTracker-*-macos-*.dmg "$VERSION"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          include-hidden-files: true
+          name: release-${{ matrix.os }}
+          path: .run/ApplicationTracker-*
+  linux-phone:
+    needs: [validate, gate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm --dir frontend build
+      - run: bash scripts/build-linux.sh
+      - run: python scripts/package_desktop.py --release
+      - run: python scripts/package_phone.py --output .run/ApplicationTracker-phone.zip
+      - name: Smoke release binary
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: python scripts/desktop_smoke.py build/linux/ApplicationTracker/ApplicationTracker --version "$VERSION"
+      - name: Build exact-commit OCI candidate
+        run: |
+          docker build --label org.opencontainers.image.revision="$GITHUB_SHA" --label org.opencontainers.image.source="https://github.com/$GITHUB_REPOSITORY" --tag application-tracker:release .
+          docker run --rm --entrypoint python application-tracker:release scripts/artifact_smoke.py
+          docker save application-tracker:release | gzip > .run/oci-image.tar.gz
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          include-hidden-files: true
+          name: release-linux-phone
+          path: .run/ApplicationTracker-*
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          include-hidden-files: true
+          name: release-oci
+          path: .run/oci-image.tar.gz
+  registry:
+    needs: [validate, windows, macos, linux-phone]
+    environment: release-publish
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-oci
+          path: .run
+      - name: Push immutable version to GHCR
+        id: push
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          image="ghcr.io/$GITHUB_REPOSITORY:$VERSION"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          if docker manifest inspect "$image" >/dev/null 2>&1; then echo 'Version already exists; refuse to overwrite'; exit 1; fi
+          docker load -i .run/oci-image.tar.gz
+          docker tag application-tracker:release "$image"
+          docker push "$image"
+          docker inspect "$image" --format '{{json .RepoDigests}}' > .run/ApplicationTracker-oci.json
+          digest=$(docker inspect "$image" --format '{{index .RepoDigests 0}}' | cut -d@ -f2)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          docker logout ghcr.io
+      - uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          include-hidden-files: true
+          name: release-registry
+          path: .run/ApplicationTracker-oci.json
+  draft:
+    needs: [validate, registry]
+    environment: release-publish
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: '3.13.17'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: release-assets
+      - name: Version, completeness and hashes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          rm release-assets/oci-image.tar.gz
+          python scripts/release_manifest.py release-assets --tag "$TAG" --require-complete
+      - uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+        with:
+          subject-path: release-assets/*
+      - name: Create draft for release review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          python scripts/release_notes.py --tag "$TAG" --output .run/release-notes.md
+          args=()
+          if [[ "$TAG" == *-* ]]; then args+=(--prerelease); fi
+          gh release create "$TAG" release-assets/* --verify-tag --draft --title "Application Tracker $TAG" --notes-file .run/release-notes.md "${args[@]}"
